@@ -1,0 +1,412 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+// ============== User ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct User {
+    pub id: String,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub email: Option<String>,
+    pub role: String,
+    pub team_status: String,
+    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub bio: String,
+}
+
+// ============== Team ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeamMember {
+    pub id: String,
+    pub user_id: String,
+    pub name: String,
+    pub avatar: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    pub role: String,
+    pub joined_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JoinRequest {
+    pub id: String,
+    pub user_id: String,
+    pub user_name: String,
+    pub user_email: String,
+    pub reason: String,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct ApplyPayload {
+    pub reason: String,
+}
+
+#[derive(Serialize)]
+pub struct ApplyResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct ReviewResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Deserialize)]
+pub struct ChangeRolePayload {
+    pub role: String,
+}
+
+#[derive(Serialize)]
+pub struct LogoutResponse {
+    pub success: bool,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProfilePayload {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub bio: Option<String>,
+}
+
+// ============== Contest ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Contest {
+    pub id: String,
+    pub name: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub description: String,
+    pub created_by: String,
+    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub link: Option<String>,
+    #[serde(default)]
+    pub problem_order: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateContestPayload {
+    pub name: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub description: String,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateContestPayload {
+    pub name: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub description: String,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SetProblemContestPayload {
+    /// contest_id to assign, or None to clear
+    #[serde(default)]
+    pub contest_id: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ContestListItem {
+    pub id: String,
+    pub name: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub description: String,
+    pub created_by: String,
+    pub created_at: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    #[serde(default)]
+    pub problem_order: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SetContestStatusPayload {
+    pub status: String,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ContestProblemOrderPayload {
+    pub problem_ids: Vec<String>,
+}
+
+// ============== Problem ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Problem {
+    pub id: String,
+    pub title: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub contest: String,
+    #[serde(default)]
+    pub contest_id: Option<String>,
+    pub difficulty: String,
+    pub content: String,
+    pub solution: Option<String>,            // author's solution (markdown)
+    pub status: String,                       // pending | approved | published | rejected
+    pub created_at: DateTime<Utc>,
+    pub public_at: Option<DateTime<Utc>>,
+    pub claimed_by: Option<String>,           // user_id of verifier who claimed this
+    pub verifier_solution: Option<String>,    // verifier's solution (markdown)
+    pub visible_to: Vec<String>,              // user_ids who can see pending problem content
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SubmitProblemPayload {
+    pub title: String,
+    #[serde(default)]
+    pub contest: String,
+    #[serde(default)]
+    pub contest_id: Option<String>,
+    pub difficulty: String,
+    pub content: String,
+    pub solution: Option<String>,
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct EditProblemPayload {
+    /// difficulty to set, if changed
+    #[serde(default)]
+    pub difficulty: Option<String>,
+    /// content to set, if changed
+    #[serde(default)]
+    pub content: Option<String>,
+    /// solution to set (None = no change, Some("") = clear, Some("...") = update)
+    #[serde(default)]
+    pub solution: Option<String>,
+    /// contest_id to set (None = no change, Some("") = clear, Some("id") = assign)
+    #[serde(default)]
+    pub contest_id: Option<Option<String>>,
+    #[serde(default)]
+    pub link: Option<Option<String>>,
+    /// author_name to set (admin only)
+    #[serde(default)]
+    pub author_name: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SubmitResponse {
+    pub success: bool,
+    pub message: String,
+    pub problem_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct VerifierSolutionPayload {
+    pub solution: String,
+}
+
+#[derive(Deserialize)]
+pub struct VisibilityPayload {
+    pub user_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ClaimPayload {}
+
+#[derive(Serialize)]
+pub struct ClaimResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+/// Stripped-down problem view for listing (no solutions, no content for unauthorized)
+#[derive(Debug, Clone, Serialize)]
+pub struct ProblemListItem {
+    pub id: String,
+    pub title: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub contest: String,
+    #[serde(default)]
+    pub contest_id: Option<String>,
+    pub difficulty: String,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub public_at: Option<DateTime<Utc>>,
+    pub claimed_by: Option<String>,
+    pub has_verifier_solution: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+}
+
+// ============== OAuth ==============
+
+#[derive(Debug, Deserialize)]
+pub struct OAuthAuthorizeParams {
+    pub response_type: String,
+    pub client_id: String,
+    pub redirect_uri: String,
+    pub scope: String,
+    pub state: Option<String>,
+    pub code_challenge: Option<String>,
+    pub code_challenge_method: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct OAuthTokenResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub token_type: String,
+    pub expires_in: u64,
+    pub scope: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct OAuthUserInfo {
+    pub sub: String,
+    pub username: String,
+    #[serde(default)]
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+    pub email: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct RefreshTokenPayload {
+    pub refresh_token: String,
+}
+
+#[derive(Serialize)]
+pub struct VerifyResponse {
+    pub valid: bool,
+    pub user_id: String,
+}
+
+// ============== Site Info ==============
+
+#[derive(Serialize)]
+pub struct SiteInfo {
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub description: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSiteDescriptionPayload {
+    pub description: String,
+}
+
+// ============== Application Configuration ==============
+
+/// Top-level app config, read from /usr/share/mcguffin/config.toml
+#[derive(Deserialize)]
+pub struct AppConfig {
+    pub server: ServerConfig,
+    pub admin: AdminConfig,
+    #[serde(default)]
+    pub site: SiteConfig,
+    pub oauth: OAuthConfig,
+    #[serde(default)]
+    pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+}
+
+#[derive(Deserialize)]
+pub struct ServerConfig {
+    pub site_url: String,
+    #[serde(default = "default_port")]
+    pub port: u16,
+    #[serde(default = "default_data_file")]
+    pub data_file: String,
+}
+
+fn default_port() -> u16 { 3000 }
+fn default_data_file() -> String { "mcguffin_data.json".to_string() }
+
+#[derive(Deserialize)]
+pub struct AdminConfig {
+    pub password: String,
+    #[serde(default = "default_admin_display_name")]
+    pub display_name: String,
+}
+
+fn default_admin_display_name() -> String { "管理员".to_string() }
+
+#[derive(Deserialize)]
+pub struct SiteConfig {
+    pub name: Option<String>,
+}
+
+impl Default for SiteConfig {
+    fn default() -> Self {
+        Self { name: None }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct OAuthConfig {
+    pub cp_client_id: String,
+    pub cp_client_secret: String,
+}
+
+// ============== Difficulty Configuration ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DifficultyLevel {
+    pub label: String,
+    pub color: String,
+}
+
+/// Config.toml [difficulty] section: structured as table with level names as keys
+/// Example:
+///   [difficulty.Easy]
+///   label = "简单"
+///   color = "#22c55e"
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DifficultyConfig {
+    #[serde(flatten)]
+    pub levels: std::collections::HashMap<String, DifficultyLevel>,
+}
+
+impl Default for DifficultyConfig {
+    fn default() -> Self {
+        let mut levels = std::collections::HashMap::new();
+        levels.insert("Easy".to_string(), DifficultyLevel { label: "简单".to_string(), color: "#22c55e".to_string() });
+        levels.insert("Medium".to_string(), DifficultyLevel { label: "中等".to_string(), color: "#f59e0b".to_string() });
+        levels.insert("Hard".to_string(), DifficultyLevel { label: "困难".to_string(), color: "#ef4444".to_string() });
+        Self { levels }
+    }
+}
+
+// ============== Admin Login ==============
+
+#[derive(Deserialize)]
+pub struct AdminLoginPayload {
+    pub password: String,
+}
+
+#[derive(Serialize)]
+pub struct AdminLoginResponse {
+    pub success: bool,
+    pub message: String,
+    pub token: Option<String>,
+}
