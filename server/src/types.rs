@@ -410,3 +410,167 @@ pub struct AdminLoginResponse {
     pub message: String,
     pub token: Option<String>,
 }
+
+// ============== Tests ==============
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_difficulty_config_default() {
+        let config = DifficultyConfig::default();
+        assert_eq!(config.levels.len(), 3);
+        assert!(config.levels.contains_key("Easy"));
+        assert!(config.levels.contains_key("Medium"));
+        assert!(config.levels.contains_key("Hard"));
+        assert_eq!(config.levels.get("Easy").unwrap().label, "简单");
+        assert_eq!(config.levels.get("Medium").unwrap().color, "#f59e0b");
+    }
+
+    #[test]
+    fn test_admin_login_payload_deserialize() {
+        let json = r#"{"password": "test123"}"#;
+        let payload: AdminLoginPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.password, "test123");
+    }
+
+    #[test]
+    fn test_server_config_defaults() {
+        let toml_str = r#"
+[server]
+site_url = "https://example.com"
+[admin]
+password = "pass"
+[oauth]
+cp_client_id = "id"
+cp_client_secret = "secret"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.server.site_url, "https://example.com");
+        assert_eq!(config.server.port, 3000); // default
+        assert_eq!(config.server.data_file, "mcguffin_data.json"); // default
+        assert_eq!(config.admin.password, "pass");
+        assert_eq!(config.site.name, None); // default
+    }
+
+    #[test]
+    fn test_app_config_with_difficulty() {
+        let toml_str = r##"
+[server]
+site_url = "https://example.com"
+[admin]
+password = "pass"
+[oauth]
+cp_client_id = "id"
+cp_client_secret = "secret"
+
+[difficulty.Easy]
+label = "简单"
+color = "#22c55e"
+[difficulty.Hard]
+label = "困难"
+color = "#ef4444"
+"##;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.difficulty.len(), 2);
+        assert_eq!(config.difficulty.get("Easy").unwrap().get("label").unwrap(), "简单");
+    }
+
+    #[test]
+    fn test_problem_serde_roundtrip() {
+        let problem = Problem {
+            id: "test-id".to_string(),
+            title: "Test Problem".to_string(),
+            author_id: "user1".to_string(),
+            author_name: "Author".to_string(),
+            contest: "Round 1".to_string(),
+            contest_id: Some("c1".to_string()),
+            difficulty: "Hard".to_string(),
+            content: "# Problem".to_string(),
+            solution: Some("# Solution".to_string()),
+            status: "published".to_string(),
+            created_at: Utc::now(),
+            public_at: Some(Utc::now()),
+            claimed_by: None,
+            verifier_solution: None,
+            visible_to: vec![],
+            link: Some("https://example.com".to_string()),
+        };
+
+        let json = serde_json::to_string(&problem).unwrap();
+        let decoded: Problem = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded.id, "test-id");
+        assert_eq!(decoded.title, "Test Problem");
+        assert_eq!(decoded.difficulty, "Hard");
+        assert_eq!(decoded.status, "published");
+        assert_eq!(decoded.link.unwrap(), "https://example.com");
+    }
+
+    #[test]
+    fn test_problem_list_item_serialization() {
+        let item = ProblemListItem {
+            id: "p1".to_string(),
+            title: "Problem 1".to_string(),
+            author_id: "u1".to_string(),
+            author_name: "User".to_string(),
+            contest: "".to_string(),
+            contest_id: None,
+            difficulty: "Easy".to_string(),
+            status: "published".to_string(),
+            created_at: Utc::now(),
+            public_at: None,
+            claimed_by: None,
+            has_verifier_solution: false,
+            link: None,
+        };
+
+        let json = serde_json::to_string(&item).unwrap();
+        assert!(json.contains("\"id\":\"p1\""));
+        assert!(json.contains("\"title\":\"Problem 1\""));
+        // link should be skipped when None
+        assert!(!json.contains("\"link\""));
+        // contest_id is serialized as null when None (no skip_serializing_if)
+        assert!(json.contains("\"contest_id\":null"));
+    }
+
+    #[test]
+    fn test_oauth_user_info() {
+        let json = r#"{
+            "sub": "123",
+            "username": "test_user",
+            "display_name": "Test User",
+            "avatar_url": "https://example.com/av.png",
+            "email": "test@example.com"
+        }"#;
+        let info: OAuthUserInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.sub, "123");
+        assert_eq!(info.username, "test_user");
+        assert_eq!(info.display_name, "Test User");
+        assert_eq!(info.email.unwrap(), "test@example.com");
+    }
+
+    #[test]
+    fn test_oauth_user_info_minimal() {
+        // Only required fields
+        let json = r#"{"sub": "42", "username": "minimal"}"#;
+        let info: OAuthUserInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.sub, "42");
+        assert_eq!(info.display_name, ""); // default
+        assert!(info.avatar_url.is_none());
+        assert!(info.email.is_none());
+    }
+
+    #[test]
+    fn test_site_info_serialization() {
+        let info = SiteInfo {
+            name: "My Site".to_string(),
+            version: "1.0.0".to_string(),
+            description: "A site".to_string(),
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains("\"name\":\"My Site\""));
+        assert!(json.contains("\"version\":\"1.0.0\""));
+        assert!(json.contains("\"description\":\"A site\""));
+    }
+}

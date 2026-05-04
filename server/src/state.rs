@@ -252,3 +252,96 @@ fn load_config() -> AppConfig {
         difficulty: std::collections::HashMap::new(),
     }
 }
+
+// ============== Tests ==============
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{ServerConfig, AdminConfig, SiteConfig, OAuthConfig};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_load_difficulty_config_empty() {
+        let config = AppConfig {
+            server: ServerConfig {
+                site_url: "https://test.com".to_string(),
+                port: 3000,
+                data_file: "test.json".to_string(),
+            },
+            admin: AdminConfig {
+                password: "pass".to_string(),
+                display_name: "Admin".to_string(),
+            },
+            site: SiteConfig { name: None },
+            oauth: OAuthConfig {
+                cp_client_id: "id".to_string(),
+                cp_client_secret: "secret".to_string(),
+            },
+            difficulty: HashMap::new(),
+        };
+        let dc = load_difficulty_config(&config);
+        assert_eq!(dc.levels.len(), 3); // falls back to Default
+        assert!(dc.levels.contains_key("Easy"));
+    }
+
+    #[test]
+    fn test_load_difficulty_config_custom() {
+        let mut diff = HashMap::new();
+        let mut easy_fields = HashMap::new();
+        easy_fields.insert("label".to_string(), "简单".to_string());
+        easy_fields.insert("color".to_string(), "#22c55e".to_string());
+        diff.insert("Easy".to_string(), easy_fields);
+
+        let config = AppConfig {
+            server: ServerConfig {
+                site_url: "https://test.com".to_string(),
+                port: 3000,
+                data_file: "test.json".to_string(),
+            },
+            admin: AdminConfig {
+                password: "pass".to_string(),
+                display_name: "Admin".to_string(),
+            },
+            site: SiteConfig { name: None },
+            oauth: OAuthConfig {
+                cp_client_id: "id".to_string(),
+                cp_client_secret: "secret".to_string(),
+            },
+            difficulty: diff,
+        };
+        let dc = load_difficulty_config(&config);
+        assert_eq!(dc.levels.len(), 1);
+        assert_eq!(dc.levels.get("Easy").unwrap().label, "简单");
+    }
+
+    #[test]
+    fn test_load_difficulty_config_missing_label() {
+        let mut diff = HashMap::new();
+        let mut fields = HashMap::new();
+        fields.insert("color".to_string(), "#ff0000".to_string());
+        // label is missing — should fall back to the key name
+        diff.insert("CustomDiff".to_string(), fields);
+
+        let config = AppConfig {
+            server: ServerConfig {
+                site_url: "https://test.com".to_string(),
+                port: 3000,
+                data_file: "test.json".to_string(),
+            },
+            admin: AdminConfig {
+                password: "pass".to_string(),
+                display_name: "Admin".to_string(),
+            },
+            site: SiteConfig { name: None },
+            oauth: OAuthConfig {
+                cp_client_id: "id".to_string(),
+                cp_client_secret: "secret".to_string(),
+            },
+            difficulty: diff,
+        };
+        let dc = load_difficulty_config(&config);
+        assert_eq!(dc.levels.get("CustomDiff").unwrap().label, "CustomDiff");
+        assert_eq!(dc.levels.get("CustomDiff").unwrap().color, "#ff0000");
+    }
+}
