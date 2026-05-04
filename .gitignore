@@ -1,20 +1,20 @@
-# ========== Rust (mcguffin-server) ==========
-mcguffin-server/target/
-mcguffin-server/Cargo.lock
+# ========== Rust (server) ==========
+server/target/
+server/Cargo.lock
 
 # Runtime data files — contains sensitive/instance-specific data
-mcguffin-server/mcguffin_data.json
-mcguffin-server/mcguffin_data.json.bak
-mcguffin-server/backups/
-mcguffin-server/src/*.rs.corrupted
+server/mcguffin_data.json
+server/mcguffin_data.json.bak
+server/backups/
+server/src/*.rs.corrupted
 
-# ========== React / Vite (mcguffin-web) ==========
-mcguffin-web/node_modules/
-mcguffin-web/dist/
-mcguffin-web/.env
-mcguffin-web/*.tsbuildinfo
-mcguffin-web/vite.config.d.ts
-mcguffin-web/vite.config.d.ts.map
+# ========== React / Vite (web) ==========
+web/node_modules/
+web/dist/
+web/.env
+web/*.tsbuildinfo
+web/vite.config.d.ts
+web/vite.config.d.ts.map
 
 # ========== General ==========
 .DS_Store

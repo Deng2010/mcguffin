@@ -17,7 +17,7 @@
 项目采用前后端分离架构：
 
 ```
-浏览器 ──→ mcguffin-web (React SPA) ──→ mcguffin-server (Rust/Axum) ──→ CP OAuth
+浏览器 ──→ web (React SPA) ──→ server (Rust/Axum) ──→ CP OAuth
 ```
 
 ### 2.2 前端技术栈
@@ -62,7 +62,7 @@
 mcguffin/
 ├── DEMAND.md                  # 需求文档
 ├── DEVELOPMENT.md             # 开发文档（本文件）
-├── mcguffin-web/              # 前端项目
+├── web/              # 前端项目
 │   ├── index.html             # HTML 入口
 │   ├── package.json           # 依赖配置
 │   ├── bun.lock               # Bun 锁文件
@@ -75,7 +75,7 @@ mcguffin/
 │       ├── oauthConfig.ts     # OAuth 配置与工具函数
 │       └── main.tsx           # 应用入口
 │
-└── mcguffin-server/           # 后端项目
+└── server/           # 后端项目
     ├── Cargo.toml             # Rust 依赖配置
     └── src/
         ├── main.rs            # 服务入口 (路由注册, 启动配置)
@@ -279,7 +279,7 @@ mcguffin/
 curl -fsSL https://bun.sh/install | bash
 
 # 进入前端目录
-cd mcguffin-web
+cd web
 
 # 安装依赖
 bun install
@@ -294,7 +294,7 @@ bun run dev
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # 进入后端目录
-cd mcguffin-server
+cd server
 
 # 开发模式运行
 cargo run
@@ -307,20 +307,20 @@ cargo build --release
 
 **前端构建：**
 ```bash
-cd mcguffin-web
+cd web
 bun run build    # 产物输出到 dist/
 bun run preview  # 本地预览构建产物
 ```
 
 **后端构建：**
 ```bash
-cd mcguffin-server
+cd server
 cargo build --release  # 产物在 target/release/mcguffin-server
 ```
 
 ### 7.3 环境变量
 
-**前端 (mcguffin-web)：**
+**前端 (web)：**
 
 | 变量                           | 默认值                    | 说明                  |
 |-------------------------------|---------------------------|-----------------------|
@@ -329,7 +329,7 @@ cargo build --release  # 产物在 target/release/mcguffin-server
 | VITE_CPOAUTH_CLIENT_SECRET   | your-client-secret        | 应用 Client Secret    |
 | VITE_CPOAUTH_REDIRECT_URI    | {origin}/oauth/cpoauth/callback | 回调地址        |
 
-**后端 (mcguffin-server)：**
+**后端 (server)：**
 
 当前 OAuth 配置硬编码在 `AppState::new()` 中，建议后续迁移到环境变量：
 - cpoauth_client_id: "mcguffin_app"

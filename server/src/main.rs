@@ -42,9 +42,9 @@ async fn main() {
         .allow_credentials(true);
 
     // Frontend dist path (relative to the server working directory)
-    let dist_path = std::path::PathBuf::from("../mcguffin-web/dist");
+    let dist_path = std::path::PathBuf::from("../web/dist");
     let spa_index = std::fs::read_to_string(dist_path.join("index.html"))
-        .expect("Failed to read dist/index.html — run 'bun run build' in mcguffin-web first");
+        .expect("Failed to read dist/index.html — run 'bun run build' in web first");
 
     println!("Serving frontend SPA from: {:?}", dist_path.canonicalize().unwrap_or(dist_path.clone()));
     println!("McGuffin Server running on http://0.0.0.0:3000");
@@ -57,7 +57,7 @@ async fn main() {
             async move { Html(html) }
         }))
         // Static assets from the production build
-        .nest_service("/assets", ServeDir::new("../mcguffin-web/dist/assets"))
+        .nest_service("/assets", ServeDir::new("../web/dist/assets"))
         // Server-rendered pages (backward compatible)
         .route("/login", get(login_page))
         .route("/portfolio", get(portfolio_page))
