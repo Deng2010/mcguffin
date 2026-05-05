@@ -652,10 +652,12 @@ color = "#ef4444"
             name: "My Site".to_string(),
             version: "1.0.0".to_string(),
             description: "A site".to_string(),
+            title: "My Site".to_string(),
         };
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("\"name\":\"My Site\""));
         assert!(json.contains("\"version\":\"1.0.0\""));
         assert!(json.contains("\"description\":\"A site\""));
+        assert!(json.contains("\"title\":\"My Site\""));
     }
 }
