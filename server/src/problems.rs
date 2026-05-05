@@ -79,10 +79,11 @@ pub async fn get_problems(
                     }
                 }
             } else if is_member {
-                // Members see: published, approved, their own problems,
+                // Members see: published, approved, pending, their own problems,
                 // and problems where they're in visible_to
                 let ok = p.status == "published"
                     || p.status == "approved"
+                    || p.status == "pending"
                     || current_uid.as_ref().map_or(false, |uid| p.author_id == *uid)
                     || current_uid.as_ref().map_or(false, |uid| p.visible_to.contains(uid));
                 if !ok {

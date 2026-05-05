@@ -14,6 +14,8 @@ import ContestManagePage from './pages/ContestManagePage'
 import ProfilePage from './pages/ProfilePage'
 import AdminConfigPage from './pages/AdminConfigPage'
 import AdminBackupPage from './pages/AdminBackupPage'
+import SuggestionsPage from './pages/SuggestionsPage'
+import AnnouncementsPage from './pages/AnnouncementsPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 function Footer() {
@@ -22,7 +24,7 @@ function Footer() {
   return (
     <footer className="border-t border-gray-200 bg-white mt-12 py-4 px-6">
       <div className="max-w-6xl mx-auto text-center text-xs text-gray-400">
-        Powered by McGuffin v{version}
+        Powered by <a href="https://github.com/Deng2010/mcguffin" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-gray-600 underline">McGuffin</a> v{version}
       </div>
     </footer>
   )
@@ -56,7 +58,15 @@ function AppContent() {
             />
             <Route
               path="/contests"
-              element={<ProtectedRoute requiredPermission="approve_problem"><ContestManagePage /></ProtectedRoute>}
+              element={<ProtectedRoute requiredPermission="view_problems"><ContestManagePage /></ProtectedRoute>}
+            />
+            <Route
+              path="/suggestions"
+              element={<ProtectedRoute requiredPermission="view_suggestions"><SuggestionsPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/announcements"
+              element={<AnnouncementsPage />}
             />
             <Route
               path="/profile"

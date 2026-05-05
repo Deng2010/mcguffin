@@ -42,6 +42,8 @@ pub struct AdminSection {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct SiteSection {
     pub name: String,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -138,6 +140,10 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         },
         site: SiteSection {
             name: get_str("site", "name"),
+            title: {
+                let t = get_str("site", "title");
+                if t.is_empty() { None } else { Some(t) }
+            },
         },
         oauth: OAuthSection {
             cp_client_id: get_str("oauth", "cp_client_id"),
@@ -168,6 +174,10 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
     }
     if let Some(t) = doc.get_mut("site").and_then(|s| s.as_table_mut()) {
         set_str(t, "name", &payload.site.name);
+        match &payload.site.title {
+            Some(title) if !title.trim().is_empty() => set_str(t, "title", title.trim()),
+            _ => { t.remove("title"); }
+        }
     }
     if let Some(t) = doc.get_mut("oauth").and_then(|s| s.as_table_mut()) {
         set_str(t, "cp_client_id", &payload.oauth.cp_client_id);

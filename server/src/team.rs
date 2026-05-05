@@ -229,6 +229,20 @@ pub async fn change_member_role(
                 if payload.role != "admin" && payload.role != "member" {
                     return Json(ReviewResponse { success: false, message: "无效角色".to_string() });
                 }
+                // Only superadmin can demote an existing admin or promote to admin
+                let is_super = is_superadmin(&state, admin_user_id).await;
+                let target_role = {
+                    let members = state.team_members.read().await;
+                    members.values().find(|m| m.user_id == user_id).map(|m| m.role.clone())
+                };
+                if let Some(ref current_role) = target_role {
+                    if current_role == "admin" && !is_super {
+                        return Json(ReviewResponse { success: false, message: "权限不足：仅限系统管理员操作".to_string() });
+                    }
+                }
+                if payload.role == "admin" && !is_super {
+                    return Json(ReviewResponse { success: false, message: "权限不足：仅限系统管理员操作".to_string() });
+                }
                 let mut members = state.team_members.write().await;
                 if let Some(member) = members.values_mut().find(|m| m.user_id == user_id) {
                     member.role = payload.role.clone();
@@ -273,6 +287,14 @@ pub async fn remove_member(
                 }
                 if admin_user_id == &user_id {
                     return Json(ReviewResponse { success: false, message: "不能移除自己".to_string() });
+                }
+                // Only superadmin can remove an admin
+                let target_is_admin = {
+                    let members = state.team_members.read().await;
+                    members.values().any(|m| m.user_id == user_id && m.role == "admin")
+                };
+                if target_is_admin && !is_superadmin(&state, admin_user_id).await {
+                    return Json(ReviewResponse { success: false, message: "权限不足：仅限系统管理员操作".to_string() });
                 }
                 let mut members = state.team_members.write().await;
                 let member_id = members.values()

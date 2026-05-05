@@ -7,6 +7,7 @@ interface SiteInfo {
   name: string
   version: string
   description: string
+  title: string
 }
 
 interface SiteContextType {
@@ -33,10 +34,15 @@ export function SiteProvider({ children }: { children: ReactNode }) {
   const fetchInfo = useCallback(() => {
     apiFetch<SiteInfo>('/site/info')
       .then(setSiteInfo)
-      .catch(() => setSiteInfo({ name: 'McGuffin', version: '0.1.0', description: '' }))
+      .catch(() => setSiteInfo({ name: 'McGuffin', version: '0.1.0', description: '', title: 'McGuffin' }))
   }, [])
 
   useEffect(() => { fetchInfo() }, [fetchInfo])
+
+  // Sync browser tab title with site name
+  useEffect(() => {
+    document.title = siteInfo?.title || 'McGuffin'
+  }, [siteInfo])
 
   const updateDescription = async (description: string): Promise<{ success: boolean; message: string }> => {
     try {

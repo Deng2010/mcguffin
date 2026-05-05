@@ -1,4 +1,4 @@
-use crate::types::{Contest, JoinRequest, Problem, TeamMember, User, AppConfig};
+use crate::types::{Announcement, Contest, JoinRequest, Problem, Suggestion, TeamMember, User, AppConfig};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,6 +24,10 @@ struct SavedData {
     contests: HashMap<String, Contest>,
     #[serde(default)]
     site_description: String,
+    #[serde(default)]
+    suggestions: HashMap<String, Suggestion>,
+    #[serde(default)]
+    announcements: HashMap<String, Announcement>,
 }
 
 // ============== Application State ==============
@@ -42,6 +46,7 @@ pub struct AppState {
     pub cpoauth_redirect_uri: String,
     pub admin_password: String,
     pub site_name: String,
+    pub site_title: String,
     pub site_version: String,
     pub site_description: Arc<RwLock<String>>,
     /// Public-facing site URL (e.g. https://lba-oi.team)
@@ -50,6 +55,10 @@ pub struct AppState {
     pub data_file: String,
     /// Customizable difficulty levels
     pub difficulty: Arc<RwLock<crate::types::DifficultyConfig>>,
+    /// Suggestions (tickets/feedback)
+    pub suggestions: Arc<RwLock<HashMap<String, Suggestion>>>,
+    /// Announcements
+    pub announcements: Arc<RwLock<HashMap<String, Announcement>>>,
 }
 
 impl AppState {
@@ -66,13 +75,13 @@ impl AppState {
             .ok()
             .and_then(|s| serde_json::from_str::<SavedData>(&s).ok());
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description) =
+        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements) =
             if let Some(data) = saved {
                 tracing::info!("Loaded state from {}", data_file);
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description)
+                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements)
             } else {
                 tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new())
+                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new())
             };
 
         // Always ensure superadmin user exists AND has correct role
@@ -127,12 +136,15 @@ impl AppState {
             cpoauth_client_secret: config.oauth.cp_client_secret,
             cpoauth_redirect_uri: redirect_uri,
             admin_password: config.admin.password,
-            site_name: config.site.name.unwrap_or_else(|| "McGuffin".to_string()),
+            site_name: config.site.name.clone().unwrap_or_else(|| "McGuffin".to_string()),
+            site_title: config.site.title.unwrap_or_else(|| config.site.name.unwrap_or_else(|| "McGuffin".to_string())),
             site_version,
             site_description: Arc::new(RwLock::new(site_description)),
             site_url: config.server.site_url,
             data_file: config.server.data_file,
             difficulty: Arc::new(RwLock::new(difficulty_config)),
+            suggestions: Arc::new(RwLock::new(suggestions)),
+            announcements: Arc::new(RwLock::new(announcements)),
         }
     }
 
@@ -147,6 +159,8 @@ impl AppState {
             join_requests: self.join_requests.read().await.clone(),
             contests: self.contests.read().await.clone(),
             site_description: self.site_description.read().await.clone(),
+            suggestions: self.suggestions.read().await.clone(),
+            announcements: self.announcements.read().await.clone(),
         };
         if let Ok(json) = serde_json::to_string_pretty(&data) {
             let tmp_path = format!("{}.tmp", self.data_file);
@@ -171,6 +185,8 @@ impl AppState {
                 *self.join_requests.write().await = data.join_requests;
                 *self.contests.write().await = data.contests;
                 *self.site_description.write().await = data.site_description;
+                *self.suggestions.write().await = data.suggestions;
+                *self.announcements.write().await = data.announcements;
                 tracing::info!("State reloaded from {}", self.data_file);
             }
         }
@@ -240,7 +256,7 @@ fn load_config() -> AppConfig {
             password: admin_password,
             display_name: std::env::var("ADMIN_DISPLAY_NAME").unwrap_or_else(|_| "管理员".to_string()),
         },
-        site: crate::types::SiteConfig {
+        site: crate::types::SiteConfig { title: None,
             name: std::env::var("SITE_NAME").ok(),
         },
         oauth: crate::types::OAuthConfig {
@@ -273,7 +289,7 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None },
+            site: SiteConfig { name: None, title: None },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),
@@ -303,7 +319,7 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None },
+            site: SiteConfig { name: None, title: None },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),
@@ -333,7 +349,7 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None },
+            site: SiteConfig { name: None, title: None },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),

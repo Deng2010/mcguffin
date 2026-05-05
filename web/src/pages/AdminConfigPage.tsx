@@ -5,7 +5,7 @@ import { apiFetch } from '../api'
 interface ConfigData {
   server: { site_url: string; port: number; data_file: string }
   admin: { password: string; display_name: string }
-  site: { name: string }
+  site: { name: string; title?: string | null }
   oauth: { cp_client_id: string; cp_client_secret: string }
   difficulty: Record<string, { label: string; color: string }>
 }
@@ -34,6 +34,7 @@ export default function AdminConfigPage() {
   const [adminPassword, setAdminPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [siteName, setSiteName] = useState('')
+  const [siteTitle, setSiteTitle] = useState('')
   const [cpClientId, setCpClientId] = useState('')
   const [cpClientSecret, setCpClientSecret] = useState('')
   const [difficulties, setDifficulties] = useState<DifficultyEntry[]>([])
@@ -66,6 +67,7 @@ export default function AdminConfigPage() {
       setAdminPassword(res.config.admin.password)
       setDisplayName(res.config.admin.display_name)
       setSiteName(res.config.site.name)
+      setSiteTitle(res.config.site.title ?? '')
       setCpClientId(res.config.oauth.cp_client_id)
       setCpClientSecret(res.config.oauth.cp_client_secret)
       const diffArr: DifficultyEntry[] = Object.entries(res.config.difficulty).map(([name, fields]) => ({
@@ -122,7 +124,7 @@ export default function AdminConfigPage() {
         body: JSON.stringify({
           server: { site_url: siteUrl, port: parseInt(port) || 3000, data_file: dataFile },
           admin: { password: adminPassword, display_name: displayName },
-          site: { name: siteName },
+          site: { name: siteName, title: siteTitle || undefined },
           oauth: { cp_client_id: cpClientId, cp_client_secret: cpClientSecret },
           difficulty: diffObj,
         }),
@@ -201,9 +203,17 @@ export default function AdminConfigPage() {
 
       case 'site':
         return (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">站点名称</label>
-            <input type="text" value={siteName} onChange={e => setSiteName(e.target.value)} className={inputClass} placeholder="McGuffin" />
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">站点名称</label>
+              <input type="text" value={siteName} onChange={e => setSiteName(e.target.value)} className={inputClass} placeholder="McGuffin" />
+              <p className="text-xs text-gray-400 mt-1">导航栏和首页展示的团队名称</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">网页标题</label>
+              <input type="text" value={siteTitle} onChange={e => setSiteTitle(e.target.value)} className={inputClass} placeholder="与站点名称相同" />
+              <p className="text-xs text-gray-400 mt-1">浏览器标签页显示的标题，留空则使用站点名称</p>
+            </div>
           </div>
         )
 

@@ -104,6 +104,14 @@ async fn main() {
         .route("/api/site/info", get(get_site_info))
         .route("/api/site/description", put(update_site_description))
         .route("/api/site/difficulties", get(get_difficulties))
+        // Suggestion routes
+        .route("/api/suggestions", get(get_suggestions).post(create_suggestion))
+        .route("/api/suggestions/:id", get(get_suggestion_detail).put(update_suggestion).delete(delete_suggestion))
+        .route("/api/suggestions/:id/reply", post(reply_to_suggestion))
+        .route("/api/suggestions/:id/reply/:reply_id", delete(delete_suggestion_reply))
+        // Announcement routes
+        .route("/api/announcements", get(get_announcements).post(create_announcement))
+        .route("/api/announcements/:id", put(update_announcement).delete(delete_announcement))
         // Admin config (superadmin only)
         .route("/api/admin/config", get(get_config).put(update_config))
         .route("/api/admin/restart", post(restart_service))

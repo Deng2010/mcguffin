@@ -52,7 +52,6 @@ export default function ProblemsPage() {
   // Search & filter state
   const [searchText, setSearchText] = useState('')
   const [filterDifficulty, setFilterDifficulty] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
   const [filterAuthor, setFilterAuthor] = useState('')
 
   const [activeTab, setActiveTab] = useState<TabId>('list')
@@ -60,7 +59,7 @@ export default function ProblemsPage() {
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: 'list', label: '全部题目' },
   ]
-  if (canApprove) {
+  if (canSubmit) {
     tabs.push(
       { id: 'pending', label: '待审核', count: pendingProblems.length },
       { id: 'approved', label: '已通过', count: approvedProblems.length },
@@ -69,7 +68,7 @@ export default function ProblemsPage() {
   }
 
   const loadProblems = () => {
-    const url = canApprove ? '/problems?all=true' : '/problems'
+    const url = (canApprove || canSubmit) ? '/problems?all=true' : '/problems'
     apiFetch<ProblemListItem[]>(url)
       .then(setProblems)
       .catch(() => setProblems([]))
@@ -96,8 +95,8 @@ export default function ProblemsPage() {
 
   useEffect(() => {
     loadProblems()
-    if (canApprove) loadReviewData()
-  }, [canApprove])
+    if (canSubmit) loadReviewData()
+  }, [canSubmit, canApprove])
 
   // Load contests when submit form opens
   useEffect(() => {
@@ -113,11 +112,10 @@ export default function ProblemsPage() {
     return problems.filter(p => {
       if (q && !p.title.toLowerCase().includes(q)) return false
       if (filterDifficulty && p.difficulty !== filterDifficulty) return false
-      if (filterStatus && p.status !== filterStatus) return false
       if (a && !p.author_name.toLowerCase().includes(a)) return false
       return true
     })
-  }, [problems, searchText, filterDifficulty, filterStatus, filterAuthor])
+  }, [problems, searchText, filterDifficulty, filterAuthor])
 
   // ====== Actions ======
 
@@ -197,7 +195,6 @@ export default function ProblemsPage() {
   const resetFilters = () => {
     setSearchText('')
     setFilterDifficulty('')
-    setFilterStatus('')
     setFilterAuthor('')
   }
 
@@ -286,7 +283,7 @@ export default function ProblemsPage() {
   // ====== Search & Filter Bar ======
 
   const renderFilterBar = () => {
-    const hasActiveFilters = searchText || filterDifficulty || filterStatus || filterAuthor
+    const hasActiveFilters = searchText || filterDifficulty || filterAuthor
     return (
       <div className="bg-white border border-gray-300 p-4 mb-4 space-y-3">
         {/* Search row */}
@@ -319,24 +316,6 @@ export default function ProblemsPage() {
               ))}
             </select>
           </div>
-
-          {/* Status (admin only) */}
-          {canApprove && (
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs text-gray-500 font-medium">状态</label>
-              <select
-                value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value)}
-                className="px-2 py-1.5 border border-gray-300 bg-white text-sm focus:outline-none focus:border-gray-500"
-              >
-                <option value="">全部</option>
-                <option value="published">已发布</option>
-                <option value="approved">已通过</option>
-                <option value="pending">待审核</option>
-                <option value="rejected">已拒绝</option>
-              </select>
-            </div>
-          )}
 
           {/* Author */}
           <div className="flex items-center gap-1.5">
@@ -484,7 +463,7 @@ export default function ProblemsPage() {
         {renderFilterBar()}
         {filteredProblems.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
-            {searchText || filterDifficulty || filterStatus || filterAuthor
+            {searchText || filterDifficulty || filterAuthor
               ? '没有符合条件的题目'
               : '暂无题目'}
           </div>
@@ -540,12 +519,16 @@ export default function ProblemsPage() {
                 {renderMeta(p)}
               </div>
               <div className="flex items-center gap-2 ml-4 shrink-0" onClick={e => e.stopPropagation()}>
+                {canApprove && (<>
                 <button onClick={() => handleReview(p.id, 'approve')} className="px-3 py-1.5 text-xs bg-gray-800 text-white hover:bg-gray-700">通过</button>
                 <button onClick={() => handleReview(p.id, 'reject')} className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50">拒绝</button>
+                </>)}
                 <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 hover:bg-gray-100">
                   {expandedId === p.id ? '收起' : '详情'}
                 </button>
+                {canApprove && (
                 <button onClick={() => handleDelete(p.id, p.title)} className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50">删除</button>
+                )}
               </div>
             </div>
 
@@ -566,6 +549,7 @@ export default function ProblemsPage() {
                   </div>
                 )}
 
+                {canApprove && (
                 <div className="mb-4">
                   <h4 className="text-sm font-semibold text-gray-700 mb-2">关联比赛</h4>
                   <div className="flex items-center gap-2">
@@ -582,7 +566,8 @@ export default function ProblemsPage() {
                     <span className="text-xs text-gray-400">选择后自动保存</span>
                   </div>
                 </div>
-
+                )}
+                {canApprove && (
                 <div className="mb-2">
                   <h4 className="text-sm font-semibold text-gray-700 mb-2">可见性设置（选择可查看此题目的成员）</h4>
                   <div className="flex flex-wrap gap-2 mb-2">
@@ -600,6 +585,7 @@ export default function ProblemsPage() {
                   </div>
                   <button onClick={() => handleSetVisibility(p.id)} className="text-xs px-3 py-1 border border-gray-300 text-gray-600 hover:bg-gray-100">保存可见性</button>
                 </div>
+                )}
               </div>
             )}
           </div>
@@ -625,9 +611,11 @@ export default function ProblemsPage() {
                 {renderMeta(p)}
               </div>
               <div className="flex items-center gap-2 ml-4 shrink-0" onClick={e => e.stopPropagation()}>
+                {canApprove && (<>
                 <button onClick={() => handleReview(p.id, 'publish')} className="px-4 py-2 text-sm bg-green-700 text-white hover:bg-green-600">发布</button>
                 <button onClick={() => handleReview(p.id, 'return')} className="px-3 py-2 text-sm border border-yellow-500 text-yellow-700 hover:bg-yellow-50">退回</button>
                 <button onClick={() => handleDelete(p.id, p.title)} className="px-3 py-2 text-sm border border-red-300 text-red-600 hover:bg-red-50">删除</button>
+                </>)}
               </div>
             </div>
           </div>
@@ -653,8 +641,10 @@ export default function ProblemsPage() {
                 {renderMeta(p)}
               </div>
               <div className="flex items-center gap-2 ml-4 shrink-0" onClick={e => e.stopPropagation()}>
+                {canApprove && (<>
                 <button onClick={() => handleReview(p.id, 'unpublish')} className="px-4 py-2 text-sm bg-orange-600 text-white hover:bg-orange-500">取消发布</button>
                 <button onClick={() => handleDelete(p.id, p.title)} className="px-3 py-2 text-sm border border-red-300 text-red-600 hover:bg-red-50">删除</button>
+                </>)}
               </div>
             </div>
           </div>

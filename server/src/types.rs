@@ -309,6 +309,7 @@ pub struct SiteInfo {
     pub version: String,
     #[serde(default)]
     pub description: String,
+    pub title: String,
 }
 
 #[derive(Deserialize)]
@@ -354,11 +355,13 @@ fn default_admin_display_name() -> String { "管理员".to_string() }
 #[derive(Deserialize)]
 pub struct SiteConfig {
     pub name: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
 }
 
 impl Default for SiteConfig {
     fn default() -> Self {
-        Self { name: None }
+        Self { name: None, title: None }
     }
 }
 
@@ -409,6 +412,88 @@ pub struct AdminLoginResponse {
     pub success: bool,
     pub message: String,
     pub token: Option<String>,
+}
+
+// ============== Suggestion ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestionReply {
+    pub id: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Suggestion {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub status: String, // "open" | "in_progress" | "resolved" | "closed"
+    #[serde(default)]
+    pub replies: Vec<SuggestionReply>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateSuggestionPayload {
+    pub title: String,
+    pub content: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateSuggestionReplyPayload {
+    pub content: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSuggestionPayload {
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+// ============== Announcement ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Announcement {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub pinned: bool,
+    #[serde(default = "default_public")]
+    pub public: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+fn default_public() -> bool { true }
+
+#[derive(Deserialize)]
+pub struct CreateAnnouncementPayload {
+    pub title: String,
+    pub content: String,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default = "default_public")]
+    pub public: bool,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateAnnouncementPayload {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+    #[serde(default)]
+    pub public: Option<bool>,
 }
 
 // ============== Tests ==============

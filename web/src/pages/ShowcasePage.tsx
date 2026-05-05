@@ -5,6 +5,7 @@ import { useSite } from '../SiteContext'
 import { apiFetch } from '../api'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import { useDifficulties, DiffBadge } from '../hooks/useDifficulties'
+import type { Announcement } from '../types'
 
 // ============== Types ==============
 
@@ -129,6 +130,7 @@ export default function ShowcasePage() {
   const { siteInfo, updateDescription } = useSite()
   const [allContests, setAllContests] = useState<ContestItem[]>([])
   const [allProblems, setAllProblems] = useState<ProblemItem[]>([])
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
 
   // Description editing state
@@ -142,9 +144,11 @@ export default function ShowcasePage() {
     Promise.all([
       apiFetch<ContestItem[]>('/contests').catch(() => [] as ContestItem[]),
       apiFetch<ProblemItem[]>('/problems').catch(() => [] as ProblemItem[]),
-    ]).then(([c, p]) => {
+      apiFetch<Announcement[]>('/announcements').catch(() => [] as Announcement[]),
+    ]).then(([c, p, a]) => {
       setAllContests(c)
       setAllProblems(p)
+      setAnnouncements(a)
     }).finally(() => setLoading(false))
   }, [])
 
@@ -241,6 +245,37 @@ export default function ShowcasePage() {
           )} />
         )}
       </section>
+
+      {/* ===== 公告 ===== */}
+      {announcements.length > 0 && (
+        <section>
+          <h2 className="text-lg font-semibold mb-4 text-gray-700">
+            公告
+            <Link to="/announcements" className="text-xs font-normal text-gray-400 hover:text-gray-600 ml-2">查看全部</Link>
+          </h2>
+          <div className="space-y-2">
+            {announcements.slice(0, 3).map(a => (
+              <div
+                key={a.id}
+                className={`bg-white border ${a.pinned ? 'border-yellow-400' : 'border-gray-300'} p-4`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  {a.pinned && (
+                    <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 border border-yellow-200">置顶</span>
+                  )}
+                  <span className="font-medium text-gray-800 text-sm">{a.title}</span>
+                </div>
+                <div className="text-xs text-gray-400 mb-2">
+                  {a.author_name} · {new Date(a.created_at).toLocaleDateString('zh-CN')}
+                </div>
+                <div className="text-sm text-gray-600 prose prose-sm max-w-none">
+                  <MarkdownRenderer content={a.content} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ===== 已发布题目 ===== */}
       <section>

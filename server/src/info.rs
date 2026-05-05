@@ -17,6 +17,7 @@ pub async fn get_site_info(
         name: state.site_name.clone(),
         version: state.site_version.clone(),
         description: state.site_description.read().await.clone(),
+        title: state.site_title.clone(),
     })
 }
 

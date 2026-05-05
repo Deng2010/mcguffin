@@ -88,6 +88,13 @@ export default function TeamPage() {
 
   const roleLabel = (r: string) => (r === 'admin' || r === 'superadmin') ? '管理员' : '成员'
   const isCurrentUser = (member: TeamMemberAPI) => user?.id === member.user_id
+  const isSuperAdmin = user?.role === 'superadmin'
+  const canManageUser = (member: TeamMemberAPI) => {
+    if (!canManage || isCurrentUser(member)) return false
+    if (member.role === 'superadmin') return false
+    if (member.role === 'admin' && !isSuperAdmin) return false
+    return true
+  }
 
   if (loading) return <div className="p-6 text-center text-gray-400 py-12">加载中...</div>
 
@@ -181,7 +188,7 @@ export default function TeamPage() {
               </div>
 
               <div className="flex items-center gap-3">
-                {canManage && !isCurrentUser(m) && m.role !== 'superadmin' ? (
+                {canManageUser(m) ? (
                   <select
                     value={m.role}
                     onChange={e => handleChangeRole(m, e.target.value)}
@@ -196,7 +203,7 @@ export default function TeamPage() {
                   </span>
                 )}
 
-                {canManage && !isCurrentUser(m) && (
+                {canManageUser(m) && (
                   <button
                     onClick={() => handleRemoveMember(m)}
                     className="px-3 py-1 text-sm text-red-600 border border-red-300 hover:bg-red-50"

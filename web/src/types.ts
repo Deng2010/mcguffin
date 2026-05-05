@@ -31,13 +31,55 @@ export type Permission =
   | 'edit_contests'
   /** Edit site info (team showcase description) */
   | 'manage_site'
+  /** View and submit suggestions */
+  | 'view_suggestions'
+  /** Manage announcements */
+  | 'manage_announcements'
 
 export const rolePermissions: Record<User['role'], Permission[]> = {
-  superadmin: ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site'],
-  admin:   ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site'],
-  member:  ['view_showcase', 'view_team', 'submit_problem', 'view_problems'],
+  superadmin: ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site', 'view_suggestions', 'manage_announcements'],
+  admin:   ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site', 'view_suggestions', 'manage_announcements'],
+  member:  ['view_showcase', 'view_team', 'submit_problem', 'view_problems', 'view_suggestions'],
   guest:   ['view_showcase', 'apply_join'],
   pending: ['view_showcase', 'apply_join'],
+}
+
+// ============== Suggestion Types ==============
+
+export type SuggestionStatus = 'open' | 'in_progress' | 'resolved' | 'closed'
+
+export interface SuggestionReply {
+  id: string
+  author_id: string
+  author_name: string
+  content: string
+  created_at: string
+}
+
+export interface Suggestion {
+  id: string
+  title: string
+  content: string
+  author_id: string
+  author_name: string
+  status: SuggestionStatus
+  replies: SuggestionReply[]
+  created_at: string
+  updated_at: string
+}
+
+// ============== Announcement Types ==============
+
+export interface Announcement {
+  id: string
+  title: string
+  content: string
+  author_id: string
+  author_name: string
+  pinned: boolean
+  public: boolean
+  created_at: string
+  updated_at: string
 }
 
 // ============== Team Types ==============

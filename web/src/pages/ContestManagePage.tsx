@@ -41,6 +41,7 @@ export default function ContestManagePage() {
   const [error, setError] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabId>('all')
+  const [searchText, setSearchText] = useState('')
 
   // Edit state — unified: contest info + problem order
   const [editName, setEditName] = useState('')
@@ -61,11 +62,21 @@ export default function ContestManagePage() {
 
   useEffect(() => { loadContests() }, [])
 
-  const filteredContests = contests.filter(c => {
-    if (activeTab === 'public') return c.status === 'public'
-    if (activeTab === 'draft') return c.status === 'draft'
-    return true
-  })
+  const filteredContests = contests
+    .filter(c => {
+      if (activeTab === 'public') return c.status === 'public'
+      if (activeTab === 'draft') return c.status === 'draft'
+      return true
+    })
+    .filter(c => {
+      const q = searchText.toLowerCase().trim()
+      if (!q) return true
+      return c.name.toLowerCase().includes(q)
+    })
+    .sort((a, b) => {
+      // Sort by start_time descending (most recent first)
+      return b.start_time.localeCompare(a.start_time)
+    })
 
   const counts = {
     public: contests.filter(c => c.status === 'public').length,
@@ -260,6 +271,17 @@ export default function ContestManagePage() {
           <button type="submit" className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700">创建</button>
         </form>
       )}
+
+      {/* Search */}
+      <div className="mb-4">
+        <input
+          type="text"
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          placeholder="搜索比赛名称..."
+          className="w-full px-4 py-2 border border-gray-300 bg-white text-sm focus:outline-none focus:border-gray-500"
+        />
+      </div>
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-gray-300 mb-6">

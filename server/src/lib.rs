@@ -11,6 +11,8 @@ pub mod problems;
 pub mod contests;
 pub mod info;
 pub mod admin;
+pub mod suggestions;
+pub mod announcements;
 
 // ============== Re-exports ==============
 
@@ -24,3 +26,5 @@ pub use problems::*;
 pub use contests::*;
 pub use info::*;
 pub use admin::*;
+pub use suggestions::*;
+pub use announcements::*;

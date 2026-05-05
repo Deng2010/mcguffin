@@ -21,7 +21,8 @@ export default function Navbar() {
 
   const showProblems = hasPermission('view_problems')
   const showTeam = hasPermission('view_team')
-  const showManageContests = hasPermission('edit_contests')
+  const showManageContests = hasPermission('view_problems')
+  const showSuggestions = hasPermission('view_suggestions')
   const showApply = isAuthenticated && user?.team_status !== 'joined'
   const showAdminConfig = user?.role === 'superadmin'
 
@@ -34,6 +35,8 @@ export default function Navbar() {
             {showProblems && navLink('/problems', '题目')}
             {showManageContests && navLink('/contests', '比赛')}
             {showTeam && navLink('/team', '成员')}
+            {showSuggestions && navLink('/suggestions', '建议')}
+            {navLink('/announcements', '公告')}
             {showAdminConfig && navLink('/admin/config', '配置')}
             {showAdminConfig && navLink('/admin/backup', '备份')}
             {showApply && navLink('/apply', '申请加入')}
