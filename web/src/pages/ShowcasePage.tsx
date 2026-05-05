@@ -40,9 +40,9 @@ function contestStatus(start: string, end: string): { label: string; color: stri
   const now = new Date()
   const s = new Date(start)
   const e = new Date(end)
-  if (now < s) return { label: '未开始', color: 'bg-blue-100 text-blue-700' }
-  if (now > e) return { label: '已结束', color: 'bg-gray-200 text-gray-500' }
-  return { label: '进行中', color: 'bg-green-100 text-green-700' }
+  if (now < s) return { label: '未开始', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' }
+  if (now > e) return { label: '已结束', color: 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400' }
+  return { label: '进行中', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' }
 }
 
 /** Render a problem card: if link exists, click goes to external URL; otherwise goes to internal detail page */
@@ -53,12 +53,12 @@ function ProblemCard({ p, difficultyMap }: { p: ProblemItem; difficultyMap: Map<
         href={p.link}
         target="_blank"
         rel="noopener noreferrer"
-        className="block bg-white border border-gray-300 p-4 hover:bg-gray-50 transition-colors"
+        className="block bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
       >
         <div className="flex items-center justify-between">
           <div>
-            <span className="font-medium text-gray-800">{p.title}</span>
-            <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
+            <span className="font-medium text-gray-800 dark:text-gray-100">{p.title}</span>
+            <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400 dark:text-gray-500">
               <span>作者：{p.author_name}</span>
               {p.contest && <span>{p.contest}</span>}
             </div>
@@ -73,15 +73,15 @@ function ProblemCard({ p, difficultyMap }: { p: ProblemItem; difficultyMap: Map<
   return (
     <Link
       to={`/problems/${p.id}`}
-      className="block bg-white border border-gray-300 p-4 hover:bg-gray-50 transition-colors"
+      className="block bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
     >
       <div className="flex items-center justify-between">
         <div>
-          <span className="font-medium text-gray-800">{p.title}</span>
-          <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400">
-            <span>作者：{p.author_name}</span>
-            {p.contest && <span>{p.contest}</span>}
-          </div>
+          <span className="font-medium text-gray-800 dark:text-gray-100">{p.title}</span>
+          <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+              <span>作者：{p.author_name}</span>
+              {p.contest && <span>{p.contest}</span>}
+            </div>
         </div>
         <div className="flex items-center gap-2">
           <DiffBadge difficulty={p.difficulty} map={difficultyMap} className="px-2 py-0.5 text-xs font-medium" />
@@ -99,11 +99,11 @@ function CompactProblemCard({ p, difficultyMap }: { p: ProblemItem; difficultyMa
         href={p.link}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center justify-between border border-gray-200 p-2.5 hover:bg-gray-50 transition-colors"
+        className="flex items-center justify-between border border-gray-200 dark:border-gray-700 p-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
       >
-        <span className="text-sm text-gray-800">{p.title}</span>
+        <span className="text-sm text-gray-800 dark:text-gray-100">{p.title}</span>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">作者：{p.author_name}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">作者：{p.author_name}</span>
           <DiffBadge difficulty={p.difficulty} map={difficultyMap} className="px-1.5 py-0.5 text-xs" />
         </div>
       </a>
@@ -112,11 +112,11 @@ function CompactProblemCard({ p, difficultyMap }: { p: ProblemItem; difficultyMa
   return (
     <Link
       to={`/problems/${p.id}`}
-      className="flex items-center justify-between border border-gray-200 p-2.5 hover:bg-gray-50 transition-colors"
+      className="flex items-center justify-between border border-gray-200 dark:border-gray-700 p-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
     >
-      <span className="text-sm text-gray-800">{p.title}</span>
+      <span className="text-sm text-gray-800 dark:text-gray-100">{p.title}</span>
       <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400">作者：{p.author_name}</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">作者：{p.author_name}</span>
         <DiffBadge difficulty={p.difficulty} map={difficultyMap} className="px-1.5 py-0.5 text-xs" />
       </div>
     </Link>
@@ -193,20 +193,20 @@ export default function ShowcasePage() {
     }
   }
 
-  if (loading) return <div className="p-6 text-center py-12 text-gray-400">加载中...</div>
+  if (loading) return <div className="p-6 text-center py-12 text-gray-400 dark:text-gray-500">加载中...</div>
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
       {/* ===== 团队简介 ===== */}
-      <section className="bg-white border border-gray-300 p-6">
+      <section className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-2xl font-bold text-gray-800">
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
             {siteInfo?.name || 'McGuffin'}
           </h1>
           {isAdmin && !editing && (
             <button
               onClick={() => setEditing(true)}
-              className="text-xs px-3 py-1 border border-gray-300 text-gray-500 hover:bg-gray-100"
+              className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               编辑简介
             </button>
@@ -220,18 +220,18 @@ export default function ShowcasePage() {
               onChange={e => setDraftDescription(e.target.value)}
               placeholder="在此输入团队简介..."
               rows={5}
-              className="w-full border border-gray-300 p-3 text-sm text-gray-700 resize-y focus:outline-none focus:border-gray-500"
+              className="w-full border border-gray-300 dark:border-gray-700 p-3 text-sm text-gray-700 dark:text-gray-200 dark:bg-gray-800 resize-y focus:outline-none focus:border-gray-500"
             />
             <div className="flex gap-2">
               <button
                 onClick={handleSaveDescription}
-                className="px-4 py-2 text-sm bg-gray-800 text-white hover:bg-gray-700"
+                className="px-4 py-2 text-sm bg-gray-800 dark:bg-gray-700 text-white hover:bg-gray-700 dark:hover:bg-gray-600"
               >
                 保存
               </button>
               <button
                 onClick={() => setEditing(false)}
-                className="px-4 py-2 text-sm border border-gray-300 text-gray-600 hover:bg-gray-100"
+                className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 取消
               </button>
@@ -240,8 +240,8 @@ export default function ShowcasePage() {
         ) : (
           <MarkdownRenderer content={siteInfo?.description || (
             isAdmin
-              ? '<span class="text-gray-300 italic">点击「编辑简介」添加团队介绍</span>'
-              : '<span class="text-gray-300 italic">暂无团队简介</span>'
+              ? '<span class="text-gray-300 italic dark:text-gray-600">点击「编辑简介」添加团队介绍</span>'
+              : '<span class="text-gray-300 italic dark:text-gray-600">暂无团队简介</span>'
           )} />
         )}
       </section>
@@ -249,26 +249,26 @@ export default function ShowcasePage() {
       {/* ===== 公告 ===== */}
       {announcements.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold mb-4 text-gray-700">
+          <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
             公告
-            <Link to="/announcements" className="text-xs font-normal text-gray-400 hover:text-gray-600 ml-2">查看全部</Link>
+            <Link to="/announcements" className="text-xs font-normal text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ml-2">查看全部</Link>
           </h2>
           <div className="space-y-2">
             {announcements.slice(0, 3).map(a => (
               <div
                 key={a.id}
-                className={`bg-white border ${a.pinned ? 'border-yellow-400' : 'border-gray-300'} p-4`}
+                className={`bg-white dark:bg-gray-900 border ${a.pinned ? 'border-yellow-400' : 'border-gray-300 dark:border-gray-700'} p-4`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   {a.pinned && (
-                    <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 border border-yellow-200">置顶</span>
+                    <span className="text-xs px-1.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border border-yellow-200">置顶</span>
                   )}
-                  <span className="font-medium text-gray-800 text-sm">{a.title}</span>
+                  <span className="font-medium text-gray-800 dark:text-gray-100 text-sm">{a.title}</span>
                 </div>
-                <div className="text-xs text-gray-400 mb-2">
+                <div className="text-xs text-gray-400 dark:text-gray-500 mb-2">
                   {a.author_name} · {new Date(a.created_at).toLocaleDateString('zh-CN')}
                 </div>
-                <div className="text-sm text-gray-600 prose prose-sm max-w-none">
+                <div className="text-sm text-gray-600 dark:text-gray-300 prose prose-sm max-w-none">
                   <MarkdownRenderer content={a.content} />
                 </div>
               </div>
@@ -279,9 +279,9 @@ export default function ShowcasePage() {
 
       {/* ===== 已发布题目 ===== */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-700">公开题目 ({problems.length})</h2>
+        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">公开题目 ({problems.length})</h2>
         {problems.length === 0 ? (
-          <div className="text-gray-400 text-sm">暂无公开题目</div>
+          <div className="text-gray-400 dark:text-gray-500 text-sm">暂无公开题目</div>
         ) : (
           <div className="space-y-2">
             {problems.map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
@@ -291,21 +291,21 @@ export default function ShowcasePage() {
 
       {/* ===== 比赛列表 ===== */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-700">比赛 ({contests.length})</h2>
+        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">比赛 ({contests.length})</h2>
         {contests.length === 0 ? (
-          <div className="text-gray-400 text-sm">暂无比赛</div>
+          <div className="text-gray-400 dark:text-gray-500 text-sm">暂无比赛</div>
         ) : (
           <div className="space-y-4">
             {contests.map(c => {
               const status = contestStatus(c.start_time, c.end_time)
               const cProblems = contestProblems[c.id] || []
               return (
-                <div key={c.id} className="bg-white border border-gray-300 p-5">
+                <div key={c.id} className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-5">
                   <div className="flex items-start justify-between mb-2">
                     <div>
-                      <h3 className="text-lg font-bold text-gray-800">{c.name}</h3>
+                      <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">{c.name}</h3>
                       <div className="flex items-center gap-3 mt-1">
-                        <span className="text-xs text-gray-500">{c.start_time} ~ {c.end_time}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{c.start_time} ~ {c.end_time}</span>
                         <span className={`px-2 py-0.5 text-xs font-medium ${status.color}`}>{status.label}</span>
                       </div>
                     </div>
@@ -314,7 +314,7 @@ export default function ShowcasePage() {
                         href={c.link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="shrink-0 px-3 py-1.5 text-xs border border-blue-300 text-blue-600 hover:bg-blue-50 rounded"
+                        className="shrink-0 px-3 py-1.5 text-xs border border-blue-300 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
                       >
                         进入比赛 ↗
                       </a>
@@ -328,7 +328,7 @@ export default function ShowcasePage() {
                       {cProblems.map(p => <CompactProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
                     </div>
                   ) : (
-                    <div className="text-sm text-gray-400">暂无题目</div>
+                    <div className="text-sm text-gray-400 dark:text-gray-500">暂无题目</div>
                   )}
                 </div>
               )
@@ -340,7 +340,7 @@ export default function ShowcasePage() {
       {/* ===== 未关联比赛的已发布题目 ===== */}
       {unassigned.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold mb-4 text-gray-700">其他公示题目 ({unassigned.length})</h2>
+          <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">其他公示题目 ({unassigned.length})</h2>
           <div className="grid gap-2">
             {unassigned.map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
           </div>

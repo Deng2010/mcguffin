@@ -220,55 +220,55 @@ export default function ContestManagePage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">比赛</h1>
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">比赛</h1>
         <button
           onClick={() => { setShowForm(!showForm); setEditingId(null); setError('') }}
-          className={`px-4 py-2 text-sm ${isAdmin ? 'bg-gray-800 text-white hover:bg-gray-700' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+          className={`px-4 py-2 text-sm ${isAdmin ? 'bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-700'}`}
           disabled={!isAdmin}
         >
           {showForm ? '收起' : '创建比赛'}
         </button>
       </div>
 
-      {error && <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-700 text-sm">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-700 text-sm dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">{error}</div>}
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white border border-gray-300 p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4 text-gray-700">创建新比赛</h2>
+        <form onSubmit={handleCreate} className="bg-white border border-gray-300 p-6 mb-6 dark:bg-gray-900 dark:border-gray-700">
+          <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">创建新比赛</h2>
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-700">比赛名称 *</label>
+              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">比赛名称 *</label>
               <input type="text" value={name} onChange={e => setName(e.target.value)} required
-                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
                 placeholder="如：2026春季周赛" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-700">开始时间 *</label>
+              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">开始时间 *</label>
               <input type="text" value={startTime} onChange={e => setStartTime(e.target.value)} required
-                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
                 placeholder="如：2026-05-01 10:00" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-700">结束时间 *</label>
+              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">结束时间 *</label>
               <input type="text" value={endTime} onChange={e => setEndTime(e.target.value)} required
-                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm"
+                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
                 placeholder="如：2026-05-01 12:00" />
             </div>
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1 text-gray-700">简介</label>
+            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">简介</label>
             <textarea value={description} onChange={e => setDescription(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm"
+              className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
               placeholder="比赛简介（可选）" />
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1 text-gray-700">链接（设为公开时必填）</label>
+            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">链接（设为公开时必填）</label>
             <input type="url" value={link} onChange={e => setLink(e.target.value)}
               placeholder="https://..."
-              className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm" />
+              className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
           </div>
-          <button type="submit" className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700">创建</button>
+          <button type="submit" className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600">创建</button>
         </form>
       )}
 
@@ -279,12 +279,12 @@ export default function ContestManagePage() {
           value={searchText}
           onChange={e => setSearchText(e.target.value)}
           placeholder="搜索比赛名称..."
-          className="w-full px-4 py-2 border border-gray-300 bg-white text-sm focus:outline-none focus:border-gray-500"
+          className="w-full px-4 py-2 border border-gray-300 bg-white text-sm focus:outline-none focus:border-gray-500 dark:border-gray-700 dark:bg-gray-800"
         />
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-gray-300 mb-6">
+      <div className="flex items-center gap-1 border-b border-gray-300 mb-6 dark:border-gray-700">
         {[
           { id: 'all' as TabId, label: '全部', count: contests.length },
           { id: 'public' as TabId, label: '已公开', count: counts.public },
@@ -295,13 +295,13 @@ export default function ContestManagePage() {
             onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.id
-                ? 'border-gray-800 text-gray-900'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+                ? 'border-gray-800 text-gray-900 dark:border-gray-100 dark:text-gray-100'
+                : 'border-transparent text-gray-500 hover:text-gray-800 dark:hover:text-gray-100'
             }`}
           >
             {tab.label}
             <span className={`ml-1.5 px-1.5 py-0.5 text-xs rounded ${
-              activeTab === tab.id ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-600'
+              activeTab === tab.id ? 'bg-gray-800 text-white dark:bg-gray-700' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
             }`}>
               {tab.count}
             </span>
@@ -310,75 +310,75 @@ export default function ContestManagePage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-gray-400">加载中...</div>
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">加载中...</div>
       ) : filteredContests.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">暂无比赛</div>
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">暂无比赛</div>
       ) : (
         <div className="space-y-3">
           {filteredContests.map(c => (
-            <div key={c.id} className="bg-white border border-gray-300 p-4">
+            <div key={c.id} className="bg-white border border-gray-300 p-4 dark:bg-gray-900 dark:border-gray-700">
               {editingId === c.id ? (
                 <div>
-                  <h3 className="font-semibold text-gray-800 mb-4">编辑比赛 — {c.name}</h3>
+                  <h3 className="font-semibold text-gray-800 mb-4 dark:text-gray-100">编辑比赛 — {c.name}</h3>
 
                   {/* Contest info fields */}
                   <div className="grid grid-cols-3 gap-4 mb-4">
                     <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-600">比赛名称</label>
+                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">比赛名称</label>
                       <input type="text" value={editName} onChange={e => setEditName(e.target.value)} required
-                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm" />
+                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-600">开始时间</label>
+                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">开始时间</label>
                       <input type="text" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} required
-                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm" />
+                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-600">结束时间</label>
+                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">结束时间</label>
                       <input type="text" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} required
-                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm" />
+                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
                     </div>
                   </div>
                   <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1 text-gray-600">链接</label>
+                    <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">链接</label>
                     <input type="url" value={editLink} onChange={e => setEditLink(e.target.value)}
                       placeholder="https://..."
-                      className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm" />
+                      className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
                   </div>
                   <div className="mb-6">
-                    <label className="block text-xs font-medium mb-1 text-gray-600">简介</label>
+                    <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">简介</label>
                     <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)}
                       rows={2}
-                      className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm" />
+                      className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
                   </div>
 
                   {/* Problem order section */}
-                  <div className="border-t border-gray-200 pt-4 mb-6">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-3">题目顺序</h4>
+                  <div className="border-t border-gray-200 pt-4 mb-6 dark:border-gray-700">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3 dark:text-gray-200">题目顺序</h4>
                     {!editProblemsReady ? (
-                      <div className="text-sm text-gray-400">加载题目中...</div>
+                      <div className="text-sm text-gray-400 dark:text-gray-500">加载题目中...</div>
                     ) : editProblems.length === 0 ? (
-                      <div className="text-sm text-gray-400">该比赛暂无题目</div>
+                      <div className="text-sm text-gray-400 dark:text-gray-500">该比赛暂无题目</div>
                     ) : (
                       <div className="space-y-1.5">
                         {editProblems.map((p, idx) => (
                           <div
                             key={p.id}
-                            className="flex items-center gap-3 p-2 bg-gray-50 border border-gray-200 text-sm"
+                            className="flex items-center gap-3 p-2 bg-gray-50 border border-gray-200 text-sm dark:bg-gray-800/50 dark:border-gray-700"
                           >
-                            <span className="w-6 text-center font-mono text-gray-500">{idx + 1}</span>
-                            <span className="flex-1 text-gray-800">{p.title}</span>
-                            <span className="text-xs text-gray-500">{p.author_name}</span>
-                            <span className="text-xs text-gray-500"><DiffBadge difficulty={p.difficulty} map={difficultyMap} /></span>
+                            <span className="w-6 text-center font-mono text-gray-500 dark:text-gray-400">{idx + 1}</span>
+                            <span className="flex-1 text-gray-800 dark:text-gray-100">{p.title}</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">{p.author_name}</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400"><DiffBadge difficulty={p.difficulty} map={difficultyMap} /></span>
                             <button
                               onClick={() => moveProblem(idx, -1)}
                               disabled={idx === 0}
-                              className="px-2 py-1 text-xs border border-gray-300 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                              className="px-2 py-1 text-xs border border-gray-300 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"
                             >↑</button>
                             <button
                               onClick={() => moveProblem(idx, 1)}
                               disabled={idx === editProblems.length - 1}
-                              className="px-2 py-1 text-xs border border-gray-300 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                              className="px-2 py-1 text-xs border border-gray-300 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"
                             >↓</button>
                           </div>
                         ))}
@@ -391,14 +391,14 @@ export default function ContestManagePage() {
                     <button
                       onClick={handleSaveEdit}
                       disabled={editSaving || !editProblemsReady}
-                      className="px-5 py-2 text-sm bg-gray-800 text-white hover:bg-gray-700 disabled:opacity-50"
+                      className="px-5 py-2 text-sm bg-gray-800 text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600"
                     >
                       {editSaving ? '保存中...' : '保存全部'}
                     </button>
                     <button
                       type="button"
                       onClick={cancelEdit}
-                      className="px-5 py-2 text-sm border border-gray-300 text-gray-600 hover:bg-gray-100"
+                      className="px-5 py-2 text-sm border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
                     >
                       取消
                     </button>
@@ -407,41 +407,41 @@ export default function ContestManagePage() {
               ) : (
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-800">{c.name}
-                      <span className={`ml-2 px-2 py-0.5 text-xs font-medium ${c.status === 'public' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    <h3 className="font-semibold text-gray-800 dark:text-gray-100">{c.name}
+                      <span className={`ml-2 px-2 py-0.5 text-xs font-medium ${c.status === 'public' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
                         {c.status === 'public' ? '已公开' : '未公开'}
                       </span>
                     </h3>
-                    <div className="text-sm text-gray-500 mt-1">
+                    <div className="text-sm text-gray-500 mt-1 dark:text-gray-400">
                       {c.start_time} ~ {c.end_time}
                     </div>
                     {c.link && (
                       <div className="text-sm mt-1">
-                        <a href={c.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800">外部链接 ↗</a>
+                        <a href={c.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">外部链接 ↗</a>
                       </div>
                     )}
                     {c.description && (
-                      <div className="text-sm text-gray-600 mt-1">{c.description}</div>
+                      <div className="text-sm text-gray-600 mt-1 dark:text-gray-300">{c.description}</div>
                     )}
-                    <div className="text-xs text-gray-400 mt-1">创建于 {c.created_at}</div>
+                    <div className="text-xs text-gray-400 mt-1 dark:text-gray-500">创建于 {c.created_at}</div>
                   </div>
                   <div className="flex gap-2 shrink-0">
                     {isAdmin && (<>
                     <button
                       onClick={() => handleToggleStatus(c)}
-                      className={`px-3 py-1.5 text-xs border ${c.status === 'public' ? 'border-yellow-500 text-yellow-700 hover:bg-yellow-50' : 'border-green-500 text-green-700 hover:bg-green-50'}`}
+                      className={`px-3 py-1.5 text-xs border ${c.status === 'public' ? 'border-yellow-500 text-yellow-700 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-400 dark:hover:bg-yellow-900/20' : 'border-green-500 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/20'}`}
                     >
                       {c.status === 'public' ? '取消公开' : '公开'}
                     </button>
                     <button
                       onClick={() => startEdit(c)}
-                      className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 hover:bg-gray-100"
+                      className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
                     >
                       编辑
                     </button>
                     <button
                       onClick={() => handleDelete(c.id, c.name)}
-                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50"
+                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
                     >
                       删除
                     </button>

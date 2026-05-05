@@ -14,7 +14,7 @@ export default function ProfilePage() {
   if (!user) {
     return (
       <div className="p-6 max-w-2xl mx-auto text-center py-12">
-        <p className="text-gray-400">请先登录</p>
+        <p className="text-gray-400 dark:text-gray-500">请先登录</p>
       </div>
     )
   }
@@ -84,47 +84,47 @@ export default function ProfilePage() {
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-800 mb-6">个人主页</h1>
+      <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">个人主页</h1>
 
       {msg && (
         <div className={`mb-4 p-3 text-sm border ${
-          msg === '已保存' ? 'bg-green-50 border-green-300 text-green-700' : 'bg-red-50 border-red-300 text-red-700'
+          msg === '已保存' ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300' : 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300'
         }`}>
           {msg}
         </div>
       )}
 
-      <div className="bg-white border border-gray-300 p-6">
+      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
         {/* Avatar & Basic Info */}
         <div className="flex items-start gap-6 mb-6">
           <div className="shrink-0">
             {user.avatar_url ? (
-              <img src={user.avatar_url} alt="" className="w-24 h-24 rounded-full object-cover border border-gray-200" />
+              <img src={user.avatar_url} alt="" className="w-24 h-24 rounded-full object-cover border border-gray-200 dark:border-gray-700" />
             ) : (
-              <div className="w-24 h-24 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-3xl font-bold">
+              <div className="w-24 h-24 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-3xl font-bold">
                 {user.display_name?.charAt(0) || '?'}
               </div>
             )}
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-1">
-              <h2 className="text-xl font-bold text-gray-800">{user.display_name}</h2>
-              <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700">
+              <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100">{user.display_name}</h2>
+              <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
                 {roleLabel(user.role)}
               </span>
             </div>
-            <p className="text-sm text-gray-500">@{user.username}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">@{user.username}</p>
             {user.email && (
-              <p className="text-sm text-gray-500 mt-1">{user.email}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{user.email}</p>
             )}
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
               加入于 {new Date(user.created_at).toLocaleDateString('zh-CN')}
             </p>
           </div>
           {!editing && (
             <button
               onClick={openEdit}
-              className="px-4 py-2 text-sm border border-gray-300 text-gray-600 hover:bg-gray-100"
+              className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               编辑资料
             </button>
@@ -133,41 +133,41 @@ export default function ProfilePage() {
 
         {/* Bio */}
         {!editing && user.bio && (
-          <div className="border-t border-gray-200 pt-4 mb-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">简介</h3>
-            <p className="text-sm text-gray-600 whitespace-pre-wrap">{user.bio}</p>
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mb-4">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">简介</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{user.bio}</p>
           </div>
         )}
 
         {/* Edit Form */}
         {editing && (
-          <div className="border-t border-gray-200 pt-4">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">编辑资料</h3>
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-4">编辑资料</h3>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-gray-700">显示名称</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">显示名称</label>
               <input
                 type="text"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 text-sm"
                 placeholder="您的显示名称"
               />
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-gray-700">头像 URL</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">头像 URL</label>
               <input
                 type="url"
                 value={avatarUrl}
                 onChange={e => setAvatarUrl(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 text-sm"
                 placeholder="https://example.com/avatar.png（留空清除）"
               />
               {avatarUrl && (
-                <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
+                <div className="mt-2 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                   <span>预览：</span>
-                  <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-gray-200"
+                  <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover border border-gray-200 dark:border-gray-700"
                     onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                   />
                 </div>
@@ -175,12 +175,12 @@ export default function ProfilePage() {
             </div>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2 text-gray-700">简介</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">简介</label>
               <textarea
                 value={bio}
                 onChange={e => setBio(e.target.value)}
                 rows={5}
-                className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 text-sm"
                 placeholder="简单介绍一下自己..."
               />
             </div>
@@ -189,13 +189,13 @@ export default function ProfilePage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-6 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 disabled:opacity-50"
+                className="px-6 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
               >
                 {saving ? '保存中...' : '保存'}
               </button>
               <button
                 onClick={cancelEdit}
-                className="px-6 py-2 border border-gray-300 text-gray-600 text-sm hover:bg-gray-100"
+                className="px-6 py-2 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 取消
               </button>

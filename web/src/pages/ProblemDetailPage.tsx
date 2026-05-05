@@ -119,31 +119,31 @@ export default function ProblemDetailPage() {
     } catch (err) { alert(`保存失败: ${err}`) }
   }
 
-  if (loading) return <div className="p-6 text-center py-12 text-gray-400">加载中...</div>
-  if (error) return <div className="p-6 text-center py-12 text-red-600">{error}</div>
+  if (loading) return <div className="p-6 text-center py-12 text-gray-400 dark:text-gray-500">加载中...</div>
+  if (error) return <div className="p-6 text-center py-12 text-red-600 dark:text-red-400">{error}</div>
   if (!problem) return null
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <Link to="/problems" className="text-sm text-gray-500 hover:text-gray-800 mb-4 inline-block">← 返回列表</Link>
+      <Link to="/problems" className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 mb-4 inline-block">← 返回列表</Link>
 
-      <div className="bg-white border border-gray-300 p-6 mb-6">
+      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mb-6">
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">{problem.title}</h1>
-            <div className="flex gap-4 text-sm text-gray-500 mt-2">
+            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{problem.title}</h1>
+            <div className="flex gap-4 text-sm text-gray-500 dark:text-gray-400 mt-2">
               <span>作者：{problem.author_name}</span>
               <span>赛事：{problem.contest || '无'}</span>
               <span>难度：<DiffBadge difficulty={problem.difficulty} map={difficultyMap} /></span>
               {(problem as any).link && (
-                <a href={(problem as any).link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800">外部链接 ↗</a>
+                <a href={(problem as any).link} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300">外部链接 ↗</a>
               )}
             </div>
           </div>
           {canEdit && !editing && (
             <button
               onClick={openEdit}
-              className="px-3 py-1.5 text-sm border border-gray-300 text-gray-600 hover:bg-gray-100"
+              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               编辑
             </button>
@@ -151,22 +151,22 @@ export default function ProblemDetailPage() {
         </div>
 
         {editMsg && (
-          <div className={`mb-4 p-3 text-sm border ${editMsg === '已保存' ? 'bg-green-50 border-green-300 text-green-700' : 'bg-red-50 border-red-300 text-red-700'}`}>
+          <div className={`mb-4 p-3 text-sm border ${editMsg === '已保存' ? 'bg-green-50 dark:bg-green-900/30 border-green-300 dark:border-green-800 text-green-700 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/30 border-red-300 dark:border-red-800 text-red-700 dark:text-red-300'}`}>
             {editMsg}
           </div>
         )}
 
         {editing ? (
-          <div className="border-t border-gray-200 pt-4 mt-4">
-            <h2 className="text-lg font-semibold mb-4 text-gray-700">编辑题目</h2>
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+            <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">编辑题目</h2>
 
             {isAdmin && (
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2 text-gray-700">关联比赛</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">关联比赛</label>
                 <select
                   value={editContestId}
                   onChange={e => setEditContestId(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500"
                 >
                   <option value="">无</option>
                   {contests.map(c => (
@@ -178,28 +178,28 @@ export default function ProblemDetailPage() {
 
             {isAdmin && (
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2 text-gray-700">外部链接（发布时必填）</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">外部链接（发布时必填）</label>
                 <input type="url" value={editLink} onChange={e => setEditLink(e.target.value)}
                   placeholder="https://..."
-                  className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm" />
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm" />
               </div>
             )}
 
             {isAdmin && (
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2 text-gray-700">出题人</label>
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">出题人</label>
                 <input type="text" value={editAuthorName} onChange={e => setEditAuthorName(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm"
                   placeholder="修改出题人名称" />
               </div>
             )}
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-gray-700">难度</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">难度</label>
               <select
                 value={editDifficulty}
                 onChange={e => setEditDifficulty(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500"
               >
                 {difficulties.map(d => (
                   <option key={d.name} value={d.name}>{d.label}</option>
@@ -208,25 +208,25 @@ export default function ProblemDetailPage() {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-gray-700">题目内容 (Markdown)</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">题目内容 (Markdown)</label>
               <textarea
                 value={editContent}
                 onChange={e => setEditContent(e.target.value)}
                 rows={15}
-                className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 font-mono text-sm"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 font-mono text-sm"
                 placeholder="# 题目描述"
               />
             </div>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2 text-gray-700">
-                题解 (Markdown) <span className="text-gray-400 font-normal">— 留空表示清除题解</span>
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
+                题解 (Markdown) <span className="text-gray-400 dark:text-gray-500 font-normal">— 留空表示清除题解</span>
               </label>
               <textarea
                 value={editSolution}
                 onChange={e => setEditSolution(e.target.value)}
                 rows={10}
-                className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 font-mono text-sm"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 font-mono text-sm"
                 placeholder="# 题解"
               />
             </div>
@@ -235,13 +235,13 @@ export default function ProblemDetailPage() {
               <button
                 onClick={handleSaveEdit}
                 disabled={saving}
-                className="px-6 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 disabled:opacity-50"
+                className="px-6 py-2 bg-gray-800 dark:bg-gray-700 text-white text-sm hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
               >
                 {saving ? '保存中...' : '保存修改'}
               </button>
               <button
                 onClick={() => setEditing(false)}
-                className="px-6 py-2 border border-gray-300 text-gray-600 text-sm hover:bg-gray-100"
+                className="px-6 py-2 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 取消
               </button>
@@ -251,15 +251,15 @@ export default function ProblemDetailPage() {
           <>
             {problem.content && (
               <div className="mt-4">
-                <h2 className="text-lg font-semibold mb-2 text-gray-700">题目内容</h2>
+                <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">题目内容</h2>
                 <MarkdownRenderer content={problem.content} />
               </div>
             )}
 
             {problem.solution !== undefined && problem.solution !== '' && (
               <div className="mt-6">
-                <h2 className="text-lg font-semibold mb-2 text-gray-700">出题人题解</h2>
-                <MarkdownRenderer content={problem.solution || '(空)'} className="bg-blue-50 p-4 border border-blue-200" />
+                <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">出题人题解</h2>
+                <MarkdownRenderer content={problem.solution || '(空)'} className="bg-blue-50 dark:bg-blue-900/30 p-4 border border-blue-200 dark:border-blue-800" />
               </div>
             )}
           </>
@@ -268,34 +268,34 @@ export default function ProblemDetailPage() {
 
       {/* Verifier solution — editable for the verifier, read-only for other members */}
       {problem.can_submit_verifier_solution ? (
-        <div className="bg-white border border-gray-300 p-6">
-          <h2 className="text-lg font-semibold mb-2 text-gray-700">验题人题解</h2>
-          <p className="text-sm text-gray-500 mb-3">您已认领此题，可以编写验题人题解（出题人题解不可见）</p>
+        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">验题人题解</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">您已认领此题，可以编写验题人题解（出题人题解不可见）</p>
           <textarea
             value={verifierSolution}
             onChange={e => setVerifierSolution(e.target.value)}
             rows={10}
-            className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 font-mono text-sm mb-3"
+            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 font-mono text-sm mb-3"
             placeholder="# 验题人题解\n\n请在这里编写您的题解..."
           />
           <button
             onClick={handleSaveVerifierSolution}
-            className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700"
+            className="px-4 py-2 bg-gray-800 dark:bg-gray-700 text-white text-sm hover:bg-gray-700 dark:hover:bg-gray-600"
           >
             {vsSaved ? '已保存!' : '保存题解'}
           </button>
         </div>
       ) : problem.verifier_solution && problem.claimed_by ? (
-        <div className="bg-white border border-gray-300 p-6">
-          <h2 className="text-lg font-semibold mb-2 text-gray-700">验题人题解</h2>
-          <p className="text-sm text-gray-500 mb-3">此题目已被认领，以下为验题人题解</p>
-          <MarkdownRenderer content={problem.verifier_solution} className="bg-purple-50 p-4 border border-purple-200" />
+        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">验题人题解</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">此题目已被认领，以下为验题人题解</p>
+          <MarkdownRenderer content={problem.verifier_solution} className="bg-purple-50 dark:bg-purple-900/30 p-4 border border-purple-200 dark:border-purple-800" />
         </div>
       ) : null}
 
       {/* Claimed by info (no verifier solution yet) */}
       {problem.claimed_by && !problem.verifier_solution && !problem.can_submit_verifier_solution && (
-        <div className="mt-4 text-sm text-gray-500">
+        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
           此题目已被认领验题
         </div>
       )}

@@ -25,8 +25,8 @@ export default function AuthCallbackPage() {
   }, [location, navigate])
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <p className="text-gray-500">登录中...</p>
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-950">
+      <p className="text-gray-500 dark:text-gray-400">登录中...</p>
     </div>
   )
 }

@@ -80,44 +80,44 @@ const wrapLanguages = new Set(['', 'text', 'plain', 'plaintext', 'txt', 'console
 
 const components: Components = {
   h1: ({ children }) => (
-    <h1 className="text-2xl font-bold text-gray-900 mt-6 mb-4 pb-2 border-b border-gray-200">{children}</h1>
+    <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-6 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-xl font-bold text-gray-800 mt-5 mb-3">{children}</h2>
+    <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mt-5 mb-3">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-lg font-semibold text-gray-800 mt-4 mb-2">{children}</h3>
+    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mt-4 mb-2">{children}</h3>
   ),
   h4: ({ children }) => (
-    <h4 className="text-base font-semibold text-gray-700 mt-3 mb-1">{children}</h4>
+    <h4 className="text-base font-semibold text-gray-700 dark:text-gray-200 mt-3 mb-1">{children}</h4>
   ),
   h5: ({ children }) => (
-    <h5 className="text-sm font-semibold text-gray-600 mt-2 mb-1">{children}</h5>
+    <h5 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mt-2 mb-1">{children}</h5>
   ),
   h6: ({ children }) => (
-    <h6 className="text-xs font-semibold text-gray-500 mt-2 mb-1">{children}</h6>
+    <h6 className="text-xs font-semibold text-gray-500 dark:text-gray-400 mt-2 mb-1">{children}</h6>
   ),
   p: ({ children }) => (
-    <p className="text-sm text-gray-700 mb-3 leading-relaxed">{children}</p>
+    <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 leading-relaxed">{children}</p>
   ),
   ul: ({ children }) => (
-    <ul className="list-disc pl-5 mb-3 space-y-1 text-sm text-gray-700">{children}</ul>
+    <ul className="list-disc pl-5 mb-3 space-y-1 text-sm text-gray-700 dark:text-gray-300">{children}</ul>
   ),
   ol: ({ children }) => (
-    <ol className="list-decimal pl-5 mb-3 space-y-1 text-sm text-gray-700">{children}</ol>
+    <ol className="list-decimal pl-5 mb-3 space-y-1 text-sm text-gray-700 dark:text-gray-300">{children}</ol>
   ),
   li: ({ children }) => (
-    <li className="text-sm text-gray-700">{children}</li>
+    <li className="text-sm text-gray-700 dark:text-gray-300">{children}</li>
   ),
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300">
       {children}
     </a>
   ),
   code: ({ className, children, ...props }) => {
     // Inline code: no className
     if (!className) {
-      return <code className="bg-gray-100 text-red-600 px-1 py-0.5 text-xs rounded">{children}</code>
+      return <code className="bg-gray-100 dark:bg-gray-800 text-red-600 dark:text-red-400 px-1 py-0.5 text-xs rounded">{children}</code>
     }
     // Block code: className is "language-xxx code-highlight"
     const langMatch = className.match(/language-(\S+)/)
@@ -131,20 +131,20 @@ const components: Components = {
   },
   pre: ({ children }) => <>{children}</>,
   blockquote: ({ children }) => (
-    <blockquote className="border-l-4 border-gray-300 pl-4 italic text-gray-600 mb-3">{children}</blockquote>
+    <blockquote className="border-l-4 border-gray-300 dark:border-gray-700 pl-4 italic text-gray-600 dark:text-gray-400 mb-3">{children}</blockquote>
   ),
   table: ({ children }) => (
     <div className="overflow-x-auto mb-3">
-      <table className="min-w-full border-collapse border border-gray-300 text-sm">{children}</table>
+      <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-700 text-sm">{children}</table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="border border-gray-300 bg-gray-100 px-3 py-2 text-left font-semibold text-gray-700">{children}</th>
+    <th className="border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-200">{children}</th>
   ),
   td: ({ children }) => (
-    <td className="border border-gray-300 px-3 py-2 text-gray-700">{children}</td>
+    <td className="border border-gray-300 dark:border-gray-700 px-3 py-2 text-gray-700 dark:text-gray-300">{children}</td>
   ),
-  hr: () => <hr className="my-6 border-gray-200" />,
+  hr: () => <hr className="my-6 border-gray-200 dark:border-gray-700" />,
   strong: ({ children }) => <strong className="font-bold">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
 }

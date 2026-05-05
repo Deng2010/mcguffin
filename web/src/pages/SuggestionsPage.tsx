@@ -14,10 +14,10 @@ const statusLabel: Record<SuggestionStatus, string> = {
 }
 
 const statusColor: Record<SuggestionStatus, string> = {
-  open: 'bg-blue-100 text-blue-700 border-blue-200',
-  in_progress: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-  resolved: 'bg-green-100 text-green-700 border-green-200',
-  closed: 'bg-gray-200 text-gray-600 border-gray-300',
+  open: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800',
+  in_progress: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-800',
+  resolved: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800',
+  closed: 'bg-gray-200 text-gray-600 border-gray-300 dark:bg-gray-700 dark:text-gray-400 dark:border-gray-700',
 }
 
 export default function SuggestionsPage() {
@@ -112,29 +112,29 @@ export default function SuggestionsPage() {
     } catch (err) { alert(`删除失败: ${err}`) }
   }
 
-  if (loading) return <div className="p-6 text-center text-gray-400 py-12">加载中...</div>
+  if (loading) return <div className="p-6 text-center text-gray-400 dark:text-gray-500 py-12">加载中...</div>
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">建议</h1>
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">建议</h1>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700"
+          className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
         >
           {showForm ? '取消' : '提交建议'}
         </button>
       </div>
 
       {showForm && (
-        <div className="mb-6 p-4 bg-white border border-gray-300">
+        <div className="mb-6 p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700">
           <div className="mb-3">
             <input
               type="text"
               placeholder="建议标题"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 text-sm focus:outline-none focus:border-gray-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 text-sm focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
             />
           </div>
           <div className="mb-3">
@@ -143,13 +143,13 @@ export default function SuggestionsPage() {
               value={content}
               onChange={e => setContent(e.target.value)}
               rows={6}
-              className="w-full px-3 py-2 border border-gray-300 text-sm focus:outline-none focus:border-gray-500 resize-y"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 text-sm focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 resize-y bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
             />
           </div>
           <button
             onClick={handleCreate}
             disabled={submitting || !title.trim()}
-            className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 disabled:opacity-50"
+            className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
           >
             {submitting ? '提交中...' : '提交'}
           </button>
@@ -157,7 +157,7 @@ export default function SuggestionsPage() {
       )}
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-gray-300 mb-6">
+      <div className="flex items-center gap-1 border-b border-gray-300 dark:border-gray-700 mb-6">
         {[
           { id: 'all' as TabId, label: '全部', count: suggestions.length },
           { id: 'open' as TabId, label: '待处理', count: counts.open },
@@ -170,13 +170,13 @@ export default function SuggestionsPage() {
             onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.id
-                ? 'border-gray-800 text-gray-900'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
+                ? 'border-gray-800 dark:border-gray-100 text-gray-900 dark:text-gray-100'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100'
             }`}
           >
             {tab.label}
             <span className={`ml-1.5 px-1.5 py-0.5 text-xs rounded ${
-              activeTab === tab.id ? 'bg-gray-800 text-white' : 'bg-gray-200 text-gray-600'
+              activeTab === tab.id ? 'bg-gray-800 dark:bg-gray-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
             }`}>
               {tab.count}
             </span>
@@ -187,16 +187,16 @@ export default function SuggestionsPage() {
       {/* Suggestion List */}
       <div className="space-y-3">
         {filteredSuggestions.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">暂无建议</div>
+          <div className="text-center py-12 text-gray-400 dark:text-gray-500">暂无建议</div>
         ) : (
           filteredSuggestions.map(s => (
-            <div key={s.id} className="bg-white border border-gray-300">
+            <div key={s.id} className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700">
               <div className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span
-                        className="font-medium text-gray-800 cursor-pointer hover:text-gray-600"
+                        className="font-medium text-gray-800 dark:text-gray-100 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300"
                         onClick={() => setExpandedId(expandedId === s.id ? null : s.id)}
                       >
                         {s.title}
@@ -205,7 +205,7 @@ export default function SuggestionsPage() {
                         {statusLabel[s.status as SuggestionStatus]}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-xs text-gray-400 dark:text-gray-500">
                       {s.author_name} · {new Date(s.created_at).toLocaleDateString('zh-CN')}
                     </div>
                   </div>
@@ -214,7 +214,7 @@ export default function SuggestionsPage() {
                       <select
                         value={s.status}
                         onChange={e => handleUpdateStatus(s.id, e.target.value as SuggestionStatus)}
-                        className="text-xs border border-gray-300 px-2 py-1 bg-white focus:outline-none"
+                        className="text-xs border border-gray-300 dark:border-gray-700 px-2 py-1 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:outline-none"
                       >
                         <option value="open">待处理</option>
                         <option value="in_progress">处理中</option>
@@ -225,7 +225,7 @@ export default function SuggestionsPage() {
                     {(canManage || s.author_id === user?.id) && (
                       <button
                         onClick={() => handleDelete(s.id)}
-                        className="text-xs px-2 py-1 text-red-600 border border-red-300 hover:bg-red-50"
+                        className="text-xs px-2 py-1 text-red-600 border border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900/20"
                       >
                         删除
                       </button>
@@ -235,8 +235,8 @@ export default function SuggestionsPage() {
 
                 {/* Expanded content */}
                 {expandedId === s.id && (
-                  <div className="mt-3 pt-3 border-t border-gray-200">
-                    <div className="prose prose-sm max-w-none text-gray-700">
+                  <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <div className="prose prose-sm max-w-none text-gray-700 dark:text-gray-200">
                       <MarkdownRenderer content={s.content} />
                     </div>
 
@@ -244,22 +244,22 @@ export default function SuggestionsPage() {
                     {s.replies && s.replies.length > 0 && (
                       <div className="mt-4 space-y-2">
                         {s.replies.map(reply => (
-                          <div key={reply.id} className="p-3 bg-gray-50 border border-gray-200">
+                          <div key={reply.id} className="p-3 bg-gray-50 border border-gray-200 dark:bg-gray-800/50 dark:border-gray-700">
                             <div className="flex items-center justify-between mb-1">
                               <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-gray-700">{reply.author_name}</span>
-                                <span className="text-xs text-gray-400">{new Date(reply.created_at).toLocaleDateString('zh-CN')}</span>
+                                <span className="text-xs font-medium text-gray-700 dark:text-gray-200">{reply.author_name}</span>
+                                <span className="text-xs text-gray-400 dark:text-gray-500">{new Date(reply.created_at).toLocaleDateString('zh-CN')}</span>
                               </div>
                               {(canManage || reply.author_id === user?.id) && (
                                 <button
                                   onClick={() => handleDeleteReply(s.id, reply.id)}
-                                  className="text-xs text-red-400 hover:text-red-600"
+                                  className="text-xs text-red-400 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
                                 >
                                   删除
                                 </button>
                               )}
                             </div>
-                            <div className="text-sm text-gray-700 prose prose-sm max-w-none">
+                            <div className="text-sm text-gray-700 dark:text-gray-300 prose prose-sm max-w-none">
                               <MarkdownRenderer content={reply.content} />
                             </div>
                           </div>
@@ -276,20 +276,20 @@ export default function SuggestionsPage() {
                               value={replyContent}
                               onChange={e => setReplyContent(e.target.value)}
                               rows={3}
-                              className="w-full px-3 py-2 border border-gray-300 text-sm focus:outline-none focus:border-gray-500 resize-y mb-2"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 text-sm focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 resize-y mb-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
                               placeholder="输入回复（支持 Markdown）"
                             />
                             <div className="flex gap-2">
                               <button
                                 onClick={() => handleReply(s.id)}
                                 disabled={!replyContent.trim()}
-                                className="px-3 py-1 bg-gray-800 text-white text-xs hover:bg-gray-700 disabled:opacity-50"
+                                className="px-3 py-1 bg-gray-800 text-white text-xs hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
                               >
                                 发送
                               </button>
                               <button
                                 onClick={() => { setReplyingId(null); setReplyContent('') }}
-                                className="px-3 py-1 text-xs text-gray-600 border border-gray-300 hover:bg-gray-100"
+                                className="px-3 py-1 text-xs text-gray-600 border border-gray-300 hover:bg-gray-100 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-800"
                               >
                                 取消
                               </button>
@@ -298,7 +298,7 @@ export default function SuggestionsPage() {
                         ) : (
                           <button
                             onClick={() => setReplyingId(s.id)}
-                            className="text-xs text-gray-500 hover:text-gray-700"
+                            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                           >
                             回复
                           </button>

@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
 import { SiteProvider, useSite } from './SiteContext'
+import { DarkModeProvider } from './DarkModeContext'
 import Navbar from './components/Navbar'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
@@ -22,9 +23,9 @@ function Footer() {
   const { siteInfo } = useSite()
   const version = siteInfo?.version || '0.1.0'
   return (
-    <footer className="border-t border-gray-200 bg-white mt-12 py-4 px-6">
-      <div className="max-w-6xl mx-auto text-center text-xs text-gray-400">
-        Powered by <a href="https://github.com/Deng2010/mcguffin" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-gray-600 underline">McGuffin</a> v{version}
+    <footer className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 mt-12 py-4 px-6">
+      <div className="max-w-6xl mx-auto text-center text-xs text-gray-400 dark:text-gray-500">
+        Powered by <a href="https://github.com/Deng2010/mcguffin" target="_blank" rel="noopener noreferrer" className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 underline">McGuffin</a> v{version}
       </div>
     </footer>
   )
@@ -33,7 +34,7 @@ function Footer() {
 function AppContent() {
   return (
     <HashRouter>
-      <div className="min-h-screen bg-gray-100 flex flex-col">
+      <div className="min-h-screen bg-gray-100 dark:bg-gray-950 flex flex-col">
         <Navbar />
         <div className="flex-1">
           <Routes>
@@ -91,10 +92,12 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <SiteProvider>
-        <AppContent />
-      </SiteProvider>
-    </AuthProvider>
+    <DarkModeProvider>
+      <AuthProvider>
+        <SiteProvider>
+          <AppContent />
+        </SiteProvider>
+      </AuthProvider>
+    </DarkModeProvider>
   )
 }

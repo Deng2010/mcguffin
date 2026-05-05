@@ -124,32 +124,32 @@ export default function AdminBackupPage() {
   }
 
   if (!isSuperadmin) {
-    return <div className="p-6 text-center py-12 text-gray-400">权限不足</div>
+    return <div className="p-6 text-center py-12 text-gray-400 dark:text-gray-500">权限不足</div>
   }
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-800 mb-2">备份与导出</h1>
-      <p className="text-sm text-gray-500 mb-6">创建和管理数据备份，或导出当前数据文件和配置文件。</p>
+      <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">备份与导出</h1>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">创建和管理数据备份，或导出当前数据文件和配置文件。</p>
 
       {msg && (
         <div className={`mb-4 p-3 text-sm border ${
-          msg.startsWith('✅') ? 'bg-green-50 border-green-300 text-green-700'
-          : msg.includes('失败') ? 'bg-red-50 border-red-300 text-red-700'
-          : 'bg-blue-50 border-blue-300 text-blue-700'
+          msg.startsWith('✅') ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300'
+          : msg.includes('失败') ? 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300'
+          : 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-700'
         }`}>
           {msg}
         </div>
       )}
 
       {/* ====== Export Section ====== */}
-      <div className="bg-white border border-gray-300 p-5 mb-6">
-        <h2 className="text-base font-semibold text-gray-800 mb-3 pb-2 border-b border-gray-200">导出</h2>
-        <p className="text-xs text-gray-500 mb-4">导出当前数据或配置文件，下载到本地。</p>
+      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-5 mb-6">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">导出</h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">导出当前数据或配置文件，下载到本地。</p>
         <div className="flex items-center gap-3">
           <button
             onClick={handleExportData}
-            className="px-5 py-2 bg-white border border-gray-800 text-gray-800 text-sm font-medium hover:bg-gray-100"
+            className="px-5 py-2 bg-white dark:bg-gray-900 border border-gray-800 dark:border-gray-600 text-gray-800 dark:text-gray-200 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
           >
             <span className="flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -160,7 +160,7 @@ export default function AdminBackupPage() {
           </button>
           <button
             onClick={handleExportConfig}
-            className="px-5 py-2 bg-white border border-gray-300 text-gray-700 text-sm hover:bg-gray-100"
+            className="px-5 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-200 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
           >
             <span className="flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -173,65 +173,65 @@ export default function AdminBackupPage() {
       </div>
 
       {/* ====== Backup Section ====== */}
-      <div className="bg-white border border-gray-300 p-5 mb-6">
-        <h2 className="text-base font-semibold text-gray-800 mb-3 pb-2 border-b border-gray-200">备份管理</h2>
+      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-5 mb-6">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">备份管理</h2>
 
         <div className="flex items-center gap-3 mb-4">
           <button
             onClick={handleCreate}
             disabled={creating}
-            className="px-5 py-2 bg-gray-800 text-white text-sm font-medium hover:bg-gray-700 disabled:opacity-50"
+            className="px-5 py-2 bg-gray-800 dark:bg-gray-700 text-white text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
           >
             {creating ? '创建中...' : '创建备份'}
           </button>
           <button
             onClick={loadBackups}
             disabled={loading}
-            className="px-5 py-2 border border-gray-300 text-gray-600 text-sm hover:bg-gray-100 disabled:opacity-50"
+            className="px-5 py-2 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
           >
             刷新
           </button>
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-gray-400">加载中...</div>
+          <div className="text-center py-8 text-gray-400 dark:text-gray-500">加载中...</div>
         ) : backups.length === 0 ? (
-          <div className="text-center py-8 border border-dashed border-gray-300">
-            <p className="text-gray-400">暂无备份</p>
-            <p className="text-xs text-gray-400 mt-1">点击上方「创建备份」按钮创建第一个备份</p>
+          <div className="text-center py-8 border border-dashed border-gray-300 dark:border-gray-700">
+            <p className="text-gray-400 dark:text-gray-500">暂无备份</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">点击上方「创建备份」按钮创建第一个备份</p>
           </div>
         ) : (
           <div className="space-y-2">
             {backups.map(b => (
-              <div key={b.name} className="flex items-center justify-between p-4 bg-gray-50 border border-gray-200 hover:bg-gray-100">
+              <div key={b.name} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-400 dark:text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                     </svg>
-                    <span className="font-medium text-gray-800 truncate text-sm">{b.name}</span>
+                    <span className="font-medium text-gray-800 dark:text-gray-100 truncate text-sm">{b.name}</span>
                   </div>
-                  <div className="text-xs text-gray-500 mt-0.5 ml-7">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 ml-7">
                     {formatSize(b.size)} · {b.modified}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 ml-4 shrink-0">
                   <button
                     onClick={() => handleRestore(b.name)}
-                    className="px-3 py-1.5 text-xs border border-green-600 text-green-700 hover:bg-green-50"
+                    className="px-3 py-1.5 text-xs border border-green-600 dark:border-green-800 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
                   >
                     恢复
                   </button>
                   <button
                     onClick={() => handleDelete(b.name)}
-                    className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50"
+                    className="px-3 py-1.5 text-xs border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                   >
                     删除
                   </button>
                 </div>
               </div>
             ))}
-            <p className="text-xs text-gray-400 mt-3">
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
               共 {backups.length} 个备份 · 恢复操作会自动创建当前数据的 `pre_restore_` 安全快照
             </p>
           </div>
