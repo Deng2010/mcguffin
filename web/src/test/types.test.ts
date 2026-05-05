@@ -7,6 +7,7 @@ describe('rolePermissions', () => {
     const allPermissions: Permission[] = [
       'view_showcase', 'view_team', 'manage_team', 'submit_problem',
       'view_problems', 'approve_problem', 'edit_contests', 'manage_site',
+      'view_suggestions', 'manage_announcements',
     ]
     allPermissions.forEach(p => {
       expect(permissions).toContain(p)
