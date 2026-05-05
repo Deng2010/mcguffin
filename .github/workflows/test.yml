@@ -145,22 +145,21 @@ jobs:
       - name: 🧪 Smoke test API
         if: runner.os != 'Windows'
         shell: bash
-        working-directory: server/target/release
+        working-directory: server
         env:
           ADMIN_PASSWORD: ci_test_pass2025
+          SITE_URL: http://localhost:3000
         run: |
-          EXT=""
-          [ "${{ runner.os }}" = "Windows" ] && EXT=".exe"
+          BIN="target/release/mcguffin-server"
 
           # Start server in background
           echo "::group::Starting server..."
-          PORT=9876
-          ./mcguffin-server${EXT} &
+          $BIN &
           SERVER_PID=$!
 
           # Wait for server to be ready (max 30s)
           for i in $(seq 1 30); do
-            if curl -s "http://localhost:$PORT/api/site/info" > /dev/null 2>&1; then
+            if curl -s "http://localhost:3000/api/site/info" > /dev/null 2>&1; then
               echo "Server ready after ${i}s"
               break
             fi
@@ -169,28 +168,28 @@ jobs:
 
           # Test public endpoints
           echo "::group::GET /api/site/info"
-          curl -s "http://localhost:$PORT/api/site/info" | python3 -m json.tool
+          curl -s "http://localhost:3000/api/site/info" | python3 -m json.tool
           echo "::endgroup::"
 
           echo "::group::GET /api/site/difficulties"
-          curl -s "http://localhost:$PORT/api/site/difficulties" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Difficulty levels: {len(d[\"levels\"])}')"
+          curl -s "http://localhost:3000/api/site/difficulties" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Difficulty levels: {len(d[\"levels\"])}')"
           echo "::endgroup::"
 
           echo "::group::GET /api/announcements"
-          curl -s "http://localhost:$PORT/api/announcements" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Announcements: {len(d)}')"
+          curl -s "http://localhost:3000/api/announcements" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Announcements: {len(d)}')"
           echo "::endgroup::"
 
           echo "::group::GET /api/problems"
-          curl -s "http://localhost:$PORT/api/problems" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Problems: {len(d)}')"
+          curl -s "http://localhost:3000/api/problems" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Problems: {len(d)}')"
           echo "::endgroup::"
 
           echo "::group::GET /api/contests"
-          curl -s "http://localhost:$PORT/api/contests" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Contests: {len(d)}')"
+          curl -s "http://localhost:3000/api/contests" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Contests: {len(d)}')"
           echo "::endgroup::"
 
           # Test admin login + authenticated endpoint
           echo "::group::POST /api/auth/admin-login"
-          LOGIN_RESP=$(curl -s -X POST "http://localhost:$PORT/api/auth/admin-login" \
+          LOGIN_RESP=$(curl -s -X POST "http://localhost:3000/api/auth/admin-login" \
             -H 'Content-Type: application/json' \
             -d '{"password":"ci_test_pass2025"}')
           TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
@@ -204,19 +203,19 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::GET /api/user/me (authenticated)"
-          curl -s "http://localhost:$PORT/api/user/me" -H "Authorization: Bearer $TOKEN" | \
+          curl -s "http://localhost:3000/api/user/me" -H "Authorization: Bearer $TOKEN" | \
             python3 -c "import sys,json; u=json.load(sys.stdin); print(f'User: {u.get(\"display_name\")} ({u.get(\"role\")})')"
           echo "::endgroup::"
 
           echo "::group::GET /api/team/members (authenticated)"
-          curl -s "http://localhost:$PORT/api/team/members" -H "Authorization: Bearer $TOKEN" | \
+          curl -s "http://localhost:3000/api/team/members" -H "Authorization: Bearer $TOKEN" | \
             python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Team members: {len(d)}')"
           echo "::endgroup::"
 
           # Cleanup
           kill $SERVER_PID 2>/dev/null || true
           wait $SERVER_PID 2>/dev/null || true
-          echo "::group::✅ All API smoke tests passed"
+          echo "✅ All API smoke tests passed"
 
       # ── Upload ──────────────────────────────────────────
       - name: 📦 Upload nightly build
