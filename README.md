@@ -134,6 +134,20 @@ bun run dev
 
 ---
 
+## 🌙 Nightly Builds
+
+每次推送到 `main` 分支，CI 会自动构建三个平台的 nightly 版本并上传为 Artifact：
+
+| 平台 | 构建产物 | Artifact 名称 |
+|------|---------|--------------|
+| Linux | `mcguffin-server`, `mcguffin` CLI, `web/dist/` | `mcguffin-nightly-Linux-<sha>` |
+| macOS | 同上 | `mcguffin-nightly-macOS-<sha>` |
+| Windows | `mcguffin-server.exe`, `mcguffin.exe`, `web/dist/` | `mcguffin-nightly-Windows-<sha>` |
+
+Artifact 可在 Actions 页面下载，保留 7 天。每次构建前会先通过完整的测试流水线（前端 + 后端，三平台），并通过 CLI `--help` 验证二进制可用性。
+
+---
+
 ## 📁 项目结构
 
 ```

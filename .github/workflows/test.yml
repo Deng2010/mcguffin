@@ -127,6 +127,20 @@ jobs:
         working-directory: server
         run: cargo build --release
 
+      # ── Verify ──────────────────────────────────────────
+      - name: 🔍 Verify CLI binary
+        working-directory: server/target/release
+        shell: bash
+        run: |
+          EXT=""
+          [ "${{ runner.os }}" = "Windows" ] && EXT=".exe"
+          echo "::group::Binary info"
+          ls -lh "mcguffin${EXT}" "mcguffin-server${EXT}"
+          echo "::endgroup::"
+          echo "::group::CLI --help"
+          ./mcguffin${EXT} --help
+          echo "::endgroup::"
+
       # ── Upload ──────────────────────────────────────────
       - name: 📦 Upload nightly build
         uses: actions/upload-artifact@v4
