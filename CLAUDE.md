@@ -9,6 +9,11 @@ McGuffin is a team collaboration tool for algorithm contest problem-setters. Rea
 ## Build & Run
 
 ```bash
+# Quick restart (rebuilds both + restarts server)
+./restart.sh                   # full rebuild + restart
+./restart.sh --backend-only    # skip frontend rebuild
+./restart.sh --frontend-only   # skip backend rebuild
+
 # Backend
 cd server
 cargo check              # type-check only (fast)
