@@ -52,7 +52,7 @@ jobs:
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
@@ -113,7 +113,7 @@ jobs:
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
@@ -187,12 +187,12 @@ jobs:
           curl -s "http://localhost:3000/api/contests" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Contests: {len(d)}')"
           echo "::endgroup::"
 
-          # Test admin login + authenticated endpoint
-          echo "::group::POST /api/auth/admin-login"
-          LOGIN_RESP=$(curl -s -X POST "http://localhost:3000/api/auth/admin-login" \
+          # Test merged login endpoint (no identifier = admin backward compatible)
+          echo "::group::POST /api/auth/login (admin)"
+          LOGIN_RESP=$(curl -s -X POST "http://localhost:3000/api/auth/login" \
             -H 'Content-Type: application/json' \
             -d '{"password":"ci_test_pass2025"}')
-          TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null)
+          TOKEN=$(echo "$LOGIN_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))")
           if [ -n "$TOKEN" ]; then
             echo "Admin login OK (token received)"
           else
@@ -203,12 +203,12 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::GET /api/user/me (authenticated)"
-          curl -s "http://localhost:3000/api/user/me" -H "Authorization: Bearer $TOKEN" | \
+          curl -s "http://localhost:3000/api/user/me" -H "Authorization: Bearer ${TOKEN}" | \
             python3 -c "import sys,json; u=json.load(sys.stdin); print(f'User: {u.get(\"display_name\")} ({u.get(\"role\")})')"
           echo "::endgroup::"
 
           echo "::group::GET /api/team/members (authenticated)"
-          curl -s "http://localhost:3000/api/team/members" -H "Authorization: Bearer $TOKEN" | \
+          curl -s "http://localhost:3000/api/team/members" -H "Authorization: Bearer ${TOKEN}" | \
             python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Team members: {len(d)}')"
           echo "::endgroup::"
 
