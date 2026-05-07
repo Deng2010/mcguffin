@@ -88,12 +88,12 @@ pub async fn apply_to_join(
 ) -> Json<ApplyResponse> {
     if let Some(token) = get_token_from_headers(&headers) {
         let sessions = state.sessions.read().await;
-        if let Some(user_id) = sessions.get(&token) {
-            if user_id == ADMIN_USER_ID {
+        if let Some(entry) = sessions.get(&token) {
+            if entry.user_id == ADMIN_USER_ID {
                 return Json(ApplyResponse { success: false, message: "管理员无需申请".to_string() });
             }
             let users = state.users.read().await;
-            if let Some(user) = users.get(user_id) {
+            if let Some(user) = users.get(&entry.user_id) {
                 if user.team_status == "joined" {
                     return Json(ApplyResponse { success: false, message: "您已是团队成员".to_string() });
                 }
@@ -114,7 +114,7 @@ pub async fn apply_to_join(
                 state.join_requests.write().await.insert(request.id.clone(), request);
                 
                 drop(users);
-                if let Some(u) = state.users.write().await.get_mut(user_id) {
+                if let Some(u) = state.users.write().await.get_mut(&entry.user_id) {
                     u.team_status = "pending".to_string();
                     u.role = "pending".to_string();
                 }
@@ -137,7 +137,8 @@ pub async fn review_application(
 ) -> Json<ReviewResponse> {
     if let Some(token) = get_token_from_headers(&headers) {
         let sessions = state.sessions.read().await;
-        if let Some(user_id) = sessions.get(&token) {
+        if let Some(entry) = sessions.get(&token) {
+            let user_id = &entry.user_id;
             let users = state.users.read().await;
             if users.contains_key(user_id) {
                 if !is_admin(&state, user_id).await {
@@ -214,7 +215,8 @@ pub async fn change_member_role(
     }
     if let Some(token) = get_token_from_headers(&headers) {
         let sessions = state.sessions.read().await;
-        if let Some(admin_user_id) = sessions.get(&token) {
+        if let Some(entry) = sessions.get(&token) {
+            let admin_user_id = &entry.user_id;
             let users = state.users.read().await;
             if let Some(_admin) = users.get(admin_user_id) {
                 if !is_admin(&state, admin_user_id).await {
@@ -269,7 +271,8 @@ pub async fn remove_member(
     }
     if let Some(token) = get_token_from_headers(&headers) {
         let sessions = state.sessions.read().await;
-        if let Some(admin_user_id) = sessions.get(&token) {
+        if let Some(entry) = sessions.get(&token) {
+            let admin_user_id = &entry.user_id;
             let users = state.users.read().await;
             if users.contains_key(admin_user_id) {
                 if !is_admin(&state, admin_user_id).await {

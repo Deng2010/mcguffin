@@ -76,7 +76,7 @@ pub async fn update_profile(
     let user_id = {
         let sessions = state.sessions.read().await;
         match sessions.get(&token) {
-            Some(uid) => uid.clone(),
+            Some(entry) => entry.user_id.clone(),
             None => return Json(serde_json::json!({"success": false, "message": "无效的会话"})),
         }
     };
@@ -140,8 +140,8 @@ pub async fn verify_token(
 ) -> Json<VerifyResponse> {
     if let Some(token) = get_token_from_headers(&headers) {
         let sessions = state.sessions.read().await;
-        if let Some(user_id) = sessions.get(&token) {
-            return Json(VerifyResponse { valid: true, user_id: user_id.clone() });
+        if let Some(entry) = sessions.get(&token) {
+            return Json(VerifyResponse { valid: true, user_id: entry.user_id.clone() });
         }
     }
     Json(VerifyResponse { valid: false, user_id: String::new() })
@@ -155,7 +155,6 @@ pub async fn logout(
 ) -> Json<LogoutResponse> {
     if let Some(token) = get_token_from_headers(&headers) {
         state.sessions.write().await.remove(&token);
-        state.session_times.write().await.remove(&token);
         state.save().await;
         Json(LogoutResponse { success: true })
     } else {

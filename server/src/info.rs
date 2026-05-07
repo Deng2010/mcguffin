@@ -36,7 +36,7 @@ pub async fn update_site_description(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     // Check admin auth
     let token = get_token_from_headers(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let user_id = state.sessions.read().await.get(&token).cloned().ok_or(StatusCode::UNAUTHORIZED)?;
+    let user_id = state.sessions.read().await.get(&token).map(|e| e.user_id.clone()).ok_or(StatusCode::UNAUTHORIZED)?;
     let users = state.users.read().await;
     let user = users.get(&user_id).ok_or(StatusCode::UNAUTHORIZED)?;
     if user.role != "admin" && user.role != "superadmin" {

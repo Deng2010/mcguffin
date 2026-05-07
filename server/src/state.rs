@@ -1,6 +1,6 @@
-use crate::types::{Announcement, Contest, JoinRequest, Notification, Problem, Suggestion, TeamMember, User, AppConfig};
+use crate::types::{Announcement, Contest, JoinRequest, Notification, Problem, SessionEntry, Suggestion, TeamMember, User, AppConfig};
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -15,9 +15,11 @@ const CONFIG_FILE: &str = "/usr/share/mcguffin/config.toml";
 #[derive(Serialize, Deserialize)]
 struct SavedData {
     users: HashMap<String, User>,
-    sessions: HashMap<String, String>,
+    /// token → SessionEntry (contains user_id + last_active).
+    /// Custom deserializer handles both old format (token→String) and new (token→SessionEntry).
+    #[serde(deserialize_with = "deserialize_sessions", default)]
+    sessions: HashMap<String, SessionEntry>,
     #[serde(default)]
-    session_times: HashMap<String, DateTime<Utc>>,
     refresh_tokens: HashMap<String, String>,
     team_members: HashMap<String, TeamMember>,
     problems: HashMap<String, Problem>,
@@ -38,13 +40,55 @@ struct SavedData {
     showcase_contest_ids: Vec<String>,
 }
 
-// ============== Application State ==============
+/// Custom deserializer for sessions that handles both old format
+/// (`HashMap<String, String>` — just user_id) and new format
+/// (`HashMap<String, SessionEntry>` — object with user_id + last_active).
+fn deserialize_sessions<'de, D>(deserializer: D) -> Result<HashMap<String, SessionEntry>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+    let value = serde_json::Value::deserialize(deserializer)?;
+
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut sessions = HashMap::new();
+            for (token, val) in map {
+                match val {
+                    // Old format: "token" → "user_id" (string)
+                    serde_json::Value::String(user_id) => {
+                        sessions.insert(token, SessionEntry {
+                            user_id,
+                            last_active: Utc::now(),
+                        });
+                    }
+                    // New format: "token" → {"user_id": "...", "last_active": "..."}
+                    serde_json::Value::Object(obj) => {
+                        let user_id = obj.get("user_id")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .ok_or_else(|| D::Error::custom("missing user_id in session entry"))?;
+                        let last_active = obj.get("last_active")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(Utc::now);
+                        sessions.insert(token, SessionEntry { user_id, last_active });
+                    }
+                    _ => {}
+                }
+            }
+            Ok(sessions)
+        }
+        _ => Ok(HashMap::new()),
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
     pub users: Arc<RwLock<HashMap<String, User>>>,
-    pub sessions: Arc<RwLock<HashMap<String, String>>>,
-    pub session_times: Arc<RwLock<HashMap<String, DateTime<Utc>>>>,
+    /// token → SessionEntry (user_id + last_active timestamp)
+    pub sessions: Arc<RwLock<HashMap<String, SessionEntry>>>,
     pub refresh_tokens: Arc<RwLock<HashMap<String, String>>>,
     pub team_members: Arc<RwLock<HashMap<String, TeamMember>>>,
     pub problems: Arc<RwLock<HashMap<String, Problem>>>,
@@ -94,13 +138,13 @@ impl AppState {
             .ok()
             .and_then(|s| serde_json::from_str::<SavedData>(&s).ok());
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, session_times, showcase_problem_ids, showcase_contest_ids) =
+        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, showcase_problem_ids, showcase_contest_ids) =
             if let Some(data) = saved {
                 tracing::info!("Loaded state from {}", data_file);
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.session_times, data.showcase_problem_ids, data.showcase_contest_ids)
+                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids)
             } else {
                 tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new(), Vec::new(), Vec::new())
+                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), Vec::new(), Vec::new())
             };
 
         // Always ensure superadmin user exists AND has correct role
@@ -139,7 +183,6 @@ impl AppState {
         Self {
             users: Arc::new(RwLock::new(users)),
             sessions: Arc::new(RwLock::new(sessions)),
-            session_times: Arc::new(RwLock::new(session_times)),
             refresh_tokens: Arc::new(RwLock::new(refresh_tokens)),
             team_members: Arc::new(RwLock::new(team_members)),
             problems: Arc::new(RwLock::new(problems)),
@@ -178,7 +221,6 @@ impl AppState {
         let data = SavedData {
             users: self.users.read().await.clone(),
             sessions: self.sessions.read().await.clone(),
-            session_times: self.session_times.read().await.clone(),
             refresh_tokens: self.refresh_tokens.read().await.clone(),
             team_members: self.team_members.read().await.clone(),
             problems: self.problems.read().await.clone(),
@@ -208,7 +250,6 @@ impl AppState {
             if let Ok(data) = serde_json::from_str::<SavedData>(&json) {
                 *self.users.write().await = data.users;
                 *self.sessions.write().await = data.sessions;
-                *self.session_times.write().await = data.session_times;
                 *self.refresh_tokens.write().await = data.refresh_tokens;
                 *self.team_members.write().await = data.team_members;
                 *self.problems.write().await = data.problems;

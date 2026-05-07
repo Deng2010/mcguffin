@@ -13,7 +13,8 @@ use crate::utils::get_token_from_headers;
 /// Resolve user from token; returns (user_id, user)
 async fn resolve_user<'a>(state: &'a AppState, headers: &HeaderMap) -> Option<(String, User)> {
     let token = get_token_from_headers(headers)?;
-    let user_id = state.sessions.read().await.get(&token)?.clone();
+    let entry = state.sessions.read().await.get(&token)?.clone();
+    let user_id = entry.user_id;
     let user = state.users.read().await.get(&user_id)?.clone();
     Some((user_id, user))
 }

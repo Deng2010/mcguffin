@@ -41,26 +41,33 @@ pub async fn resolve_user(state: &AppState, headers: &axum::http::HeaderMap) -> 
 
     // Check session expiry
     {
-        let session_times = state.session_times.read().await;
-        if let Some(last_active) = session_times.get(&token) {
-            let elapsed = (now - *last_active).num_seconds();
+        let mut sessions = state.sessions.write().await;
+        if let Some(entry) = sessions.get(&token) {
+            let elapsed = (now - entry.last_active).num_seconds();
             if elapsed > SESSION_MAX_AGE_SECS {
                 // Session expired — clean up
-                drop(session_times);
-                state.sessions.write().await.remove(&token);
-                state.session_times.write().await.remove(&token);
+                sessions.remove(&token);
+                // Drop lock before save
+                drop(sessions);
                 state.save().await;
                 return None;
             }
+        } else {
+            return None;
         }
+
+        // Update last_active time — we already have write lock
+        if let Some(entry) = sessions.get_mut(&token) {
+            entry.last_active = now;
+        }
+
+        let user_id = sessions.get(&token)?.user_id.clone();
+        let users = state.users.read().await;
+        let user = users.get(&user_id)?.clone();
+        drop(users);
+        drop(sessions);
+        Some((user_id, user))
     }
-
-    // Update last_active time
-    state.session_times.write().await.insert(token.clone(), now);
-
-    let user_id = state.sessions.read().await.get(&token)?.clone();
-    let user = state.users.read().await.get(&user_id)?.clone();
-    Some((user_id, user))
 }
 
 /// Check if user has admin role (includes superadmin)

@@ -1,6 +1,15 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+// ============== Session ==============
+
+/// A single session entry combining user_id and last_active timestamp
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionEntry {
+    pub user_id: String,
+    pub last_active: DateTime<Utc>,
+}
+
 // ============== User ==============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
