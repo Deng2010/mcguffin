@@ -32,6 +32,10 @@ struct SavedData {
     announcements: HashMap<String, Announcement>,
     #[serde(default)]
     notifications: HashMap<String, Notification>,
+    #[serde(default)]
+    showcase_problem_ids: Vec<String>,
+    #[serde(default)]
+    showcase_contest_ids: Vec<String>,
 }
 
 // ============== Application State ==============
@@ -69,6 +73,11 @@ pub struct AppState {
     /// Showcase display limits
     pub showcase_problems: usize,
     pub showcase_contests: usize,
+    /// Showcase selections
+    pub showcase_problem_ids: Arc<RwLock<Vec<String>>>,
+    pub showcase_contest_ids: Arc<RwLock<Vec<String>>>,
+    /// Difficulty display order
+    pub difficulty_order: Arc<RwLock<Vec<String>>>,
 }
 
 impl AppState {
@@ -85,13 +94,13 @@ impl AppState {
             .ok()
             .and_then(|s| serde_json::from_str::<SavedData>(&s).ok());
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, session_times) =
+        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, session_times, showcase_problem_ids, showcase_contest_ids) =
             if let Some(data) = saved {
                 tracing::info!("Loaded state from {}", data_file);
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.session_times)
+                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.session_times, data.showcase_problem_ids, data.showcase_contest_ids)
             } else {
                 tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new())
+                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new(), Vec::new(), Vec::new())
             };
 
         // Always ensure superadmin user exists AND has correct role
@@ -146,12 +155,21 @@ impl AppState {
             site_description: Arc::new(RwLock::new(site_description)),
             site_url: config.server.site_url,
             data_file: config.server.data_file,
-            difficulty: Arc::new(RwLock::new(difficulty_config)),
+            difficulty: Arc::new(RwLock::new(difficulty_config.clone())),
             suggestions: Arc::new(RwLock::new(suggestions)),
             announcements: Arc::new(RwLock::new(announcements)),
             notifications: Arc::new(RwLock::new(notifications)),
             showcase_problems: config.site.showcase_problems,
             showcase_contests: config.site.showcase_contests,
+            showcase_problem_ids: Arc::new(RwLock::new(showcase_problem_ids)),
+            showcase_contest_ids: Arc::new(RwLock::new(showcase_contest_ids)),
+            difficulty_order: Arc::new(RwLock::new(
+                config.site.difficulty_order.clone().unwrap_or_else(|| {
+                    let mut keys: Vec<String> = difficulty_config.levels.keys().cloned().collect();
+                    keys.sort();
+                    keys
+                })
+            )),
         }
     }
 
@@ -170,6 +188,8 @@ impl AppState {
             suggestions: self.suggestions.read().await.clone(),
             announcements: self.announcements.read().await.clone(),
             notifications: self.notifications.read().await.clone(),
+            showcase_problem_ids: self.showcase_problem_ids.read().await.clone(),
+            showcase_contest_ids: self.showcase_contest_ids.read().await.clone(),
         };
         if let Ok(json) = serde_json::to_string_pretty(&data) {
             let tmp_path = format!("{}.tmp", self.data_file);
@@ -198,6 +218,8 @@ impl AppState {
                 *self.suggestions.write().await = data.suggestions;
                 *self.announcements.write().await = data.announcements;
                 *self.notifications.write().await = data.notifications;
+                *self.showcase_problem_ids.write().await = data.showcase_problem_ids;
+                *self.showcase_contest_ids.write().await = data.showcase_contest_ids;
                 tracing::info!("State reloaded from {}", self.data_file);
             }
         }

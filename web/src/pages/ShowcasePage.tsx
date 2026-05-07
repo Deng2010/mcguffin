@@ -169,6 +169,18 @@ export default function ShowcasePage() {
   const contests = allContests.filter(c => c.status === 'public')
   const problems = allProblems.filter(p => p.status === 'published')
 
+  // Use showcase selections if configured, otherwise show first N
+  const selectedProblemIds = siteInfo?.showcase_problem_ids
+  const selectedContestIds = siteInfo?.showcase_contest_ids
+
+  const showcaseProblems = selectedProblemIds && selectedProblemIds.length > 0
+    ? selectedProblemIds.map(id => problems.find(p => p.id === id)).filter(Boolean) as ProblemItem[]
+    : problems.slice(0, siteInfo?.showcase_problems ?? 8)
+
+  const showcaseContests = selectedContestIds && selectedContestIds.length > 0
+    ? selectedContestIds.map(id => contests.find(c => c.id === id)).filter(Boolean) as ContestItem[]
+    : contests.slice(0, siteInfo?.showcase_contests ?? 3)
+
   // Group problems by contest_id, respecting problem_order
   const contestProblems: Record<string, ProblemItem[]> = {}
   const unassigned: ProblemItem[] = []
@@ -290,13 +302,13 @@ export default function ShowcasePage() {
 
       {/* ===== 已发布题目 ===== */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">公开题目 ({problems.length})</h2>
-        {problems.length === 0 ? (
+        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">公开题目 ({showcaseProblems.length})</h2>
+        {showcaseProblems.length === 0 ? (
           <div className="text-gray-400 dark:text-gray-500 text-sm">暂无公开题目</div>
         ) : (
           <>
           <div className="space-y-2">
-            {problems.slice(0, siteInfo?.showcase_problems ?? 8).map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
+            {showcaseProblems.map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
           </div>
           {problems.length > (siteInfo?.showcase_problems ?? 8) && (
             <div className="text-center mt-4">
@@ -311,13 +323,13 @@ export default function ShowcasePage() {
 
       {/* ===== 比赛列表 ===== */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">比赛 ({contests.length})</h2>
-        {contests.length === 0 ? (
+        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">比赛 ({showcaseContests.length})</h2>
+        {showcaseContests.length === 0 ? (
           <div className="text-gray-400 dark:text-gray-500 text-sm">暂无比赛</div>
         ) : (
           <>
           <div className="space-y-4">
-            {contests.slice(0, siteInfo?.showcase_contests ?? 3).map(c => {
+            {showcaseContests.map(c => {
               const status = contestStatus(c.start_time, c.end_time)
               const cProblems = contestProblems[c.id] || []
               return (
@@ -371,7 +383,7 @@ export default function ShowcasePage() {
         <section>
           <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">其他公示题目 ({unassigned.length})</h2>
           <div className="grid gap-2">
-            {unassigned.slice(0, siteInfo?.showcase_problems ?? 8).map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
+            {unassigned.slice(0, (selectedProblemIds?.length ?? 0) > 0 ? 0 : (siteInfo?.showcase_problems ?? 8)).map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
           </div>
           {unassigned.length > (siteInfo?.showcase_problems ?? 8) && (
             <div className="text-center mt-4">

@@ -311,11 +311,25 @@ pub struct SiteInfo {
     pub title: String,
     pub showcase_problems: usize,
     pub showcase_contests: usize,
+    #[serde(default)]
+    pub difficulty_order: Vec<String>,
+    #[serde(default)]
+    pub showcase_problem_ids: Vec<String>,
+    #[serde(default)]
+    pub showcase_contest_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
 pub struct UpdateSiteDescriptionPayload {
     pub description: String,
+}
+
+#[derive(Deserialize)]
+pub struct ShowcaseConfigPayload {
+    #[serde(default)]
+    pub problem_ids: Vec<String>,
+    #[serde(default)]
+    pub contest_ids: Vec<String>,
 }
 
 // ============== Application Configuration ==============
@@ -362,6 +376,8 @@ pub struct SiteConfig {
     pub showcase_problems: usize,
     #[serde(default = "default_showcase_contests")]
     pub showcase_contests: usize,
+    #[serde(default)]
+    pub difficulty_order: Option<Vec<String>>,
 }
 
 fn default_showcase_problems() -> usize { 8 }
@@ -369,7 +385,7 @@ fn default_showcase_contests() -> usize { 3 }
 
 impl Default for SiteConfig {
     fn default() -> Self {
-        Self { name: None, title: None, showcase_problems: 8, showcase_contests: 3 }
+        Self { name: None, title: None, showcase_problems: 8, showcase_contests: 3, difficulty_order: None }
     }
 }
 
@@ -686,6 +702,11 @@ color = "#ef4444"
             version: "1.0.0".to_string(),
             description: "A site".to_string(),
             title: "My Site".to_string(),
+            showcase_problems: 8,
+            showcase_contests: 3,
+            difficulty_order: vec![],
+            showcase_problem_ids: vec![],
+            showcase_contest_ids: vec![],
         };
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("\"name\":\"My Site\""));

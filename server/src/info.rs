@@ -13,6 +13,7 @@ use crate::utils::get_token_from_headers;
 pub async fn get_site_info(
     State(state): State<AppState>,
 ) -> Json<SiteInfo> {
+    let difficulty_order = state.difficulty_order.read().await.clone();
     Json(SiteInfo {
         name: state.site_name.clone(),
         version: state.site_version.clone(),
@@ -20,6 +21,9 @@ pub async fn get_site_info(
         title: state.site_title.clone(),
         showcase_problems: state.showcase_problems,
         showcase_contests: state.showcase_contests,
+        difficulty_order,
+        showcase_problem_ids: state.showcase_problem_ids.read().await.clone(),
+        showcase_contest_ids: state.showcase_contest_ids.read().await.clone(),
     })
 }
 
@@ -54,17 +58,31 @@ pub async fn update_site_description(
 
 /// GET /api/site/difficulties
 /// Returns the custom difficulty levels (no auth required)
+/// Ordered by the configured difficulty_order
 pub async fn get_difficulties(
     State(state): State<AppState>,
 ) -> Json<serde_json::Value> {
     let diff = state.difficulty.read().await;
-    let levels: Vec<serde_json::Value> = diff.levels.iter().map(|(name, level)| {
-        serde_json::json!({
-            "name": name,
-            "label": level.label,
-            "color": level.color,
+    let order = state.difficulty_order.read().await.clone();
+    let mut levels: Vec<serde_json::Value> = order.iter().filter_map(|name| {
+        diff.levels.get(name).map(|level| {
+            serde_json::json!({
+                "name": name,
+                "label": level.label,
+                "color": level.color,
+            })
         })
     }).collect();
+    // Also add any levels not in the order (shouldn't happen, but be safe)
+    for (name, level) in &diff.levels {
+        if !order.contains(name) {
+            levels.push(serde_json::json!({
+                "name": name,
+                "label": level.label,
+                "color": level.color,
+            }));
+        }
+    }
     drop(diff);
     Json(serde_json::json!({ "levels": levels }))
 }

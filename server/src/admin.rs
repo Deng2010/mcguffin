@@ -9,7 +9,7 @@ use toml_edit::{DocumentMut, Item, Value as TomlValue};
 use chrono::Local;
 
 use crate::state::AppState;
-use crate::types::DifficultyLevel;
+use crate::types::{DifficultyLevel, ShowcaseConfigPayload};
 use crate::utils::{is_superadmin, resolve_user};
 
 const CONFIG_PATH: &str = "/usr/share/mcguffin/config.toml";
@@ -48,6 +48,8 @@ pub struct SiteSection {
     pub showcase_problems: usize,
     #[serde(default = "default_showcase_contests")]
     pub showcase_contests: usize,
+    #[serde(default)]
+    pub difficulty_order: Vec<String>,
 }
 
 fn default_showcase_problems() -> usize { 8 }
@@ -98,6 +100,14 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
             .and_then(|v| v.as_integer())
             .map(|n| n as u16)
             .unwrap_or(3000)
+    };
+
+    let get_array = |section: &str, key: &str| -> Vec<String> {
+        doc.get(section)
+            .and_then(|s| s.get(key))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default()
     };
 
     // Parse difficulty levels (both sub-table [difficulty.Easy] and inline Easy = { ... })
@@ -153,6 +163,7 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
             },
             showcase_problems: get_u16("site", "showcase_problems") as usize,
             showcase_contests: get_u16("site", "showcase_contests") as usize,
+            difficulty_order: get_array("site", "difficulty_order"),
         },
         oauth: OAuthSection {
             cp_client_id: get_str("oauth", "cp_client_id"),
@@ -192,6 +203,13 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         };
         set_usize(t, "showcase_problems", payload.site.showcase_problems);
         set_usize(t, "showcase_contests", payload.site.showcase_contests);
+        // Write difficulty_order array
+        if payload.site.difficulty_order.is_empty() {
+            t.remove("difficulty_order");
+        } else {
+            let arr = toml_edit::Array::from_iter(payload.site.difficulty_order.iter().map(|s| toml_edit::Value::from(s.as_str())));
+            t["difficulty_order"] = Item::Value(toml_edit::Value::Array(arr));
+        }
     }
     if let Some(t) = doc.get_mut("oauth").and_then(|s| s.as_table_mut()) {
         set_str(t, "cp_client_id", &payload.oauth.cp_client_id);
@@ -570,4 +588,49 @@ pub async fn export_config(
         }
         Err(e) => Json(serde_json::json!({"success": false, "message": format!("读取配置文件失败: {}", e)})),
     }
+}
+
+// ============== Showcase Configuration ==============
+
+/// GET /api/admin/showcase
+/// Superadmin only — returns current showcase selections
+pub async fn get_showcase_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if !is_superadmin(&state, &user_id).await {
+        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
+    }
+
+    Json(serde_json::json!({
+        "success": true,
+        "problem_ids": state.showcase_problem_ids.read().await.clone(),
+        "contest_ids": state.showcase_contest_ids.read().await.clone(),
+    }))
+}
+
+/// PUT /api/admin/showcase
+/// Superadmin only — updates which problems/contests appear on the showcase
+pub async fn update_showcase_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<ShowcaseConfigPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if !is_superadmin(&state, &user_id).await {
+        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
+    }
+
+    *state.showcase_problem_ids.write().await = payload.problem_ids;
+    *state.showcase_contest_ids.write().await = payload.contest_ids;
+    state.save().await;
+
+    Json(serde_json::json!({"success": true, "message": "展板配置已保存"}))
 }

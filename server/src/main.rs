@@ -132,6 +132,8 @@ async fn main() {
         .route("/api/admin/backups", get(list_backups))
         .route("/api/admin/backup/restore/{name}", post(restore_backup))
         .route("/api/admin/backup/{name}", delete(delete_backup))
+        // Admin showcase config (superadmin only)
+        .route("/api/admin/showcase", get(get_showcase_config).put(update_showcase_config))
         // Admin export (superadmin only)
         .route("/api/admin/export/data", get(export_data))
         .route("/api/admin/export/config", get(export_config))
