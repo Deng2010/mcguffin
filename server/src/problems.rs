@@ -336,6 +336,34 @@ pub async fn review_problem(
         return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
     }
 
+    // For 'reject', delete the problem entirely (not just mark as rejected)
+    if action == "reject" {
+        let problems = state.problems.read().await;
+        let problem = match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => return Json(ReviewResponse { success: false, message: "题目不存在".to_string() }),
+        };
+        if problem.status != "pending" {
+            return Json(ReviewResponse { success: false, message: "只能拒绝待审核题目".to_string() });
+        }
+        let author_id = problem.author_id.clone();
+        let problem_title = problem.title.clone();
+        drop(problems);
+
+        state.problems.write().await.remove(&problem_id);
+        state.save().await;
+
+        create_notification(
+            &state,
+            &author_id,
+            "题目未通过",
+            &format!("题目「{}」未通过审核，已被删除", problem_title),
+            Some("/problems"),
+        ).await;
+
+        return Json(ReviewResponse { success: true, message: "已拒绝题目，数据已删除".to_string() });
+    }
+
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
@@ -364,13 +392,6 @@ pub async fn review_problem(
             problem.status = "published".to_string();
             problem.public_at = Some(Utc::now());
             Json(ReviewResponse { success: true, message: "已发布题目".to_string() })
-        }
-        "reject" => {
-            if problem.status != "pending" {
-                return Json(ReviewResponse { success: false, message: "只能拒绝待审核题目".to_string() });
-            }
-            problem.status = "rejected".to_string();
-            Json(ReviewResponse { success: true, message: "已拒绝题目".to_string() })
         }
         "return" => {
             if problem.status != "approved" {
@@ -413,15 +434,6 @@ pub async fn review_problem(
                 &author_id,
                 "题目已发布",
                 &format!("题目「{}」已成功发布", problem_title),
-                Some("/problems"),
-            ).await;
-        }
-        "reject" => {
-            create_notification(
-                &state,
-                &author_id,
-                "题目未通过",
-                &format!("题目「{}」未通过审核", problem_title),
                 Some("/problems"),
             ).await;
         }

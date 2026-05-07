@@ -58,7 +58,7 @@ export default function ProblemsPage() {
 
   const myProblems = useMemo(() => {
     if (!user) return []
-    return problems.filter(p => p.author_name === user.display_name)
+    return problems.filter(p => p.author_name === user.display_name && p.status !== 'rejected')
   }, [problems, user])
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
