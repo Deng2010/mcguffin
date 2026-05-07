@@ -260,7 +260,12 @@ pub async fn oauth_callback(
                     let session_token = Uuid::new_v4().to_string();
                     state.sessions.write().await.insert(session_token.clone(), user_id.clone());
                     state.session_times.write().await.insert(session_token.clone(), Utc::now());
-                    state.refresh_tokens.write().await.insert(token_resp.refresh_token.clone(), user_id);
+                    // Remove old refresh tokens for this user to prevent accumulation
+                    {
+                        let mut rts = state.refresh_tokens.write().await;
+                        rts.retain(|_, uid| uid != &user_id);
+                        rts.insert(token_resp.refresh_token.clone(), user_id);
+                    }
                     
                     state.save().await;
                     

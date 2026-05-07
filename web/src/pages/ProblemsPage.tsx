@@ -28,7 +28,7 @@ export default function ProblemsPage() {
   const [problems, setProblems] = useState<ProblemListItem[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Review tabs (admin only)
+  // Review tabs
   const [pendingProblems, setPendingProblems] = useState<AdminPendingProblem[]>([])
   const [approvedProblems, setApprovedProblems] = useState<AdminPendingProblem[]>([])
   const [publishedProblems, setPublishedProblems] = useState<AdminPendingProblem[]>([])
@@ -36,6 +36,12 @@ export default function ProblemsPage() {
   const [contests, setContests] = useState<ContestOption[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [visibilityMap, setVisibilityMap] = useState<Record<string, string[]>>({})
+
+  // For non-admin members: pending problems visible to them (from the main list)
+  const myPendingProblems = useMemo(() => {
+    if (canApprove) return [] // admin uses pendingProblems from API
+    return problems.filter(p => p.status === 'pending')
+  }, [problems, canApprove])
 
   // Submit form state
   const [showSubmit, setShowSubmit] = useState(false)
@@ -69,7 +75,7 @@ export default function ProblemsPage() {
   }
   if (canSubmit) {
     tabs.push(
-      { id: 'pending', label: '待审核', count: pendingProblems.length },
+      { id: 'pending', label: '待审核', count: canApprove ? pendingProblems.length : myPendingProblems.length },
       { id: 'approved', label: '已通过', count: approvedProblems.length },
       { id: 'published', label: '已发布', count: publishedProblems.length },
     )
@@ -568,10 +574,11 @@ export default function ProblemsPage() {
   // ====== Tab: Pending ======
 
   const renderPending = () => {
-    if (pendingProblems.length === 0) return <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">暂无待审核题目</div>
+    const items = canApprove ? pendingProblems : myPendingProblems
+    if (items.length === 0) return <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">暂无待审核题目</div>
     return (
       <div className="space-y-4">
-        {pendingProblems.map(p => (
+        {items.map(p => (
           <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
@@ -598,7 +605,7 @@ export default function ProblemsPage() {
                   <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">关联比赛</h4>
                   <div className="flex items-center gap-2">
                     <select
-                      defaultValue={p.contest || ''}
+                      defaultValue={(p as AdminPendingProblem).contest || ''}
                       onChange={e => handleSetContest(p.id, e.target.value)}
                       className="px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
                     >

@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ── Rust ────────────────────────────────────────────
       - name: 🦀 Setup Rust toolchain
@@ -50,7 +50,7 @@ jobs:
 
       # ── Node.js ────────────────────────────────────────
       - name: 📦 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: 'npm'
@@ -98,7 +98,7 @@ jobs:
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ── Rust ────────────────────────────────────────────
       - name: 🦀 Setup Rust toolchain
@@ -111,7 +111,7 @@ jobs:
 
       # ── Node.js (needed for frontend build) ─────────────
       - name: 📦 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: 'npm'
@@ -219,7 +219,7 @@ jobs:
 
       # ── Upload ──────────────────────────────────────────
       - name: 📦 Upload nightly build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mcguffin-nightly-${{ runner.os }}-${{ github.sha }}
           path: |

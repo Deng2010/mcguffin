@@ -193,10 +193,11 @@ pub async fn get_problem_detail(
             show_solution = false;
         }
     }
+    let in_visible_to = current_user.as_ref().map_or(false, |(uid, _)| problem.visible_to.contains(uid));
     let show_content = match problem.status.as_str() {
         "published" => true,
         "approved" => true,
-        "pending" => is_admin_user || is_author,
+        "pending" => is_admin_user || is_author || in_visible_to,
         _ => false,
     };
 
