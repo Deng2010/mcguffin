@@ -41,6 +41,10 @@ pub async fn get_team_members(
             // Use the user's current avatar_url from the users map
             let current_avatar_url = users.get(&m.user_id)
                 .and_then(|u| u.avatar_url.clone());
+            // Get the user's username
+            let user_username = users.get(&m.user_id)
+                .map(|u| u.username.clone())
+                .unwrap_or_default();
             // Compute avatar initial from current display_name
             let current_avatar = current_name.chars().next()
                 .map(|c| c.to_string())
@@ -49,6 +53,7 @@ pub async fn get_team_members(
                 "id": m.id,
                 "user_id": m.user_id,
                 "name": current_name,
+                "username": user_username,
                 "avatar": current_avatar,
                 "avatar_url": current_avatar_url,
                 "role": m.role,

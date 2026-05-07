@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 
@@ -7,6 +7,7 @@ interface TeamMemberAPI {
   id: string
   user_id: string
   name: string
+  username: string
   avatar: string
   avatar_url?: string | null
   role: string
@@ -27,6 +28,7 @@ type TabId = 'all' | 'admin' | 'member'
 
 export default function TeamPage() {
   const { user, hasPermission } = useAuth()
+  const navigate = useNavigate()
   const [members, setMembers] = useState<TeamMemberAPI[]>([])
   const [requests, setRequests] = useState<JoinRequestAPI[]>([])
   const [loading, setLoading] = useState(true)
@@ -160,8 +162,10 @@ export default function TeamPage() {
           <div className="text-center py-12 text-gray-400 dark:text-gray-500">暂无{activeTab === 'admin' ? '管理员' : activeTab === 'member' ? '成员' : ''}</div>
         ) : (
           filteredMembers.map(m => (
-            <div key={m.id} className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
-              <div className="flex items-center gap-3">
+            <div key={m.id} className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+              onClick={() => navigate(`/profile/${m.username}`)}
+            >
+              <div className="flex items-center gap-3" onClick={e => { e.stopPropagation() }}>
                 {m.avatar_url ? (
                   <img
                     src={m.avatar_url}
@@ -187,7 +191,7 @@ export default function TeamPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3" onClick={e => { e.stopPropagation() }}>
                 {canManageUser(m) ? (
                   <select
                     value={m.role}
