@@ -69,7 +69,7 @@ jobs:
       # ── Frontend ───────────────────────────────────────
       - name: 🌐 Install frontend dependencies
         working-directory: web
-        run: npm ci
+        run: npm install
 
       - name: 🌐 Build frontend
         working-directory: web

@@ -59,7 +59,7 @@ jobs:
       # ── Frontend ───────────────────────────────────────
       - name: 🌐 Install frontend dependencies
         working-directory: web
-        run: npm ci
+        run: npm install
 
       - name: 🌐 Build frontend (type-check + Vite)
         working-directory: web
@@ -120,7 +120,7 @@ jobs:
       # ── Frontend ────────────────────────────────────────
       - name: 🌐 Build frontend
         working-directory: web
-        run: npm ci && npm run build
+        run: npm install && npm run build
 
       # ── Backend ─────────────────────────────────────────
       - name: 🔨 Build backend (release)
