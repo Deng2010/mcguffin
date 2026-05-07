@@ -152,9 +152,9 @@ export default function ProfilePage() {
       setMsg('显示名称不能为空')
       return
     }
-    // Validate password if changing (only for non-admin)
-    const isAdmin = user.role === 'superadmin' || user.role === 'admin'
-    if (!isAdmin && (newPassword || confirmPassword)) {
+    // Validate password if changing (only for non-superadmin)
+    const isSuperadmin = user.role === 'superadmin'
+    if (!isSuperadmin && (newPassword || confirmPassword)) {
       if (newPassword.length < 3) {
         setMsg('密码至少需要3个字符')
         return
@@ -168,11 +168,11 @@ export default function ProfilePage() {
     setMsg('')
     try {
       const body: Record<string, any> = {}
-      // Admin cannot change display_name or password from profile page
-      if (!isAdmin && displayName !== user.display_name) body.display_name = displayName
+      // Superadmin cannot change display_name or password from profile page
+      if (!isSuperadmin && displayName !== user.display_name) body.display_name = displayName
       if (avatarUrl !== (user.avatar_url || '')) body.avatar_url = avatarUrl
       if (bio !== (user.bio || '')) body.bio = bio
-      if (!isAdmin && newPassword) body.password = newPassword
+      if (!isSuperadmin && newPassword) body.password = newPassword
 
       if (Object.keys(body).length === 0) {
         setMsg('没有修改')
@@ -202,7 +202,7 @@ export default function ProfilePage() {
     }
   }
 
-  const isAdmin = user.role === 'superadmin' || user.role === 'admin'
+  const isSuperadmin = user.role === 'superadmin'
 
   const roleLabel = (role: string) => {
     switch (role) {
@@ -283,13 +283,13 @@ export default function ProfilePage() {
                 type="text"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
-                disabled={isAdmin}
+                disabled={isSuperadmin}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="您的显示名称"
               />
-              {isAdmin && (
+              {isSuperadmin && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  管理员请前往 <Link to="/admin/config" className="text-blue-500 dark:text-blue-400 underline">配置页面</Link> 修改显示名称与密码
+                  超级管理员请前往 <Link to="/admin/config" className="text-blue-500 dark:text-blue-400 underline">配置页面</Link> 修改显示名称与密码
                 </p>
               )}
             </div>
@@ -324,12 +324,12 @@ export default function ProfilePage() {
               />
             </div>
 
-            {/* Password fields — hidden for admin (managed in config page) */}
-            {isAdmin ? (
+            {/* Password fields — hidden for superadmin (managed in config page) */}
+            {isSuperadmin ? (
               <div className="mb-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                 <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">设置密码</h4>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  管理员请前往 <Link to="/admin/config" className="text-blue-500 dark:text-blue-400 underline">配置页面</Link> 修改密码
+                  超级管理员请前往 <Link to="/admin/config" className="text-blue-500 dark:text-blue-400 underline">配置页面</Link> 修改密码
                 </p>
               </div>
             ) : (
