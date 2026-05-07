@@ -57,6 +57,7 @@ pub async fn get_problems(
         false
     };
     let current_uid = current_user.as_ref().map(|(id, _)| id.clone());
+    let current_display_name = current_user.as_ref().map(|(_, u)| u.display_name.clone());
 
     let all_problems = state.problems.read().await;
     let show_all = params.get("all").map(|v| v == "true").unwrap_or(false);
@@ -82,10 +83,13 @@ pub async fn get_problems(
             } else if is_member {
                 // Members see: published, approved, pending, their own problems,
                 // and problems where they're in visible_to
+                // Also match author by display_name
+                let is_author = current_uid.as_ref().map_or(false, |uid| p.author_id == *uid)
+                    || current_display_name.as_ref().map_or(false, |dn| p.author_name == *dn);
                 let ok = p.status == "published"
                     || p.status == "approved"
                     || p.status == "pending"
-                    || current_uid.as_ref().map_or(false, |uid| p.author_id == *uid)
+                    || is_author
                     || current_uid.as_ref().map_or(false, |uid| p.visible_to.contains(uid));
                 if !ok {
                     return false;
@@ -176,6 +180,7 @@ pub async fn get_problem_detail(
     } else {
         false
     };
+    let current_display_name = current_user.as_ref().map(|(_, u)| u.display_name.clone());
 
     // Permission check
     let can_view = match problem.status.as_str() {
@@ -184,7 +189,10 @@ pub async fn get_problem_detail(
         "pending" => {
             if is_admin_user { true }
             else if let Some((uid, _)) = &current_user {
-                problem.visible_to.contains(uid)
+                // Author by user_id or display_name match
+                problem.author_id == *uid
+                    || current_display_name.as_ref().map_or(false, |dn| problem.author_name == *dn)
+                    || problem.visible_to.contains(uid)
             } else { false }
         }
         "rejected" => is_admin_user,
@@ -533,12 +541,20 @@ pub async fn set_problem_visibility(
     Path(problem_id): Path<String>,
     Json(payload): Json<VisibilityPayload>,
 ) -> Json<ClaimResponse> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(ClaimResponse { success: false, message: "未登录".to_string() }),
     };
     if !is_admin(&state, &user_id).await {
-        return Json(ClaimResponse { success: false, message: "权限不足".to_string() });
+        // Non-admin: only the problem author (by author_id or display_name) can set visibility
+        let problems = state.problems.read().await;
+        let is_author = problems.get(&problem_id).map_or(false, |p| {
+            p.author_id == user_id || p.author_name == user.display_name
+        });
+        drop(problems);
+        if !is_author {
+            return Json(ClaimResponse { success: false, message: "权限不足".to_string() });
+        }
     }
 
     let mut problems = state.problems.write().await;
@@ -580,14 +596,30 @@ pub async fn get_pending_problems_admin(
     }
 
     let problems = state.problems.read().await;
+    let contests = state.contests.read().await;
     let result: Vec<serde_json::Value> = problems
         .values()
         .filter(|p| p.status == "pending")
         .map(|p| {
+            // Derive contest name from contest_id if available
+            let contest_name = p.contest_id.as_ref()
+                .and_then(|cid| contests.get(cid))
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| p.contest.clone());
             serde_json::json!({
                 "id": p.id,
                 "title": p.title,
+                "author_id": p.author_id,
                 "author_name": p.author_name,
+                "contest": contest_name,
+                "difficulty": p.difficulty,
+                "content": p.content,
+                "solution": p.solution,
+                "status": "pending",
+                "created_at": p.created_at,
+                "visible_to": p.visible_to,
+                "claimed_by": p.claimed_by,
+                "has_verifier_solution": p.verifier_solution.is_some(),
             })
         })
         .collect();
@@ -605,7 +637,8 @@ pub async fn get_team_members_for_visibility(
         Some(u) => u,
         None => return Json(vec![]),
     };
-    if !is_admin(&state, &user_id).await {
+    // Allow any team member to access (for problem author visibility setting)
+    if !is_admin(&state, &user_id).await && !is_team_member(&state, &user_id).await {
         return Json(vec![]);
     }
 

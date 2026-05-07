@@ -15,7 +15,7 @@ interface ContestOption {
   name: string
 }
 
-type TabId = 'list' | 'pending' | 'approved' | 'published'
+type TabId = 'list' | 'mine' | 'pending' | 'approved' | 'published'
 
 export default function ProblemsPage() {
   const { user, hasPermission } = useAuth()
@@ -56,9 +56,17 @@ export default function ProblemsPage() {
 
   const [activeTab, setActiveTab] = useState<TabId>('list')
 
+  const myProblems = useMemo(() => {
+    if (!user) return []
+    return problems.filter(p => p.author_name === user.display_name)
+  }, [problems, user])
+
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: 'list', label: '全部题目' },
   ]
+  if (user) {
+    tabs.push({ id: 'mine', label: '我的题目', count: myProblems.length })
+  }
   if (canSubmit) {
     tabs.push(
       { id: 'pending', label: '待审核', count: pendingProblems.length },
@@ -93,9 +101,18 @@ export default function ProblemsPage() {
     }).catch(() => {})
   }
 
+  const loadMembersIfNeeded = () => {
+    if (members.length === 0 && user) {
+      apiFetch<TeamMemberOption[]>('/problems/admin/members')
+        .then(setMembers)
+        .catch(() => {})
+    }
+  }
+
   useEffect(() => {
     loadProblems()
     if (canSubmit) loadReviewData()
+    if (user && !canSubmit) loadMembersIfNeeded()
   }, [canSubmit, canApprove])
 
   // Load contests when submit form opens
@@ -280,6 +297,33 @@ export default function ProblemsPage() {
     navigate(`/problems/${problemId}`)
   }
 
+  // Visibility editor (shared between list and pending tab)
+  const renderVisibilityEditor = (problemId: string) => {
+    if (members.length === 0) return null
+    return (
+      <div className="mb-2" onClick={e => e.stopPropagation()}>
+        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">可见性设置（选择可查看此题目的成员）</h4>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {members.map(m => (
+            <label key={m.user_id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={(visibilityMap[problemId] || []).includes(m.user_id)}
+                onChange={() => toggleMember(problemId, m.user_id)}
+                className="accent-gray-800 dark:accent-gray-400"
+              />
+              {m.name}
+            </label>
+          ))}
+        </div>
+        <button onClick={() => handleSetVisibility(problemId)} className="text-xs px-3 py-1 border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">保存可见性</button>
+      </div>
+    )
+  }
+
+  // Check if current user is the author of this problem (by display_name)
+  const isAuthor = (p: { author_name: string }) => user?.display_name === p.author_name
+
   // ====== Search & Filter Bar ======
 
   const renderFilterBar = () => {
@@ -454,6 +498,49 @@ export default function ProblemsPage() {
     )
   }
 
+  // ====== Problem Card (shared by all tabs) ======
+
+  const renderProblemCard = (p: ProblemListItem | AdminPendingProblem, extraActions?: React.ReactNode) => {
+    const isPending = p.status === 'pending' || (p as any).status === 'pending'
+    const showVisibility = isPending && isAuthor(p)
+    return (
+      <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">{p.title}</span>
+              {statusBadge(p.status)}
+              {isPending && isAuthor(p) && (
+                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 font-medium dark:bg-blue-900/30 dark:text-blue-300">我的题目</span>
+              )}
+              {'claimed_by' in p && (p as any).claimed_by && (
+                <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 font-medium dark:bg-purple-900/30 dark:text-purple-300">已认领</span>
+              )}
+              {'has_verifier_solution' in p && (p as any).has_verifier_solution && (
+                <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-500 font-medium dark:bg-purple-900/20 dark:text-purple-400">有验题题解</span>
+              )}
+            </div>
+            {renderMeta(p)}
+          </div>
+          <div className="flex items-center gap-2 ml-4 shrink-0" onClick={e => e.stopPropagation()}>
+            {canSubmit && p.status === 'approved' && !(p as any).claimed_by && user?.id !== (p as any).author_id && (
+              <button onClick={() => handleClaim(p.id)} className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">认领验题</button>
+            )}
+            {canSubmit && (p as any).claimed_by === user?.id && (
+              <button onClick={() => handleUnclaim(p.id)} className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">取消认领</button>
+            )}
+            {extraActions}
+          </div>
+        </div>
+        {showVisibility && (
+          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}>
+            {renderVisibilityEditor(p.id)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ====== Tab: All Problems ======
 
   const renderProblemList = () => {
@@ -469,35 +556,28 @@ export default function ProblemsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredProblems.map(p => (
-              <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">{p.title}</span>
-                      {statusBadge(p.status)}
-                      {p.claimed_by && (
-                        <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 font-medium dark:bg-purple-900/30 dark:text-purple-300">已认领</span>
-                      )}
-                      {p.has_verifier_solution && (
-                        <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-500 font-medium dark:bg-purple-900/20 dark:text-purple-400">有验题题解</span>
-                      )}
-                    </div>
-                    {renderMeta(p)}
-                  </div>
-                  <div className="flex items-center gap-2 ml-4 shrink-0" onClick={e => e.stopPropagation()}>
-                    {canSubmit && p.status === 'approved' && !p.claimed_by && user?.id !== p.author_id && (
-                      <button onClick={() => handleClaim(p.id)} className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">认领验题</button>
-                    )}
-                    {canSubmit && p.claimed_by === user?.id && (
-                      <button onClick={() => handleUnclaim(p.id)} className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">取消认领</button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+            {filteredProblems.map(p => renderProblemCard(p))}
           </div>
         )}
+      </>
+    )
+  }
+
+  // ====== Tab: My Problems ======
+
+  const renderMyProblems = () => {
+    if (myProblems.length === 0) return <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">暂无题目</div>
+    return (
+      <>
+        {renderFilterBar()}
+        <div className="space-y-4">
+          {myProblems.filter(p => {
+            const q = searchText.toLowerCase().trim()
+            if (q && !p.title.toLowerCase().includes(q)) return false
+            if (filterDifficulty && p.difficulty !== filterDifficulty) return false
+            return true
+          }).map(p => renderProblemCard(p))}
+        </div>
       </>
     )
   }
@@ -523,33 +603,14 @@ export default function ProblemsPage() {
                 <button onClick={() => handleReview(p.id, 'approve')} className="px-3 py-1.5 text-xs bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600">通过</button>
                 <button onClick={() => handleReview(p.id, 'reject')} className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">拒绝</button>
                 </>)}
-                <button onClick={() => setExpandedId(expandedId === p.id ? null : p.id)} className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
-                  {expandedId === p.id ? '收起' : '详情'}
-                </button>
                 {canApprove && (
                 <button onClick={() => handleDelete(p.id, p.title)} className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">删除</button>
                 )}
               </div>
             </div>
 
-            {expandedId === p.id && (
-              <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700" onClick={e => e.stopPropagation()}>
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">题目内容</h4>
-                  <div className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap font-mono bg-gray-50 p-3 border border-gray-200 max-h-60 overflow-y-auto dark:bg-gray-800 dark:border-gray-700">
-                    {p.content}
-                  </div>
-                </div>
-                {p.solution && (
-                  <div className="mb-4">
-                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-1">出题人题解</h4>
-                    <div className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap font-mono bg-blue-50 p-3 border border-blue-200 max-h-60 overflow-y-auto dark:bg-blue-900/20 dark:border-blue-800">
-                      {p.solution}
-                    </div>
-                  </div>
-                )}
-
-                {canApprove && (
+            {canApprove && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}>
                 <div className="mb-4">
                   <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">关联比赛</h4>
                   <div className="flex items-center gap-2">
@@ -566,26 +627,7 @@ export default function ProblemsPage() {
                     <span className="text-xs text-gray-400 dark:text-gray-500">选择后自动保存</span>
                   </div>
                 </div>
-                )}
-                {canApprove && (
-                <div className="mb-2">
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">可见性设置（选择可查看此题目的成员）</h4>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {members.map(m => (
-                      <label key={m.user_id} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={(visibilityMap[p.id] || []).includes(m.user_id)}
-                          onChange={() => toggleMember(p.id, m.user_id)}
-                          className="accent-gray-800 dark:accent-gray-400"
-                        />
-                        {m.name}
-                      </label>
-                    ))}
-                  </div>
-                  <button onClick={() => handleSetVisibility(p.id)} className="text-xs px-3 py-1 border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">保存可见性</button>
-                </div>
-                )}
+                {renderVisibilityEditor(p.id)}
               </div>
             )}
           </div>
@@ -706,6 +748,7 @@ export default function ProblemsPage() {
 
           {/* Tab content */}
           {activeTab === 'list' && renderProblemList()}
+          {activeTab === 'mine' && renderMyProblems()}
           {activeTab === 'pending' && renderPending()}
           {activeTab === 'approved' && renderApproved()}
           {activeTab === 'published' && renderPublished()}
