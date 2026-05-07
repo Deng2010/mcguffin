@@ -133,6 +133,7 @@ export interface ProblemListItem {
   public_at: string | null
   claimed_by: string | null
   has_verifier_solution: boolean
+  link?: string | null
 }
 
 export interface ProblemDetail {
@@ -155,6 +156,7 @@ export interface ProblemDetail {
 }
 
 export interface AdminPendingProblem {
+  link?: string | null
   id: string
   title: string
   author_name: string

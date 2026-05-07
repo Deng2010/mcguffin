@@ -44,7 +44,7 @@ function AppContent() {
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route
               path="/problems"
-              element={<ProtectedRoute requiredPermission="view_problems"><ProblemsPage /></ProtectedRoute>}
+              element={<ProblemsPage />}
             />
             <Route
               path="/problems/:id"
@@ -60,7 +60,7 @@ function AppContent() {
             />
             <Route
               path="/contests"
-              element={<ProtectedRoute requiredPermission="view_problems"><ContestManagePage /></ProtectedRoute>}
+              element={<ContestManagePage />}
             />
             <Route
               path="/suggestions"

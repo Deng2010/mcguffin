@@ -18,9 +18,10 @@ interface ContestOption {
 type TabId = 'list' | 'mine' | 'pending' | 'approved' | 'published'
 
 export default function ProblemsPage() {
-  const { user, hasPermission } = useAuth()
+  const { user, hasPermission, isAuthenticated } = useAuth()
   const { difficultyMap, difficulties } = useDifficulties()
   const navigate = useNavigate()
+  const isGuest = !isAuthenticated || user?.role === 'guest'
   const canApprove = hasPermission('approve_problem')
   const canSubmit = hasPermission('submit_problem')
 
@@ -289,6 +290,7 @@ export default function ProblemsPage() {
 
   // Card wrapper — clickable to navigate to problem detail
   const cardClass = "p-4 bg-white border border-gray-300 cursor-pointer hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:border-gray-700 dark:hover:bg-gray-800/50"
+  const guestCardClass = "p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700"
   const goDetail = (problemId: string) => (e: React.MouseEvent) => {
     navigate(`/problems/${problemId}`)
   }
@@ -498,7 +500,7 @@ export default function ProblemsPage() {
 
   const renderProblemCard = (p: ProblemListItem | AdminPendingProblem, extraActions?: React.ReactNode) => {
     return (
-      <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
+      <div key={p.id} className={isGuest ? guestCardClass : cardClass} onClick={isGuest ? undefined : goDetail(p.id)}>
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -517,13 +519,27 @@ export default function ProblemsPage() {
             {renderMeta(p)}
           </div>
           <div className="flex items-center gap-2 ml-4 shrink-0" onClick={e => e.stopPropagation()}>
-            {canSubmit && p.status === 'approved' && !(p as any).claimed_by && user?.id !== (p as any).author_id && (
+            {p.link && (
+              <a
+                href={p.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 text-xs border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
+                title="外部链接"
+              >
+                打开 ↗
+              </a>
+            )}
+            {isGuest && !p.link && (
+              <span className="text-xs text-gray-400 dark:text-gray-500 italic">仅团队成员可查看</span>
+            )}
+            {!isGuest && canSubmit && p.status === 'approved' && !(p as any).claimed_by && user?.id !== (p as any).author_id && (
               <button onClick={() => handleClaim(p.id)} className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">认领验题</button>
             )}
-            {canSubmit && (p as any).claimed_by === user?.id && (
+            {!isGuest && canSubmit && (p as any).claimed_by === user?.id && (
               <button onClick={() => handleUnclaim(p.id)} className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">取消认领</button>
             )}
-            {extraActions}
+            {!isGuest && extraActions}
           </div>
         </div>
       </div>
@@ -689,8 +705,8 @@ export default function ProblemsPage() {
     <div className="p-6 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">题目</h1>
-        {canSubmit && !showSubmit && (
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">题目 {!isGuest && <span className="text-sm font-normal text-gray-400 dark:text-gray-500">({filteredProblems.length})</span>}</h1>
+        {!isGuest && canSubmit && !showSubmit && (
           <button
             onClick={() => setShowSubmit(true)}
             className="px-4 py-2 bg-gray-800 text-white text-sm font-medium hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
