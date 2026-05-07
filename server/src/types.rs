@@ -309,6 +309,8 @@ pub struct SiteInfo {
     #[serde(default)]
     pub description: String,
     pub title: String,
+    pub showcase_problems: usize,
+    pub showcase_contests: usize,
 }
 
 #[derive(Deserialize)]
@@ -356,11 +358,18 @@ pub struct SiteConfig {
     pub name: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
+    #[serde(default = "default_showcase_problems")]
+    pub showcase_problems: usize,
+    #[serde(default = "default_showcase_contests")]
+    pub showcase_contests: usize,
 }
+
+fn default_showcase_problems() -> usize { 8 }
+fn default_showcase_contests() -> usize { 3 }
 
 impl Default for SiteConfig {
     fn default() -> Self {
-        Self { name: None, title: None }
+        Self { name: None, title: None, showcase_problems: 8, showcase_contests: 3 }
     }
 }
 

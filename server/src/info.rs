@@ -18,6 +18,8 @@ pub async fn get_site_info(
         version: state.site_version.clone(),
         description: state.site_description.read().await.clone(),
         title: state.site_title.clone(),
+        showcase_problems: state.showcase_problems,
+        showcase_contests: state.showcase_contests,
     })
 }
 

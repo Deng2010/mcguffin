@@ -8,6 +8,8 @@ interface SiteInfo {
   version: string
   description: string
   title: string
+  showcase_problems: number
+  showcase_contests: number
 }
 
 interface SiteContextType {
@@ -34,7 +36,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
   const fetchInfo = useCallback(() => {
     apiFetch<SiteInfo>('/site/info')
       .then(setSiteInfo)
-      .catch(() => setSiteInfo({ name: 'McGuffin', version: '0.1.0', description: '', title: 'McGuffin' }))
+      .catch(() => setSiteInfo({ name: 'McGuffin', version: '0.1.0', description: '', title: 'McGuffin', showcase_problems: 8, showcase_contests: 3 }))
   }, [])
 
   useEffect(() => { fetchInfo() }, [fetchInfo])

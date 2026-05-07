@@ -44,7 +44,14 @@ pub struct SiteSection {
     pub name: String,
     #[serde(default)]
     pub title: Option<String>,
+    #[serde(default = "default_showcase_problems")]
+    pub showcase_problems: usize,
+    #[serde(default = "default_showcase_contests")]
+    pub showcase_contests: usize,
 }
+
+fn default_showcase_problems() -> usize { 8 }
+fn default_showcase_contests() -> usize { 3 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct OAuthSection {
@@ -144,6 +151,8 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
                 let t = get_str("site", "title");
                 if t.is_empty() { None } else { Some(t) }
             },
+            showcase_problems: get_u16("site", "showcase_problems") as usize,
+            showcase_contests: get_u16("site", "showcase_contests") as usize,
         },
         oauth: OAuthSection {
             cp_client_id: get_str("oauth", "cp_client_id"),
@@ -178,6 +187,11 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
             Some(title) if !title.trim().is_empty() => set_str(t, "title", title.trim()),
             _ => { t.remove("title"); }
         }
+        let set_usize = |table: &mut toml_edit::Table, key: &str, value: usize| {
+            table[key] = Item::Value(TomlValue::from(value as i64));
+        };
+        set_usize(t, "showcase_problems", payload.site.showcase_problems);
+        set_usize(t, "showcase_contests", payload.site.showcase_contests);
     }
     if let Some(t) = doc.get_mut("oauth").and_then(|s| s.as_table_mut()) {
         set_str(t, "cp_client_id", &payload.oauth.cp_client_id);

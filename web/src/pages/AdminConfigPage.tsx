@@ -5,7 +5,7 @@ import { apiFetch } from '../api'
 interface ConfigData {
   server: { site_url: string; port: number; data_file: string }
   admin: { password: string; display_name: string }
-  site: { name: string; title?: string | null }
+  site: { name: string; title?: string | null; showcase_problems: number; showcase_contests: number }
   oauth: { cp_client_id: string; cp_client_secret: string }
   difficulty: Record<string, { label: string; color: string }>
 }
@@ -35,6 +35,8 @@ export default function AdminConfigPage() {
   const [displayName, setDisplayName] = useState('')
   const [siteName, setSiteName] = useState('')
   const [siteTitle, setSiteTitle] = useState('')
+  const [siteShowcaseProblems, setSiteShowcaseProblems] = useState('8')
+  const [siteShowcaseContests, setSiteShowcaseContests] = useState('3')
   const [cpClientId, setCpClientId] = useState('')
   const [cpClientSecret, setCpClientSecret] = useState('')
   const [difficulties, setDifficulties] = useState<DifficultyEntry[]>([])
@@ -68,6 +70,8 @@ export default function AdminConfigPage() {
       setDisplayName(res.config.admin.display_name)
       setSiteName(res.config.site.name)
       setSiteTitle(res.config.site.title ?? '')
+      setSiteShowcaseProblems(String(res.config.site.showcase_problems ?? 8))
+      setSiteShowcaseContests(String(res.config.site.showcase_contests ?? 3))
       setCpClientId(res.config.oauth.cp_client_id)
       setCpClientSecret(res.config.oauth.cp_client_secret)
       const diffArr: DifficultyEntry[] = Object.entries(res.config.difficulty).map(([name, fields]) => ({
@@ -124,7 +128,7 @@ export default function AdminConfigPage() {
         body: JSON.stringify({
           server: { site_url: siteUrl, port: parseInt(port) || 3000, data_file: dataFile },
           admin: { password: adminPassword, display_name: displayName },
-          site: { name: siteName, title: siteTitle || undefined },
+          site: { name: siteName, title: siteTitle || undefined, showcase_problems: parseInt(siteShowcaseProblems) || 8, showcase_contests: parseInt(siteShowcaseContests) || 3 },
           oauth: { cp_client_id: cpClientId, cp_client_secret: cpClientSecret },
           difficulty: diffObj,
         }),
@@ -213,6 +217,18 @@ export default function AdminConfigPage() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">网页标题</label>
               <input type="text" value={siteTitle} onChange={e => setSiteTitle(e.target.value)} className={inputClass} placeholder="与站点名称相同" />
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">浏览器标签页显示的标题，留空则使用站点名称</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">展板题目数</label>
+                <input type="number" value={siteShowcaseProblems} onChange={e => setSiteShowcaseProblems(e.target.value)} className={inputClass} placeholder="8" min={0} />
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">首页展板显示的题目数量，默认 8</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">展板比赛数</label>
+                <input type="number" value={siteShowcaseContests} onChange={e => setSiteShowcaseContests(e.target.value)} className={inputClass} placeholder="3" min={0} />
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">首页展板显示的比赛数量，默认 3</p>
+              </div>
             </div>
           </div>
         )

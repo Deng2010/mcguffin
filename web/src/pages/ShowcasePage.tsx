@@ -254,7 +254,10 @@ export default function ShowcasePage() {
             <Link to="/announcements" className="text-xs font-normal text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ml-2">查看全部</Link>
           </h2>
           <div className="space-y-2">
-            {announcements.slice(0, 3).map(a => (
+            {(() => {
+              const pinned = announcements.filter(a => a.pinned)
+              const showCount = Math.max(pinned.length, 3)
+              return announcements.slice(0, showCount).map(a => (
               <div
                 key={a.id}
                 className={`bg-white dark:bg-gray-900 border ${a.pinned ? 'border-yellow-400' : 'border-gray-300 dark:border-gray-700'} p-4`}
@@ -272,8 +275,16 @@ export default function ShowcasePage() {
                   <MarkdownRenderer content={a.content} />
                 </div>
               </div>
-            ))}
+              ))
+            })()}
           </div>
+          {announcements.length > Math.max(announcements.filter(a => a.pinned).length, 3) && (
+            <div className="text-center mt-4">
+              <Link to="/announcements" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                查看全部公告
+              </Link>
+            </div>
+          )}
         </section>
       )}
 
@@ -283,9 +294,18 @@ export default function ShowcasePage() {
         {problems.length === 0 ? (
           <div className="text-gray-400 dark:text-gray-500 text-sm">暂无公开题目</div>
         ) : (
+          <>
           <div className="space-y-2">
-            {problems.map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
+            {problems.slice(0, siteInfo?.showcase_problems ?? 8).map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
           </div>
+          {problems.length > (siteInfo?.showcase_problems ?? 8) && (
+            <div className="text-center mt-4">
+              <Link to="/problems" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                查看全部题目
+              </Link>
+            </div>
+          )}
+          </>
         )}
       </section>
 
@@ -295,8 +315,9 @@ export default function ShowcasePage() {
         {contests.length === 0 ? (
           <div className="text-gray-400 dark:text-gray-500 text-sm">暂无比赛</div>
         ) : (
+          <>
           <div className="space-y-4">
-            {contests.map(c => {
+            {contests.slice(0, siteInfo?.showcase_contests ?? 3).map(c => {
               const status = contestStatus(c.start_time, c.end_time)
               const cProblems = contestProblems[c.id] || []
               return (
@@ -334,6 +355,14 @@ export default function ShowcasePage() {
               )
             })}
           </div>
+          {contests.length > (siteInfo?.showcase_contests ?? 3) && (
+            <div className="text-center mt-4">
+              <Link to="/contests" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                查看全部比赛
+              </Link>
+            </div>
+          )}
+          </>
         )}
       </section>
 
@@ -342,8 +371,15 @@ export default function ShowcasePage() {
         <section>
           <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">其他公示题目 ({unassigned.length})</h2>
           <div className="grid gap-2">
-            {unassigned.map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
+            {unassigned.slice(0, siteInfo?.showcase_problems ?? 8).map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
           </div>
+          {unassigned.length > (siteInfo?.showcase_problems ?? 8) && (
+            <div className="text-center mt-4">
+              <Link to="/problems" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+                查看全部题目
+              </Link>
+            </div>
+          )}
         </section>
       )}
     </div>

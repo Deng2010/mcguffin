@@ -66,6 +66,9 @@ pub struct AppState {
     pub announcements: Arc<RwLock<HashMap<String, Announcement>>>,
     /// Notifications
     pub notifications: Arc<RwLock<HashMap<String, Notification>>>,
+    /// Showcase display limits
+    pub showcase_problems: usize,
+    pub showcase_contests: usize,
 }
 
 impl AppState {
@@ -147,6 +150,8 @@ impl AppState {
             suggestions: Arc::new(RwLock::new(suggestions)),
             announcements: Arc::new(RwLock::new(announcements)),
             notifications: Arc::new(RwLock::new(notifications)),
+            showcase_problems: config.site.showcase_problems,
+            showcase_contests: config.site.showcase_contests,
         }
     }
 
@@ -264,6 +269,7 @@ fn load_config() -> AppConfig {
         },
         site: crate::types::SiteConfig { title: None,
             name: std::env::var("SITE_NAME").ok(),
+            ..Default::default()
         },
         oauth: crate::types::OAuthConfig {
             cp_client_id: std::env::var("CPOAUTH_CLIENT_ID")
@@ -295,7 +301,7 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None, title: None },
+            site: SiteConfig { name: None, title: None, ..Default::default() },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),
@@ -325,7 +331,7 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None, title: None },
+            site: SiteConfig { name: None, title: None, ..Default::default() },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),
@@ -355,7 +361,7 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None, title: None },
+            site: SiteConfig { name: None, title: None, ..Default::default() },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),
