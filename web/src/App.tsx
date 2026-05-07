@@ -75,6 +75,10 @@ function AppContent() {
               element={<ProtectedRoute requiredPermission="view_showcase"><ProfilePage /></ProtectedRoute>}
             />
             <Route
+              path="/profile/:username"
+              element={<ProfilePage />}
+            />
+            <Route
               path="/admin/config"
               element={<ProtectedRoute requiredPermission="manage_site"><AdminConfigPage /></ProtectedRoute>}
             />

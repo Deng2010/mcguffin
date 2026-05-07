@@ -1,5 +1,8 @@
 use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::User;
+use chrono::Utc;
+
+const SESSION_MAX_AGE_SECS: i64 = 24 * 60 * 60; // 24 hours
 
 // ============== URL Encoding ==============
 
@@ -31,8 +34,30 @@ pub fn get_token_from_headers(headers: &axum::http::HeaderMap) -> Option<String>
 // ============== Shared Auth Helpers ==============
 
 /// Resolve user from token; returns (user_id, user)
+/// Checks session expiry (24h inactivity) and updates last_active timestamp
 pub async fn resolve_user(state: &AppState, headers: &axum::http::HeaderMap) -> Option<(String, User)> {
     let token = get_token_from_headers(headers)?;
+    let now = Utc::now();
+
+    // Check session expiry
+    {
+        let session_times = state.session_times.read().await;
+        if let Some(last_active) = session_times.get(&token) {
+            let elapsed = (now - *last_active).num_seconds();
+            if elapsed > SESSION_MAX_AGE_SECS {
+                // Session expired — clean up
+                drop(session_times);
+                state.sessions.write().await.remove(&token);
+                state.session_times.write().await.remove(&token);
+                state.save().await;
+                return None;
+            }
+        }
+    }
+
+    // Update last_active time
+    state.session_times.write().await.insert(token.clone(), now);
+
     let user_id = state.sessions.read().await.get(&token)?.clone();
     let user = state.users.read().await.get(&user_id)?.clone();
     Some((user_id, user))

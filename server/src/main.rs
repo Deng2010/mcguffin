@@ -75,6 +75,7 @@ async fn main() {
         .route("/api/auth/login", post(login))
         // User routes
         .route("/api/user/me", get(get_current_user))
+        .route("/api/user/profile/{username}", get(get_public_profile))
         .route("/api/user/profile", put(update_profile))
         .route("/api/user/verify", get(verify_token))
         .route("/api/logout", post(logout))

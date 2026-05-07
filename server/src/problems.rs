@@ -9,30 +9,8 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::get_token_from_headers;
+use crate::utils::{resolve_user, is_admin, is_team_member};
 use crate::notifications::create_notification;
-
-// ============== Helpers ==============
-
-/// Resolve user from token; returns (user_id, user)
-async fn resolve_user<'a>(state: &'a AppState, headers: &HeaderMap) -> Option<(String, User)> {
-    let token = get_token_from_headers(headers)?;
-    let user_id = state.sessions.read().await.get(&token)?.clone();
-    let user = state.users.read().await.get(&user_id)?.clone();
-    Some((user_id, user))
-}
-
-/// Check if user is a team member
-async fn is_team_member(state: &AppState, user_id: &str) -> bool {
-    let members = state.team_members.read().await;
-    members.values().any(|m| m.user_id == user_id)
-}
-
-/// Check if user has admin role (includes superadmin)
-async fn is_admin(state: &AppState, user_id: &str) -> bool {
-    let users = state.users.read().await;
-    users.get(user_id).map(|u| u.role == "admin" || u.role == "superadmin").unwrap_or(false)
-}
 
 // ============== List Problems ==============
 

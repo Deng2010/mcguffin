@@ -175,7 +175,7 @@ export default function Navbar() {
           {isAuthenticated && user ? (
             <>
               <div className="flex items-center gap-2">
-                <Link to="/profile" className="flex items-center gap-2 hover:opacity-80">
+                <Link to={`/profile/${user.username}`} className="flex items-center gap-2 hover:opacity-80">
                   {user.avatar_url ? (
                     <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
                   ) : (

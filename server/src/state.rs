@@ -16,6 +16,8 @@ const CONFIG_FILE: &str = "/usr/share/mcguffin/config.toml";
 struct SavedData {
     users: HashMap<String, User>,
     sessions: HashMap<String, String>,
+    #[serde(default)]
+    session_times: HashMap<String, DateTime<Utc>>,
     refresh_tokens: HashMap<String, String>,
     team_members: HashMap<String, TeamMember>,
     problems: HashMap<String, Problem>,
@@ -38,6 +40,7 @@ struct SavedData {
 pub struct AppState {
     pub users: Arc<RwLock<HashMap<String, User>>>,
     pub sessions: Arc<RwLock<HashMap<String, String>>>,
+    pub session_times: Arc<RwLock<HashMap<String, DateTime<Utc>>>>,
     pub refresh_tokens: Arc<RwLock<HashMap<String, String>>>,
     pub team_members: Arc<RwLock<HashMap<String, TeamMember>>>,
     pub problems: Arc<RwLock<HashMap<String, Problem>>>,
@@ -79,13 +82,13 @@ impl AppState {
             .ok()
             .and_then(|s| serde_json::from_str::<SavedData>(&s).ok());
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications) =
+        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, session_times) =
             if let Some(data) = saved {
                 tracing::info!("Loaded state from {}", data_file);
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications)
+                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.session_times)
             } else {
                 tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new())
+                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new())
             };
 
         // Always ensure superadmin user exists AND has correct role
@@ -132,6 +135,7 @@ impl AppState {
         Self {
             users: Arc::new(RwLock::new(users)),
             sessions: Arc::new(RwLock::new(sessions)),
+            session_times: Arc::new(RwLock::new(session_times)),
             refresh_tokens: Arc::new(RwLock::new(refresh_tokens)),
             team_members: Arc::new(RwLock::new(team_members)),
             problems: Arc::new(RwLock::new(problems)),
@@ -159,6 +163,7 @@ impl AppState {
         let data = SavedData {
             users: self.users.read().await.clone(),
             sessions: self.sessions.read().await.clone(),
+            session_times: self.session_times.read().await.clone(),
             refresh_tokens: self.refresh_tokens.read().await.clone(),
             team_members: self.team_members.read().await.clone(),
             problems: self.problems.read().await.clone(),
@@ -186,6 +191,7 @@ impl AppState {
             if let Ok(data) = serde_json::from_str::<SavedData>(&json) {
                 *self.users.write().await = data.users;
                 *self.sessions.write().await = data.sessions;
+                *self.session_times.write().await = data.session_times;
                 *self.refresh_tokens.write().await = data.refresh_tokens;
                 *self.team_members.write().await = data.team_members;
                 *self.problems.write().await = data.problems;
