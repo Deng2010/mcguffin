@@ -11,6 +11,7 @@ use crate::state::AppState;
 use crate::types::*;
 use crate::utils::get_token_from_headers;
 use crate::utils::is_superadmin;
+use crate::notifications::create_notification;
 
 // ============== Helpers ==============
 
@@ -333,6 +334,10 @@ pub async fn review_problem(
         None => return Json(ReviewResponse { success: false, message: "题目不存在".to_string() }),
     };
 
+    // Capture info for notification before modifying
+    let author_id = problem.author_id.clone();
+    let problem_title = problem.title.clone();
+
     let result = match action.as_str() {
         "approve" => {
             if problem.status != "pending" {
@@ -382,6 +387,39 @@ pub async fn review_problem(
 
     drop(problems);
     state.save().await;
+
+    // Send notification to the problem author
+    match action.as_str() {
+        "approve" => {
+            create_notification(
+                &state,
+                &author_id,
+                "题目已批准",
+                &format!("题目「{}」已通过审核", problem_title),
+                Some("/problems"),
+            ).await;
+        }
+        "publish" => {
+            create_notification(
+                &state,
+                &author_id,
+                "题目已发布",
+                &format!("题目「{}」已成功发布", problem_title),
+                Some("/problems"),
+            ).await;
+        }
+        "reject" => {
+            create_notification(
+                &state,
+                &author_id,
+                "题目未通过",
+                &format!("题目「{}」未通过审核", problem_title),
+                Some("/problems"),
+            ).await;
+        }
+        _ => {}
+    }
+
     result
 }
 

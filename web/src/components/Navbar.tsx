@@ -2,12 +2,33 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { useSite } from '../SiteContext'
 import { useDarkMode } from '../DarkModeContext'
+import { useNotifications } from '../NotificationContext'
+import { useState, useRef, useEffect } from 'react'
 
 export default function Navbar() {
   const { user, isAuthenticated, logout, hasPermission } = useAuth()
   const { siteInfo } = useSite()
   const { isDark, toggle } = useDarkMode()
+  const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
   const location = useLocation()
+  const [showNotifications, setShowNotifications] = useState(false)
+  const notifRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setShowNotifications(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Close dropdown when navigating
+  useEffect(() => {
+    setShowNotifications(false)
+  }, [location.pathname])
 
   const navLink = (to: string, label: string) => {
     const active = location.pathname === to
@@ -27,6 +48,19 @@ export default function Navbar() {
   const showSuggestions = hasPermission('view_suggestions')
   const showApply = isAuthenticated && user?.team_status !== 'joined'
   const showAdminConfig = user?.role === 'superadmin'
+
+  const formatTime = (dateStr: string) => {
+    const d = new Date(dateStr)
+    const now = new Date()
+    const diff = now.getTime() - d.getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 60) return `${mins}分钟前`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours}小时前`
+    const days = Math.floor(hours / 24)
+    if (days < 7) return `${days}天前`
+    return d.toLocaleDateString('zh-CN')
+  }
 
   return (
     <nav className="bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 px-6 py-3">
@@ -61,6 +95,83 @@ export default function Navbar() {
               </svg>
             )}
           </button>
+
+          {/* Notification bell */}
+          {isAuthenticated && (
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
+                title="通知"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-red-500 rounded-full">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification dropdown */}
+              {showNotifications && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-lg z-50 max-h-96 flex flex-col">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">通知</span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllRead}
+                        className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                      >
+                        全部已读
+                      </button>
+                    )}
+                  </div>
+                  <div className="overflow-y-auto flex-1">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-gray-400 dark:text-gray-500">
+                        暂无通知
+                      </div>
+                    ) : (
+                      notifications.map(n => (
+                        <div
+                          key={n.id}
+                          className={`px-4 py-3 border-b border-gray-100 dark:border-gray-700/50 cursor-pointer transition-colors ${
+                            n.read
+                              ? 'hover:bg-gray-50 dark:hover:bg-gray-700/30'
+                              : 'bg-gray-50 dark:bg-gray-700/20 hover:bg-gray-100 dark:hover:bg-gray-700/40'
+                          }`}
+                          onClick={() => {
+                            markRead(n.id)
+                            setShowNotifications(false)
+                          }}
+                        >
+                          <div className="flex items-start gap-2">
+                            {!n.read && (
+                              <span className="w-2 h-2 bg-red-500 rounded-full mt-1.5 shrink-0" />
+                            )}
+                            <div className={`flex-1 min-w-0 ${n.read ? 'ml-4' : ''}`}>
+                              <Link
+                                to={n.link || '#'}
+                                className="text-sm font-medium text-gray-800 dark:text-gray-200 hover:underline block"
+                                onClick={() => setShowNotifications(false)}
+                              >
+                                {n.title}
+                              </Link>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{n.body}</p>
+                              <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{formatTime(n.created_at)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {isAuthenticated && user ? (
             <>
               <div className="flex items-center gap-2">

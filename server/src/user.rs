@@ -69,6 +69,23 @@ pub async fn update_profile(
         user.bio = bio;
     }
 
+    // Handle password change
+    if let Some(password) = payload.password {
+        if !password.trim().is_empty() {
+            match bcrypt::hash(password.trim(), 10) {
+                Ok(hash) => {
+                    user.password_hash = Some(hash);
+                }
+                Err(e) => {
+                    return Json(serde_json::json!({
+                        "success": false,
+                        "message": format!("密码加密失败: {}", e),
+                    }));
+                }
+            }
+        }
+    }
+
     // Also sync to TeamMember record so member list stays consistent
     {
         let mut members = state.team_members.write().await;

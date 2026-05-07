@@ -1,6 +1,8 @@
 // ============== Token Management ==============
 
-const TOKEN_KEY = '***'
+import type { NotificationResponse } from './types'
+
+const TOKEN_KEY='***'
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -12,6 +14,20 @@ export function setToken(token: string) {
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY)
+}
+
+// ============== Notification API ==============
+
+export async function fetchNotifications(): Promise<NotificationResponse> {
+  return apiFetch<NotificationResponse>('/notifications')
+}
+
+export async function markNotificationRead(id: string): Promise<{ success: boolean; message: string }> {
+  return apiFetch(`/notifications/read/${id}`, { method: 'POST' })
+}
+
+export async function markAllNotificationsRead(): Promise<{ success: boolean; message: string }> {
+  return apiFetch('/notifications/read-all', { method: 'POST' })
 }
 
 // ============== API Client ==============

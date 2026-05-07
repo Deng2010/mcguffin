@@ -178,6 +178,23 @@ export interface SubmitProblemPayload {
   solution?: string
 }
 
+// ============== Notification Types ==============
+
+export interface Notification {
+  id: string
+  user_id: string
+  title: string
+  body: string
+  read: boolean
+  created_at: string
+  link: string | null
+}
+
+export interface NotificationResponse {
+  notifications: Notification[]
+  unread_count: number
+}
+
 export interface ApiResponse {
   success: boolean
   message: string

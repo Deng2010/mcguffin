@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
 import { SiteProvider, useSite } from './SiteContext'
 import { DarkModeProvider } from './DarkModeContext'
+import { NotificationProvider } from './NotificationContext'
 import Navbar from './components/Navbar'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
@@ -95,7 +96,9 @@ export default function App() {
     <DarkModeProvider>
       <AuthProvider>
         <SiteProvider>
-          <AppContent />
+          <NotificationProvider>
+            <AppContent />
+          </NotificationProvider>
         </SiteProvider>
       </AuthProvider>
     </DarkModeProvider>

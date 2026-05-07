@@ -11,6 +11,12 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
+  // Password change state
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [savingPassword, setSavingPassword] = useState(false)
+
   if (!user) {
     return (
       <div className="p-6 max-w-2xl mx-auto text-center py-12">
@@ -71,6 +77,42 @@ export default function ProfilePage() {
     }
   }
 
+  const handleChangePassword = async () => {
+    if (!newPassword.trim()) {
+      setMsg('请输入新密码')
+      return
+    }
+    if (newPassword.length < 3) {
+      setMsg('密码至少需要3个字符')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setMsg('两次输入的密码不一致')
+      return
+    }
+    setSavingPassword(true)
+    setMsg('')
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>('/user/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ password: newPassword }),
+      })
+      if (!res.success) {
+        setMsg(res.message)
+      } else {
+        setMsg('密码已更新')
+        setNewPassword('')
+        setConfirmPassword('')
+        setChangingPassword(false)
+        setTimeout(() => setMsg(''), 2000)
+      }
+    } catch (err) {
+      setMsg(`设置密码失败: ${err}`)
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
   const roleLabel = (role: string) => {
     switch (role) {
       case 'superadmin': return '超级管理员'
@@ -88,7 +130,7 @@ export default function ProfilePage() {
 
       {msg && (
         <div className={`mb-4 p-3 text-sm border ${
-          msg === '已保存' ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300' : 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300'
+          msg === '已保存' || msg === '密码已更新' ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300' : 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300'
         }`}>
           {msg}
         </div>
@@ -201,6 +243,55 @@ export default function ProfilePage() {
               </button>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Password Settings */}
+      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mt-6">
+        <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-2">设置密码</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          设置密码后可使用账户名或显示名称进行账密登录
+        </p>
+
+        {changingPassword ? (
+          <div className="space-y-3 max-w-sm">
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              placeholder="新密码"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400"
+            />
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              placeholder="确认新密码"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleChangePassword}
+                disabled={savingPassword}
+                className="px-6 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
+              >
+                {savingPassword ? '保存中...' : '保存密码'}
+              </button>
+              <button
+                onClick={() => { setChangingPassword(false); setNewPassword(''); setConfirmPassword('') }}
+                className="px-6 py-2 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setChangingPassword(true)}
+            className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            设置密码
+          </button>
         )}
       </div>
     </div>

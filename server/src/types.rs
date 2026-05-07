@@ -15,6 +15,8 @@ pub struct User {
     pub created_at: DateTime<Utc>,
     #[serde(default)]
     pub bio: String,
+    #[serde(default)]
+    pub password_hash: Option<String>,
 }
 
 // ============== Team ==============
@@ -77,6 +79,8 @@ pub struct UpdateProfilePayload {
     pub avatar_url: Option<String>,
     #[serde(default)]
     pub bio: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 // ============== Contest ==============
@@ -400,15 +404,17 @@ impl Default for DifficultyConfig {
     }
 }
 
-// ============== Admin Login ==============
+// ============== Login (merged admin + account) ==============
 
 #[derive(Deserialize)]
-pub struct AdminLoginPayload {
+pub struct LoginPayload {
+    #[serde(default)]
+    pub identifier: Option<String>,
     pub password: String,
 }
 
 #[derive(Serialize)]
-pub struct AdminLoginResponse {
+pub struct LoginResponse {
     pub success: bool,
     pub message: String,
     pub token: Option<String>,
@@ -496,6 +502,28 @@ pub struct UpdateAnnouncementPayload {
     pub public: Option<bool>,
 }
 
+// ============== Notification ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Notification {
+    pub id: String,
+    pub user_id: String,
+    pub title: String,
+    pub body: String,
+    #[serde(default)]
+    pub read: bool,
+    pub created_at: DateTime<Utc>,
+    /// Link to navigate to when clicked (e.g. "/problems", "/suggestions")
+    #[serde(default)]
+    pub link: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct NotificationResponse {
+    pub notifications: Vec<Notification>,
+    pub unread_count: usize,
+}
+
 // ============== Tests ==============
 
 #[cfg(test)]
@@ -514,10 +542,11 @@ mod tests {
     }
 
     #[test]
-    fn test_admin_login_payload_deserialize() {
-        let json = r#"{"password": "test123"}"#;
-        let payload: AdminLoginPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.password, "test123");
+    fn test_login_payload_deserialize() {
+        let json = r#"{"password": "***"}"#;
+        let payload: LoginPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.password, "***");
+        assert!(payload.identifier.is_none());
     }
 
     #[test]

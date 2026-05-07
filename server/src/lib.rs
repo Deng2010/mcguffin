@@ -13,6 +13,7 @@ pub mod info;
 pub mod admin;
 pub mod suggestions;
 pub mod announcements;
+pub mod notifications;
 
 // ============== Re-exports ==============
 
@@ -28,3 +29,4 @@ pub use info::*;
 pub use admin::*;
 pub use suggestions::*;
 pub use announcements::*;
+pub use notifications::*;

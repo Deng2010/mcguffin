@@ -1,4 +1,4 @@
-use crate::types::{Announcement, Contest, JoinRequest, Problem, Suggestion, TeamMember, User, AppConfig};
+use crate::types::{Announcement, Contest, JoinRequest, Notification, Problem, Suggestion, TeamMember, User, AppConfig};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,6 +28,8 @@ struct SavedData {
     suggestions: HashMap<String, Suggestion>,
     #[serde(default)]
     announcements: HashMap<String, Announcement>,
+    #[serde(default)]
+    notifications: HashMap<String, Notification>,
 }
 
 // ============== Application State ==============
@@ -59,6 +61,8 @@ pub struct AppState {
     pub suggestions: Arc<RwLock<HashMap<String, Suggestion>>>,
     /// Announcements
     pub announcements: Arc<RwLock<HashMap<String, Announcement>>>,
+    /// Notifications
+    pub notifications: Arc<RwLock<HashMap<String, Notification>>>,
 }
 
 impl AppState {
@@ -75,13 +79,13 @@ impl AppState {
             .ok()
             .and_then(|s| serde_json::from_str::<SavedData>(&s).ok());
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements) =
+        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications) =
             if let Some(data) = saved {
                 tracing::info!("Loaded state from {}", data_file);
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements)
+                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications)
             } else {
                 tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new())
+                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new())
             };
 
         // Always ensure superadmin user exists AND has correct role
@@ -96,6 +100,7 @@ impl AppState {
             team_status: "joined".to_string(),
             created_at: Utc::now(),
             bio: String::new(),
+            password_hash: None,
         });
         // Force update role to superadmin (in case loaded from old data)
         if let Some(u) = users.get_mut(ADMIN_USER_ID) {
@@ -145,6 +150,7 @@ impl AppState {
             difficulty: Arc::new(RwLock::new(difficulty_config)),
             suggestions: Arc::new(RwLock::new(suggestions)),
             announcements: Arc::new(RwLock::new(announcements)),
+            notifications: Arc::new(RwLock::new(notifications)),
         }
     }
 
@@ -161,6 +167,7 @@ impl AppState {
             site_description: self.site_description.read().await.clone(),
             suggestions: self.suggestions.read().await.clone(),
             announcements: self.announcements.read().await.clone(),
+            notifications: self.notifications.read().await.clone(),
         };
         if let Ok(json) = serde_json::to_string_pretty(&data) {
             let tmp_path = format!("{}.tmp", self.data_file);
@@ -187,6 +194,7 @@ impl AppState {
                 *self.site_description.write().await = data.site_description;
                 *self.suggestions.write().await = data.suggestions;
                 *self.announcements.write().await = data.announcements;
+                *self.notifications.write().await = data.notifications;
                 tracing::info!("State reloaded from {}", self.data_file);
             }
         }

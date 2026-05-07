@@ -10,7 +10,7 @@ interface AuthContextType {
   isAuthenticated: boolean
   loading: boolean
   login: () => void
-  adminLogin: (password: string) => Promise<{ success: boolean; message: string }>
+  accountLogin: (identifier: string, password: string) => Promise<{ success: boolean; message: string }>
   logout: () => void
   hasPermission: (permission: Permission) => boolean
   refreshUser: () => Promise<void>
@@ -77,11 +77,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = '/api/oauth/authorize'
   }
 
-  const adminLogin = async (password: string): Promise<{ success: boolean; message: string }> => {
+  const accountLogin = async (identifier: string, password: string): Promise<{ success: boolean; message: string }> => {
     try {
+      const body: Record<string, any> = { password }
+      if (identifier.trim()) {
+        body.identifier = identifier.trim()
+      }
       const res = await apiFetch<{ success: boolean; message: string; token?: string }>(
-        '/auth/admin-login',
-        { method: 'POST', body: JSON.stringify({ password }) },
+        '/auth/login',
+        { method: 'POST', body: JSON.stringify(body) },
       )
       if (res.success && res.token) {
         setToken(res.token)
@@ -105,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: !!user,
       loading,
       login,
-      adminLogin,
+      accountLogin,
       logout,
       hasPermission,
       refreshUser,

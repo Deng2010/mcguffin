@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{is_admin, is_team_member, resolve_user};
+use crate::notifications::create_notification;
 
 // ============== List Suggestions ==============
 
@@ -106,6 +107,10 @@ pub async fn update_suggestion(
     }
     let mut suggestions = state.suggestions.write().await;
     if let Some(s) = suggestions.get_mut(&id) {
+        let _old_status = s.status.clone();
+        let author_id = s.author_id.clone();
+        let suggestion_title = s.title.clone();
+
         if let Some(ref new_status) = payload.status {
             let valid = ["open", "in_progress", "resolved", "closed"];
             if !valid.contains(&new_status.as_str()) {
@@ -116,6 +121,26 @@ pub async fn update_suggestion(
         s.updated_at = Utc::now();
         drop(suggestions);
         state.save().await;
+
+        // Notify the suggestion author on resolve/close
+        if payload.status.as_deref() == Some("resolved") && author_id != user_id {
+            create_notification(
+                &state,
+                &author_id,
+                "建议已解决",
+                &format!("你的建议「{}」已被标记为已解决", suggestion_title),
+                Some("/suggestions"),
+            ).await;
+        } else if payload.status.as_deref() == Some("closed") && author_id != user_id {
+            create_notification(
+                &state,
+                &author_id,
+                "建议已关闭",
+                &format!("你的建议「{}」已被关闭", suggestion_title),
+                Some("/suggestions"),
+            ).await;
+        }
+
         return Json(serde_json::json!({"success": true, "message": "建议已更新"}));
     }
     Json(serde_json::json!({"success": false, "message": "建议不存在"}))
@@ -141,9 +166,11 @@ pub async fn reply_to_suggestion(
     }
     let mut suggestions = state.suggestions.write().await;
     if let Some(s) = suggestions.get_mut(&id) {
+        let author_id = s.author_id.clone();
+        let suggestion_title = s.title.clone();
         let reply = SuggestionReply {
             id: Uuid::new_v4().to_string(),
-            author_id: user_id,
+            author_id: user_id.clone(),
             author_name: user.display_name,
             content: payload.content.trim().to_string(),
             created_at: Utc::now(),
@@ -152,6 +179,18 @@ pub async fn reply_to_suggestion(
         s.updated_at = Utc::now();
         drop(suggestions);
         state.save().await;
+
+        // Notify the suggestion author when someone replies
+        if author_id != user_id {
+            create_notification(
+                &state,
+                &author_id,
+                "建议有新回复",
+                &format!("你的建议「{}」收到了新回复", suggestion_title),
+                Some("/suggestions"),
+            ).await;
+        }
+
         return Json(serde_json::json!({"success": true, "message": "回复成功"}));
     }
     Json(serde_json::json!({"success": false, "message": "建议不存在"}))

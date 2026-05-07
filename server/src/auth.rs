@@ -11,28 +11,80 @@ use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::*;
 use crate::utils::url_encode;
 
-// ============== Admin Login ==============
+// ============== Merged Login (admin + account) ==============
 
-pub async fn admin_login(
+pub async fn login(
     State(state): State<AppState>,
-    Json(payload): Json<AdminLoginPayload>,
-) -> Json<AdminLoginResponse> {
-    if payload.password != state.admin_password {
-        return Json(AdminLoginResponse {
-            success: false,
-            message: "密码错误".to_string(),
-            token: None,
-        });
+    Json(payload): Json<LoginPayload>,
+) -> Json<LoginResponse> {
+    // If identifier is provided, try account login (by username or display_name)
+    if let Some(identifier) = &payload.identifier {
+        let identifier = identifier.trim();
+        if identifier.is_empty() {
+            return Json(LoginResponse { success: false, message: "请输入账户名或显示名称".to_string(), token: None });
+        }
+
+        let users = state.users.read().await;
+        // Find user by username or display_name
+        let found = users.values().find(|u| {
+            u.username == identifier || u.display_name == identifier
+        }).cloned();
+        drop(users);
+
+        match found {
+            Some(user) => {
+                match &user.password_hash {
+                    Some(hash) => {
+                        match bcrypt::verify(&payload.password, hash) {
+                            Ok(true) => {
+                                // Password correct — create session
+                                let session_token = Uuid::new_v4().to_string();
+                                state.sessions.write().await.insert(session_token.clone(), user.id.clone());
+                                Json(LoginResponse {
+                                    success: true,
+                                    message: "登录成功".to_string(),
+                                    token: Some(session_token),
+                                })
+                            }
+                            _ => Json(LoginResponse {
+                                success: false,
+                                message: "密码错误".to_string(),
+                                token: None,
+                            })
+                        }
+                    }
+                    None => Json(LoginResponse {
+                        success: false,
+                        message: "该用户未设置密码，请使用其他方式登录或先在个人资料中设置密码".to_string(),
+                        token: None,
+                    })
+                }
+            }
+            None => Json(LoginResponse {
+                success: false,
+                message: "未找到该账户".to_string(),
+                token: None,
+            })
+        }
+    } else {
+        // No identifier — admin password login (backward compatible)
+        if payload.password != state.admin_password {
+            return Json(LoginResponse {
+                success: false,
+                message: "密码错误".to_string(),
+                token: None,
+            });
+        }
+
+        let session_token = Uuid::new_v4().to_string();
+        state.sessions.write().await.insert(session_token.clone(), ADMIN_USER_ID.to_string());
+
+        Json(LoginResponse {
+            success: true,
+            message: "登录成功".to_string(),
+            token: Some(session_token),
+        })
     }
-
-    let session_token = Uuid::new_v4().to_string();
-    state.sessions.write().await.insert(session_token.clone(), ADMIN_USER_ID.to_string());
-
-    Json(AdminLoginResponse {
-        success: true,
-        message: "登录成功".to_string(),
-        token: Some(session_token),
-    })
 }
 
 // ============== OAuth Authorize ==============
@@ -190,6 +242,7 @@ pub async fn oauth_callback(
                             team_status,
                             created_at: Utc::now(),
                             bio: String::new(),
+                            password_hash: None,
                         };
                         users.insert(user.id.clone(), user);
                     }

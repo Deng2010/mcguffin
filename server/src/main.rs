@@ -1,8 +1,8 @@
 use axum::{
-    response::Html,
     routing::{get, post, delete, put},
     Router,
 };
+use axum::http::header;
 use mcguffin_server_lib::*;
 use std::net::SocketAddr;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -54,7 +54,14 @@ async fn main() {
         // SPA entry point — serve the built frontend at root
         .route("/", get(move || {
             let html = spa_index.clone();
-            async move { Html(html) }
+            async move {
+                axum::http::Response::builder()
+                    .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+                    .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                    .header(header::PRAGMA, "no-cache")
+                    .body(axum::body::Body::new(html))
+                    .unwrap()
+            }
         }))
         // Static assets from the production build
         .nest_service("/assets", ServeDir::new("../web/dist/assets"))
@@ -65,7 +72,7 @@ async fn main() {
         .route("/api/oauth/authorize", get(oauth_authorize))
         .route("/api/oauth/callback", get(oauth_callback))
         .route("/api/oauth/token", post(refresh_token))
-        .route("/api/auth/admin-login", post(admin_login))
+        .route("/api/auth/login", post(login))
         // User routes
         .route("/api/user/me", get(get_current_user))
         .route("/api/user/profile", put(update_profile))
@@ -112,6 +119,10 @@ async fn main() {
         // Announcement routes
         .route("/api/announcements", get(get_announcements).post(create_announcement))
         .route("/api/announcements/:id", put(update_announcement).delete(delete_announcement))
+        // Notification routes
+        .route("/api/notifications", get(get_notifications))
+        .route("/api/notifications/read/:id", post(mark_notification_read))
+        .route("/api/notifications/read-all", post(mark_all_notifications_read))
         // Admin config (superadmin only)
         .route("/api/admin/config", get(get_config).put(update_config))
         .route("/api/admin/restart", post(restart_service))
