@@ -106,7 +106,7 @@ export interface JoinRequest {
 // ============== Problem Types ==============
 
 export type Difficulty = 'Easy' | 'Medium' | 'Hard'
-export type ProblemStatus = 'pending' | 'approved' | 'published' | 'rejected'
+export type ProblemStatus = 'pending' | 'approved' | 'published'
 
 export interface Problem {
   id: string

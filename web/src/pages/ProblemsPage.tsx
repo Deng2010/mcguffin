@@ -58,7 +58,7 @@ export default function ProblemsPage() {
 
   const myProblems = useMemo(() => {
     if (!user) return []
-    return problems.filter(p => p.author_name === user.display_name && p.status !== 'rejected')
+    return problems.filter(p => p.author_name === user.display_name)
   }, [problems, user])
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
@@ -264,7 +264,6 @@ export default function ProblemsPage() {
       case 'pending': return <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">待审核</span>
       case 'approved': return <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">已通过</span>
       case 'published': return <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">已发布</span>
-      case 'rejected': return <span className="px-2 py-0.5 text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">已拒绝</span>
       default: return s
     }
   }

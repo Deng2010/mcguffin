@@ -50,12 +50,14 @@ pub async fn get_problems(
     let problems: Vec<ProblemListItem> = all_problems
         .values()
         .filter(|p| {
+            // Always exclude rejected problems (reject = delete, but guard against stale data)
+            if p.status == "rejected" {
+                return false;
+            }
             if is_admin_user {
-                // Admin sees all except rejected by default
+                // Admin sees all by default
                 if show_all {
-                    if p.status == "rejected" {
-                        return false;
-                    }
+                    return true;
                 }
             } else if is_member {
                 // Members see: published, approved, pending, their own problems,
@@ -172,7 +174,6 @@ pub async fn get_problem_detail(
                 is_author || problem.visible_to.contains(uid)
             } else { false }
         }
-        "rejected" => is_admin_user,
         _ => false,
     };
     if !can_view {
@@ -183,7 +184,7 @@ pub async fn get_problem_detail(
     let mut show_solution = match problem.status.as_str() {
         "published" => is_member_user || is_admin_user,
         "approved" => is_member_user || is_admin_user,
-        "pending" | "rejected" => is_admin_user || is_author,
+        "pending" => is_admin_user || is_author,
         _ => false,
     };
     // User who claimed this problem cannot see the author's solution (impartiality)
@@ -195,7 +196,7 @@ pub async fn get_problem_detail(
     let show_content = match problem.status.as_str() {
         "published" => true,
         "approved" => true,
-        "pending" | "rejected" => is_admin_user || is_author,
+        "pending" => is_admin_user || is_author,
         _ => false,
     };
 
