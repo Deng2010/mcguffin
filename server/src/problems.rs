@@ -10,7 +10,6 @@ use uuid::Uuid;
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::get_token_from_headers;
-use crate::utils::is_superadmin;
 use crate::notifications::create_notification;
 
 // ============== Helpers ==============
@@ -570,10 +569,10 @@ pub async fn set_problem_visibility(
         return Json(ClaimResponse { success: false, message: "只能设置待审核题目的可见性".to_string() });
     }
 
-    // Only allow setting for actual team members
+    // Only allow setting for actual 普通成员 (role == "member")
     let members = state.team_members.read().await;
     let valid_ids: Vec<String> = payload.user_ids.into_iter()
-        .filter(|uid| members.values().any(|m| &m.user_id == uid))
+        .filter(|uid| members.values().any(|m| m.role == "member" && &m.user_id == uid))
         .collect();
     drop(members);
 
@@ -633,6 +632,7 @@ pub async fn get_pending_problems_admin(
 // ============== Admin: Get Members for Visibility ==============
 
 /// GET /api/problems/admin/members
+/// Returns only 普通成员 (role == "member") for visibility settings
 pub async fn get_team_members_for_visibility(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -647,20 +647,9 @@ pub async fn get_team_members_for_visibility(
     }
 
     let members = state.team_members.read().await;
-    let is_superadmin_user = is_superadmin(&state, &user_id).await;
     let result: Vec<serde_json::Value> = members
         .values()
-        .filter(|m| {
-            // Non-superadmin cannot see superadmin in member list
-            if !is_superadmin_user && m.role == "superadmin" {
-                return false;
-            }
-            // Only filter out admin user for non-superadmin
-            if !is_superadmin_user && m.user_id == "admin" {
-                return false;
-            }
-            true
-        })
+        .filter(|m| m.role == "member")
         .map(|m| {
             serde_json::json!({
                 "user_id": m.user_id,
