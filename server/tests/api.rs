@@ -22,8 +22,14 @@ fn test_app_state_initialization() {
     // Admin must be a team member
     let members = state.team_members.blocking_read();
     let team_admin = members.get("admin").expect("admin must be a team member");
-    assert_eq!(team_admin.role, "superadmin");
     assert_eq!(team_admin.user_id, "admin");
+    // Role is now stored in users table, not team_members
+    drop(members);
+    assert_eq!(admin.role, "superadmin", "admin user must be superadmin");
+    // Verify team member has only basic fields
+    let members = state.team_members.blocking_read();
+    let team_admin = members.get("admin").expect("admin must be a team member");
+    assert_eq!(team_admin.joined_at, "2024-01-01");
 }
 
 /// Verify difficulty configuration is loaded
