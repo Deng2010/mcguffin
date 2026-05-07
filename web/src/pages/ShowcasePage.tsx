@@ -127,7 +127,7 @@ function CompactProblemCard({ p, difficultyMap }: { p: ProblemItem; difficultyMa
 
 export default function ShowcasePage() {
   const { user, hasPermission } = useAuth()
-  const { siteInfo, updateDescription } = useSite()
+  const { siteInfo, updateDescription, refresh: refreshSite } = useSite()
   const [allContests, setAllContests] = useState<ContestItem[]>([])
   const [allProblems, setAllProblems] = useState<ProblemItem[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
@@ -136,6 +136,13 @@ export default function ShowcasePage() {
   // Description editing state
   const [editing, setEditing] = useState(false)
   const [draftDescription, setDraftDescription] = useState('')
+
+  // Showcase management state
+  const [showcaseMode, setShowcaseMode] = useState(false)
+  const [selectedProblemIds, setSelectedProblemIds] = useState<string[]>([])
+  const [selectedContestIds, setSelectedContestIds] = useState<string[]>([])
+  const [showcaseMsg, setShowcaseMsg] = useState('')
+  const [showcaseSaving, setShowcaseSaving] = useState(false)
 
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin'
   const { difficultyMap } = useDifficulties()
@@ -159,27 +166,85 @@ export default function ShowcasePage() {
     }
   }, [editing, siteInfo])
 
+  // Sync showcase selections from siteInfo
+  useEffect(() => {
+    if (siteInfo) {
+      setSelectedProblemIds(siteInfo.showcase_problem_ids ?? [])
+      setSelectedContestIds(siteInfo.showcase_contest_ids ?? [])
+    }
+  }, [siteInfo])
+
   const handleSaveDescription = async () => {
     const res = await updateDescription(draftDescription)
     if (!res.success) { alert(res.message); return }
     setEditing(false)
   }
 
+  const loadShowcaseSelections = () => {
+    setShowcaseMode(true)
+    setSelectedProblemIds(siteInfo?.showcase_problem_ids ?? [])
+    setSelectedContestIds(siteInfo?.showcase_contest_ids ?? [])
+  }
+
+  const toggleProblem = (id: string) => {
+    setSelectedProblemIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const toggleContest = (id: string) => {
+    setSelectedContestIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const moveItem = (type: 'problem' | 'contest', idx: number, direction: -1 | 1) => {
+    const setter = type === 'problem' ? setSelectedProblemIds : setSelectedContestIds
+    const list = type === 'problem' ? selectedProblemIds : selectedContestIds
+    const target = idx + direction
+    if (target < 0 || target >= list.length) return
+    setter(prev => {
+      const next = [...prev]
+      const temp = next[idx]
+      next[idx] = next[target]
+      next[target] = temp
+      return next
+    })
+  }
+
+  const handleSaveShowcase = async () => {
+    setShowcaseSaving(true)
+    setShowcaseMsg('')
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>('/admin/showcase', {
+        method: 'PUT',
+        body: JSON.stringify({
+          problem_ids: selectedProblemIds,
+          contest_ids: selectedContestIds,
+        }),
+      })
+      if (!res.success) { setShowcaseMsg(`保存失败: ${res.message}`); return }
+      setShowcaseMsg(res.message)
+      setShowcaseMode(false)
+      refreshSite()
+    } catch (err) {
+      setShowcaseMsg(`保存失败: ${err}`)
+    } finally {
+      setShowcaseSaving(false)
+    }
+  }
+
   // Filter: showcase shows ONLY public contests and published problems (for everyone)
   const contests = allContests.filter(c => c.status === 'public')
   const problems = allProblems.filter(p => p.status === 'published')
 
-  // Use showcase selections if configured, otherwise show first N
-  const selectedProblemIds = siteInfo?.showcase_problem_ids
-  const selectedContestIds = siteInfo?.showcase_contest_ids
+  // Use showcase selections if configured, otherwise show all
+  const currentSelectedProblemIds = siteInfo?.showcase_problem_ids ?? []
+  const currentSelectedContestIds = siteInfo?.showcase_contest_ids ?? []
 
-  const showcaseProblems = selectedProblemIds && selectedProblemIds.length > 0
-    ? selectedProblemIds.map(id => problems.find(p => p.id === id)).filter(Boolean) as ProblemItem[]
-    : problems.slice(0, siteInfo?.showcase_problems ?? 8)
+  const showcaseProblems = currentSelectedProblemIds.length > 0
+    ? currentSelectedProblemIds.map(id => problems.find(p => p.id === id)).filter(Boolean) as ProblemItem[]
+    : problems
 
-  const showcaseContests = selectedContestIds && selectedContestIds.length > 0
-    ? selectedContestIds.map(id => contests.find(c => c.id === id)).filter(Boolean) as ContestItem[]
-    : contests.slice(0, siteInfo?.showcase_contests ?? 3)
+  const showcaseContests = currentSelectedContestIds.length > 0
+    ? currentSelectedContestIds.map(id => contests.find(c => c.id === id)).filter(Boolean) as ContestItem[]
+    : contests
 
   // Group problems by contest_id, respecting problem_order
   const contestProblems: Record<string, ProblemItem[]> = {}
@@ -215,14 +280,24 @@ export default function ShowcasePage() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
             {siteInfo?.name || 'McGuffin'}
           </h1>
-          {isAdmin && !editing && (
-            <button
-              onClick={() => setEditing(true)}
-              className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              编辑简介
-            </button>
-          )}
+          <div className="flex gap-2">
+            {isAdmin && !editing && (
+              <button
+                onClick={() => setEditing(true)}
+                className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                编辑简介
+              </button>
+            )}
+            {isAdmin && !showcaseMode && (
+              <button
+                onClick={loadShowcaseSelections}
+                className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                展板管理
+              </button>
+            )}
+          </div>
         </div>
 
         {editing ? (
@@ -257,6 +332,108 @@ export default function ShowcasePage() {
           )} />
         )}
       </section>
+
+      {/* ===== 展板管理面板 ===== */}
+      {showcaseMode && (
+        <section className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-5">
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">展板管理</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            勾选要在首页展示的题目和比赛，按 ↑↓ 调整顺序。选多少就展示多少。不选则全部展示。
+          </p>
+
+          {showcaseMsg && (
+            <div className={`mb-3 p-2 text-sm border ${
+              showcaseMsg.includes('失败') ? 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300' : 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300'
+            }`}>
+              {showcaseMsg}
+            </div>
+          )}
+
+          {/* Problems */}
+          <div className="mb-5">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              题目 ({selectedProblemIds.length}/{problems.length})
+            </h3>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {problems.map(p => {
+                const isSelected = selectedProblemIds.includes(p.id)
+                const idx = selectedProblemIds.indexOf(p.id)
+                return (
+                  <div key={p.id} className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleProblem(p.id)}
+                      className="accent-gray-800 dark:accent-gray-400"
+                    />
+                    <span className={`text-sm flex-1 ${isSelected ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}`}>
+                      {p.title}
+                    </span>
+                    {isSelected && (
+                      <div className="flex gap-1 shrink-0">
+                        <button onClick={() => moveItem('problem', idx, -1)} disabled={idx === 0}
+                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1">↑</button>
+                        <button onClick={() => moveItem('problem', idx, 1)} disabled={idx === selectedProblemIds.length - 1}
+                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1">↓</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Contests */}
+          <div className="mb-5">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
+              比赛 ({selectedContestIds.length}/{contests.length})
+            </h3>
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {contests.map(c => {
+                const isSelected = selectedContestIds.includes(c.id)
+                const idx = selectedContestIds.indexOf(c.id)
+                return (
+                  <div key={c.id} className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleContest(c.id)}
+                      className="accent-gray-800 dark:accent-gray-400"
+                    />
+                    <span className={`text-sm flex-1 ${isSelected ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500'}`}>
+                      {c.name}
+                    </span>
+                    {isSelected && (
+                      <div className="flex gap-1 shrink-0">
+                        <button onClick={() => moveItem('contest', idx, -1)} disabled={idx === 0}
+                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1">↑</button>
+                        <button onClick={() => moveItem('contest', idx, 1)} disabled={idx === selectedContestIds.length - 1}
+                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1">↓</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-center">
+            <button
+              onClick={handleSaveShowcase}
+              disabled={showcaseSaving}
+              className="px-5 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600"
+            >
+              {showcaseSaving ? '保存中...' : '保存展板'}
+            </button>
+            <button
+              onClick={() => setShowcaseMode(false)}
+              className="px-5 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              取消
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* ===== 公告 ===== */}
       {announcements.length > 0 && (
@@ -302,7 +479,7 @@ export default function ShowcasePage() {
 
       {/* ===== 已发布题目 ===== */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">公开题目 ({showcaseProblems.length})</h2>
+        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">公开题目 ({problems.length})</h2>
         {showcaseProblems.length === 0 ? (
           <div className="text-gray-400 dark:text-gray-500 text-sm">暂无公开题目</div>
         ) : (
@@ -310,7 +487,7 @@ export default function ShowcasePage() {
           <div className="space-y-2">
             {showcaseProblems.map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
           </div>
-          {problems.length > (siteInfo?.showcase_problems ?? 8) && (
+          {currentSelectedProblemIds.length > 0 && currentSelectedProblemIds.length < problems.length && (
             <div className="text-center mt-4">
               <Link to="/problems" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                 查看全部题目
@@ -323,7 +500,7 @@ export default function ShowcasePage() {
 
       {/* ===== 比赛列表 ===== */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">比赛 ({showcaseContests.length})</h2>
+        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">比赛 ({contests.length})</h2>
         {showcaseContests.length === 0 ? (
           <div className="text-gray-400 dark:text-gray-500 text-sm">暂无比赛</div>
         ) : (
@@ -367,7 +544,7 @@ export default function ShowcasePage() {
               )
             })}
           </div>
-          {contests.length > (siteInfo?.showcase_contests ?? 3) && (
+          {currentSelectedContestIds.length > 0 && currentSelectedContestIds.length < contests.length && (
             <div className="text-center mt-4">
               <Link to="/contests" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                 查看全部比赛
@@ -379,19 +556,12 @@ export default function ShowcasePage() {
       </section>
 
       {/* ===== 未关联比赛的已发布题目 ===== */}
-      {unassigned.length > 0 && (
+      {unassigned.length > 0 && showcaseProblems.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">其他公示题目 ({unassigned.length})</h2>
           <div className="grid gap-2">
-            {unassigned.slice(0, (selectedProblemIds?.length ?? 0) > 0 ? 0 : (siteInfo?.showcase_problems ?? 8)).map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
+            {unassigned.filter(p => showcaseProblems.some(sp => sp.id === p.id)).map(p => <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />)}
           </div>
-          {unassigned.length > (siteInfo?.showcase_problems ?? 8) && (
-            <div className="text-center mt-4">
-              <Link to="/problems" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
-                查看全部题目
-              </Link>
-            </div>
-          )}
         </section>
       )}
     </div>

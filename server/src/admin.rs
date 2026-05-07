@@ -44,16 +44,9 @@ pub struct SiteSection {
     pub name: String,
     #[serde(default)]
     pub title: Option<String>,
-    #[serde(default = "default_showcase_problems")]
-    pub showcase_problems: usize,
-    #[serde(default = "default_showcase_contests")]
-    pub showcase_contests: usize,
     #[serde(default)]
     pub difficulty_order: Vec<String>,
 }
-
-fn default_showcase_problems() -> usize { 8 }
-fn default_showcase_contests() -> usize { 3 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct OAuthSection {
@@ -161,8 +154,6 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
                 let t = get_str("site", "title");
                 if t.is_empty() { None } else { Some(t) }
             },
-            showcase_problems: get_u16("site", "showcase_problems") as usize,
-            showcase_contests: get_u16("site", "showcase_contests") as usize,
             difficulty_order: get_array("site", "difficulty_order"),
         },
         oauth: OAuthSection {
@@ -198,11 +189,6 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
             Some(title) if !title.trim().is_empty() => set_str(t, "title", title.trim()),
             _ => { t.remove("title"); }
         }
-        let set_usize = |table: &mut toml_edit::Table, key: &str, value: usize| {
-            table[key] = Item::Value(TomlValue::from(value as i64));
-        };
-        set_usize(t, "showcase_problems", payload.site.showcase_problems);
-        set_usize(t, "showcase_contests", payload.site.showcase_contests);
         // Write difficulty_order array
         if payload.site.difficulty_order.is_empty() {
             t.remove("difficulty_order");
@@ -306,6 +292,10 @@ pub async fn update_config(
             }
             if !levels.is_empty() {
                 *state.difficulty.write().await = crate::types::DifficultyConfig { levels };
+            }
+            // Also update difficulty_order in-memory so it applies immediately
+            if !payload.site.difficulty_order.is_empty() {
+                *state.difficulty_order.write().await = payload.site.difficulty_order.clone();
             }
             Json(serde_json::json!({"success": true, "message": "配置已保存，立即生效"}))
         }
@@ -593,7 +583,7 @@ pub async fn export_config(
 // ============== Showcase Configuration ==============
 
 /// GET /api/admin/showcase
-/// Superadmin only — returns current showcase selections
+/// Admin+superadmin — returns current showcase selections
 pub async fn get_showcase_config(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -602,7 +592,7 @@ pub async fn get_showcase_config(
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    if !is_superadmin(&state, &user_id).await {
+    if !is_superadmin(&state, &user_id).await && !crate::utils::is_admin(&state, &user_id).await {
         return Json(serde_json::json!({"success": false, "message": "权限不足"}));
     }
 
@@ -614,7 +604,7 @@ pub async fn get_showcase_config(
 }
 
 /// PUT /api/admin/showcase
-/// Superadmin only — updates which problems/contests appear on the showcase
+/// Admin+superadmin — updates which problems/contests appear on the showcase
 pub async fn update_showcase_config(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -624,7 +614,7 @@ pub async fn update_showcase_config(
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    if !is_superadmin(&state, &user_id).await {
+    if !is_superadmin(&state, &user_id).await && !crate::utils::is_admin(&state, &user_id).await {
         return Json(serde_json::json!({"success": false, "message": "权限不足"}));
     }
 

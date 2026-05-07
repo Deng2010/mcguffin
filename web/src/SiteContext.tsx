@@ -8,8 +8,6 @@ interface SiteInfo {
   version: string
   description: string
   title: string
-  showcase_problems: number
-  showcase_contests: number
   difficulty_order: string[]
   showcase_problem_ids: string[]
   showcase_contest_ids: string[]
@@ -39,7 +37,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
   const fetchInfo = useCallback(() => {
     apiFetch<SiteInfo>('/site/info')
       .then(setSiteInfo)
-      .catch(() => setSiteInfo({ name: 'McGuffin', version: '0.1.0', description: '', title: 'McGuffin', showcase_problems: 8, showcase_contests: 3, difficulty_order: [], showcase_problem_ids: [], showcase_contest_ids: [] }))
+      .catch(() => setSiteInfo({ name: 'McGuffin', version: '0.1.0', description: '', title: 'McGuffin', difficulty_order: [], showcase_problem_ids: [], showcase_contest_ids: [] }))
   }, [])
 
   useEffect(() => { fetchInfo() }, [fetchInfo])

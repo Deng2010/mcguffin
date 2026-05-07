@@ -114,9 +114,6 @@ pub struct AppState {
     pub announcements: Arc<RwLock<HashMap<String, Announcement>>>,
     /// Notifications
     pub notifications: Arc<RwLock<HashMap<String, Notification>>>,
-    /// Showcase display limits
-    pub showcase_problems: usize,
-    pub showcase_contests: usize,
     /// Showcase selections
     pub showcase_problem_ids: Arc<RwLock<Vec<String>>>,
     pub showcase_contest_ids: Arc<RwLock<Vec<String>>>,
@@ -202,8 +199,6 @@ impl AppState {
             suggestions: Arc::new(RwLock::new(suggestions)),
             announcements: Arc::new(RwLock::new(announcements)),
             notifications: Arc::new(RwLock::new(notifications)),
-            showcase_problems: config.site.showcase_problems,
-            showcase_contests: config.site.showcase_contests,
             showcase_problem_ids: Arc::new(RwLock::new(showcase_problem_ids)),
             showcase_contest_ids: Arc::new(RwLock::new(showcase_contest_ids)),
             difficulty_order: Arc::new(RwLock::new(

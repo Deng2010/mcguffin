@@ -19,8 +19,6 @@ pub async fn get_site_info(
         version: state.site_version.clone(),
         description: state.site_description.read().await.clone(),
         title: state.site_title.clone(),
-        showcase_problems: state.showcase_problems,
-        showcase_contests: state.showcase_contests,
         difficulty_order,
         showcase_problem_ids: state.showcase_problem_ids.read().await.clone(),
         showcase_contest_ids: state.showcase_contest_ids.read().await.clone(),
