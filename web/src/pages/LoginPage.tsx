@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { useSite } from '../SiteContext'
 
@@ -84,9 +84,6 @@ export default function LoginPage() {
           )}
         </div>
 
-        <div className="mt-6 text-center">
-          <Link to="/" className="text-sm text-gray-500 dark:text-gray-400 underline">游客访问（仅查看成果）</Link>
-        </div>
       </div>
     </div>
   )
