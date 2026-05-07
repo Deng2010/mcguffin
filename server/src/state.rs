@@ -115,20 +115,12 @@ impl AppState {
         team_members.entry(ADMIN_USER_ID.to_string()).or_insert(TeamMember {
             id: ADMIN_USER_ID.to_string(),
             user_id: ADMIN_USER_ID.to_string(),
-            name: admin_display_name.clone(),
-            avatar: admin_display_name.chars().next().unwrap_or('A').to_string(),
-            avatar_url: None,
-            role: "superadmin".to_string(),
             joined_at: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
                 .unwrap()
                 .with_timezone(&Utc)
                 .format("%Y-%m-%d")
                 .to_string(),
         });
-        // Force update team member role to superadmin
-        if let Some(m) = team_members.get_mut(ADMIN_USER_ID) {
-            m.role = "superadmin".to_string();
-        }
 
         let redirect_uri = format!("{}/api/oauth/callback", config.server.site_url);
 

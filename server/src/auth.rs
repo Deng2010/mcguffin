@@ -209,12 +209,19 @@ pub async fn oauth_callback(
                     };
                     
                     let role = {
-                        let members = state.team_members.read().await;
-                        members
-                            .values()
-                            .find(|m| m.user_id == user_id)
-                            .map(|m| m.role.clone())
-                            .unwrap_or_else(|| "guest".to_string())
+                        // New users: team member → "member", otherwise "guest"
+                        // Existing users: preserve their current role
+                        let users_map = state.users.read().await;
+                        if let Some(existing) = users_map.get(&user_id) {
+                            existing.role.clone()
+                        } else {
+                            let members = state.team_members.read().await;
+                            if members.values().any(|m| m.user_id == user_id) {
+                                "member".to_string()
+                            } else {
+                                "guest".to_string()
+                            }
+                        }
                     };
                     
                     let mut users = state.users.write().await;

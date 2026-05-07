@@ -25,11 +25,6 @@ pub struct User {
 pub struct TeamMember {
     pub id: String,
     pub user_id: String,
-    pub name: String,
-    pub avatar: String,
-    #[serde(default)]
-    pub avatar_url: Option<String>,
-    pub role: String,
     pub joined_at: String,
 }
 

@@ -27,25 +27,23 @@ pub async fn get_team_members(
     let result: Vec<serde_json::Value> = members
         .values()
         .filter(|m| {
+            // Superadmin visibility: derive role from users
+            let member_role = users.get(&m.user_id).map(|u| u.role.as_str()).unwrap_or("");
             // Non-superadmin cannot see superadmin in member list
-            if !is_superadmin_user && m.role == "superadmin" {
+            if !is_superadmin_user && member_role == "superadmin" {
                 return false;
             }
             is_admin_user || m.user_id != ADMIN_USER_ID
         })
         .map(|m| {
-            // Use the user's current display_name from the users map
-            let current_name = users.get(&m.user_id)
-                .map(|u| u.display_name.clone())
-                .unwrap_or_else(|| m.name.clone());
-            // Use the user's current avatar_url from the users map
-            let current_avatar_url = users.get(&m.user_id)
-                .and_then(|u| u.avatar_url.clone());
-            // Get the user's username
-            let user_username = users.get(&m.user_id)
-                .map(|u| u.username.clone())
+            let user_info = users.get(&m.user_id);
+            let current_name = user_info.map(|u| u.display_name.clone())
                 .unwrap_or_default();
-            // Compute avatar initial from current display_name
+            let current_avatar_url = user_info.and_then(|u| u.avatar_url.clone());
+            let user_username = user_info.map(|u| u.username.clone())
+                .unwrap_or_default();
+            let user_role = user_info.map(|u| u.role.clone())
+                .unwrap_or_default();
             let current_avatar = current_name.chars().next()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "U".to_string());
@@ -56,7 +54,7 @@ pub async fn get_team_members(
                 "username": user_username,
                 "avatar": current_avatar,
                 "avatar_url": current_avatar_url,
-                "role": m.role,
+                "role": user_role,
                 "joined_at": m.joined_at,
             })
         })
@@ -157,18 +155,9 @@ pub async fn review_application(
                             let already_member = state.team_members.read().await
                                 .values().any(|m| m.user_id == request.user_id);
                             if !already_member {
-                                // Use latest user info from users map (not request snapshot)
-                                let current_user = users.get(&request.user_id);
-                                let current_name = current_user.map(|u| u.display_name.clone())
-                                    .unwrap_or_else(|| request.user_name.clone());
-                                let member_avatar_url = current_user.and_then(|u| u.avatar_url.clone());
                                 let member = TeamMember {
                                     id: Uuid::new_v4().to_string(),
                                     user_id: request.user_id.clone(),
-                                    name: current_name.clone(),
-                                    avatar: current_name.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "U".to_string()),
-                                    avatar_url: member_avatar_url,
-                                    role: "member".to_string(),
                                     joined_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
                                 };
                                 state.team_members.write().await.insert(member.id.clone(), member);
@@ -236,31 +225,27 @@ pub async fn change_member_role(
                 }
                 // Only superadmin can demote an existing admin or promote to admin
                 let is_super = is_superadmin(&state, admin_user_id).await;
-                let target_role = {
-                    let members = state.team_members.read().await;
-                    members.values().find(|m| m.user_id == user_id).map(|m| m.role.clone())
-                };
-                if let Some(ref current_role) = target_role {
-                    if current_role == "admin" && !is_super {
+                let target_role = users.get(&user_id).map(|u| u.role.as_str());
+                if let Some("admin") = target_role {
+                    if !is_super {
                         return Json(ReviewResponse { success: false, message: "权限不足：仅限系统管理员操作".to_string() });
                     }
                 }
                 if payload.role == "admin" && !is_super {
                     return Json(ReviewResponse { success: false, message: "权限不足：仅限系统管理员操作".to_string() });
                 }
-                let mut members = state.team_members.write().await;
-                if let Some(member) = members.values_mut().find(|m| m.user_id == user_id) {
-                    member.role = payload.role.clone();
-                    drop(members);
-                    drop(users);
-                    if let Some(u) = state.users.write().await.get_mut(&user_id) {
-                        u.role = payload.role.clone();
-                    }
-                    state.save().await;
-                    Json(ReviewResponse { success: true, message: "角色已更新".to_string() })
-                } else {
-                    Json(ReviewResponse { success: false, message: "团队成员不存在".to_string() })
+                // Check if user is a team member
+                let is_member = state.team_members.read().await
+                    .values().any(|m| m.user_id == user_id);
+                if !is_member {
+                    return Json(ReviewResponse { success: false, message: "团队成员不存在".to_string() });
                 }
+                drop(users);
+                if let Some(u) = state.users.write().await.get_mut(&user_id) {
+                    u.role = payload.role.clone();
+                }
+                state.save().await;
+                Json(ReviewResponse { success: true, message: "角色已更新".to_string() })
             } else {
                 Json(ReviewResponse { success: false, message: "用户不存在".to_string() })
             }
@@ -294,10 +279,7 @@ pub async fn remove_member(
                     return Json(ReviewResponse { success: false, message: "不能移除自己".to_string() });
                 }
                 // Only superadmin can remove an admin
-                let target_is_admin = {
-                    let members = state.team_members.read().await;
-                    members.values().any(|m| m.user_id == user_id && m.role == "admin")
-                };
+                let target_is_admin = users.get(&user_id).map(|u| u.role.as_str()) == Some("admin");
                 if target_is_admin && !is_superadmin(&state, admin_user_id).await {
                     return Json(ReviewResponse { success: false, message: "权限不足：仅限系统管理员操作".to_string() });
                 }

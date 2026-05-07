@@ -39,7 +39,6 @@ pub async fn get_public_profile(
             // Also check if user is a team member
             let members = state.team_members.read().await;
             let is_team_member = members.values().any(|m| m.user_id == u.id);
-            let member_info = members.values().find(|m| m.user_id == u.id).cloned();
             drop(members);
             Json(serde_json::json!({
                 "exists": true,
@@ -49,7 +48,7 @@ pub async fn get_public_profile(
                 "bio": u.bio,
                 "role": u.role,
                 "is_team_member": is_team_member,
-                "team_role": member_info.map(|m| m.role),
+                "team_role": u.role,
                 "created_at": u.created_at,
             }))
         }
@@ -118,20 +117,6 @@ pub async fn update_profile(
                         "message": format!("密码加密失败: {}", e),
                     }));
                 }
-            }
-        }
-    }
-
-    // Also sync to TeamMember record so member list stays consistent
-    {
-        let mut members = state.team_members.write().await;
-        for member in members.values_mut() {
-            if member.user_id == user_id {
-                member.name = user.display_name.clone();
-                member.avatar = user.display_name.chars().next()
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "U".to_string());
-                member.avatar_url = user.avatar_url.clone();
             }
         }
     }

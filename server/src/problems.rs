@@ -547,12 +547,17 @@ pub async fn set_problem_visibility(
         return Json(ClaimResponse { success: false, message: "只能设置待审核题目的可见性".to_string() });
     }
 
-    // Only allow setting for actual 普通成员 (role == "member")
+    // Only allow setting for actual 普通成员 (users.role == "member")
     let members = state.team_members.read().await;
+    let users = state.users.read().await;
     let valid_ids: Vec<String> = payload.user_ids.into_iter()
-        .filter(|uid| members.values().any(|m| m.role == "member" && &m.user_id == uid))
+        .filter(|uid| {
+            members.values().any(|m| &m.user_id == uid)
+                && users.get(uid).map(|u| u.role.as_str()) == Some("member")
+        })
         .collect();
     drop(members);
+    drop(users);
 
     problem.visible_to = valid_ids;
     drop(problems);
@@ -625,16 +630,20 @@ pub async fn get_team_members_for_visibility(
     }
 
     let members = state.team_members.read().await;
+    let users = state.users.read().await;
     let result: Vec<serde_json::Value> = members
         .values()
-        .filter(|m| m.role == "member")
+        .filter(|m| users.get(&m.user_id).map(|u| u.role.as_str()) == Some("member"))
         .map(|m| {
+            let user_name = users.get(&m.user_id).map(|u| u.display_name.clone()).unwrap_or_default();
             serde_json::json!({
                 "user_id": m.user_id,
-                "name": m.name,
+                "name": user_name,
             })
         })
         .collect();
+    drop(members);
+    drop(users);
     Json(result)
 }
 
