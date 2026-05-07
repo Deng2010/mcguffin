@@ -181,6 +181,8 @@ pub async fn get_problem_detail(
         false
     };
     let current_display_name = current_user.as_ref().map(|(_, u)| u.display_name.clone());
+    let is_author = current_user.as_ref().map_or(false, |(uid, _)| problem.author_id == *uid)
+        || current_display_name.as_ref().map_or(false, |dn| problem.author_name == *dn);
 
     // Permission check
     let can_view = match problem.status.as_str() {
@@ -190,9 +192,7 @@ pub async fn get_problem_detail(
             if is_admin_user { true }
             else if let Some((uid, _)) = &current_user {
                 // Author by user_id or display_name match
-                problem.author_id == *uid
-                    || current_display_name.as_ref().map_or(false, |dn| problem.author_name == *dn)
-                    || problem.visible_to.contains(uid)
+                is_author || problem.visible_to.contains(uid)
             } else { false }
         }
         "rejected" => is_admin_user,
@@ -206,7 +206,7 @@ pub async fn get_problem_detail(
     let mut show_solution = match problem.status.as_str() {
         "published" => is_member_user || is_admin_user,
         "approved" => is_member_user || is_admin_user,
-        "pending" | "rejected" => is_admin_user,
+        "pending" | "rejected" => is_admin_user || is_author,
         _ => false,
     };
     // User who claimed this problem cannot see the author's solution (impartiality)
@@ -218,7 +218,7 @@ pub async fn get_problem_detail(
     let show_content = match problem.status.as_str() {
         "published" => true,
         "approved" => true,
-        "pending" | "rejected" => is_admin_user,
+        "pending" | "rejected" => is_admin_user || is_author,
         _ => false,
     };
 
@@ -553,20 +553,12 @@ pub async fn set_problem_visibility(
     Path(problem_id): Path<String>,
     Json(payload): Json<VisibilityPayload>,
 ) -> Json<ClaimResponse> {
-    let (user_id, user) = match resolve_user(&state, &headers).await {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(ClaimResponse { success: false, message: "未登录".to_string() }),
     };
     if !is_admin(&state, &user_id).await {
-        // Non-admin: only the problem author (by author_id or display_name) can set visibility
-        let problems = state.problems.read().await;
-        let is_author = problems.get(&problem_id).map_or(false, |p| {
-            p.author_id == user_id || p.author_name == user.display_name
-        });
-        drop(problems);
-        if !is_author {
-            return Json(ClaimResponse { success: false, message: "权限不足".to_string() });
-        }
+        return Json(ClaimResponse { success: false, message: "权限不足".to_string() });
     }
 
     let mut problems = state.problems.write().await;
@@ -649,8 +641,8 @@ pub async fn get_team_members_for_visibility(
         Some(u) => u,
         None => return Json(vec![]),
     };
-    // Allow any team member to access (for problem author visibility setting)
-    if !is_admin(&state, &user_id).await && !is_team_member(&state, &user_id).await {
+    // Admin only — for visibility settings
+    if !is_admin(&state, &user_id).await {
         return Json(vec![]);
     }
 

@@ -101,18 +101,9 @@ export default function ProblemsPage() {
     }).catch(() => {})
   }
 
-  const loadMembersIfNeeded = () => {
-    if (members.length === 0 && user) {
-      apiFetch<TeamMemberOption[]>('/problems/admin/members')
-        .then(setMembers)
-        .catch(() => {})
-    }
-  }
-
   useEffect(() => {
     loadProblems()
     if (canSubmit) loadReviewData()
-    if (user && !canSubmit) loadMembersIfNeeded()
   }, [canSubmit, canApprove])
 
   // Load contests when submit form opens
@@ -297,11 +288,14 @@ export default function ProblemsPage() {
     navigate(`/problems/${problemId}`)
   }
 
-  // Visibility editor (shared between list and pending tab)
+  // Check if current user is the author of this problem (by display_name)
+  const isAuthor = (p: { author_name: string }) => user?.display_name === p.author_name
+
+  // Visibility editor (for pending tab — admin only)
   const renderVisibilityEditor = (problemId: string) => {
     if (members.length === 0) return null
     return (
-      <div className="mb-2" onClick={e => e.stopPropagation()}>
+      <div className="mb-2">
         <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">可见性设置（选择可查看此题目的成员）</h4>
         <div className="flex flex-wrap gap-2 mb-2">
           {members.map(m => (
@@ -320,9 +314,6 @@ export default function ProblemsPage() {
       </div>
     )
   }
-
-  // Check if current user is the author of this problem (by display_name)
-  const isAuthor = (p: { author_name: string }) => user?.display_name === p.author_name
 
   // ====== Search & Filter Bar ======
 
@@ -501,8 +492,6 @@ export default function ProblemsPage() {
   // ====== Problem Card (shared by all tabs) ======
 
   const renderProblemCard = (p: ProblemListItem | AdminPendingProblem, extraActions?: React.ReactNode) => {
-    const isPending = p.status === 'pending' || (p as any).status === 'pending'
-    const showVisibility = isPending && isAuthor(p)
     return (
       <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
         <div className="flex items-start justify-between">
@@ -510,7 +499,7 @@ export default function ProblemsPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">{p.title}</span>
               {statusBadge(p.status)}
-              {isPending && isAuthor(p) && (
+              {isAuthor(p) && (
                 <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 font-medium dark:bg-blue-900/30 dark:text-blue-300">我的题目</span>
               )}
               {'claimed_by' in p && (p as any).claimed_by && (
@@ -532,11 +521,6 @@ export default function ProblemsPage() {
             {extraActions}
           </div>
         </div>
-        {showVisibility && (
-          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700" onClick={e => e.stopPropagation()}>
-            {renderVisibilityEditor(p.id)}
-          </div>
-        )}
       </div>
     )
   }

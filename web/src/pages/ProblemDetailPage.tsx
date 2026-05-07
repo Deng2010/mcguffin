@@ -11,6 +11,11 @@ interface Contest {
   name: string
 }
 
+interface TeamMemberOption {
+  user_id: string
+  name: string
+}
+
 export default function ProblemDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
@@ -32,6 +37,10 @@ export default function ProblemDetailPage() {
   const [contests, setContests] = useState<Contest[]>([])
   const [saving, setSaving] = useState(false)
   const [editMsg, setEditMsg] = useState('')
+
+  // Visibility editor (admin only)
+  const [members, setMembers] = useState<TeamMemberOption[]>([])
+  const [visibleTo, setVisibleTo] = useState<string[]>([])
 
   useEffect(() => {
     apiFetch<ProblemDetail>(`/problems/detail/${id}`)
@@ -61,6 +70,12 @@ export default function ProblemDetailPage() {
     setEditAuthorName(problem.author_name)
     setEditMsg('')
     setEditing(true)
+    // Load members for visibility editor
+    if (isAdmin && members.length === 0) {
+      apiFetch<TeamMemberOption[]>('/problems/admin/members')
+        .then(setMembers)
+        .catch(() => {})
+    }
   }
 
   const handleSaveEdit = async () => {
@@ -74,7 +89,7 @@ export default function ProblemDetailPage() {
       if (editSolution !== (problem.solution || '')) body.solution = editSolution
       // Contest change (admin only)
       if (isAdmin && editContestId !== (problem.contest_id || '')) {
-        body.contest_id = editContestId || null  // empty string → null (clear)
+        body.contest_id = editContestId || null
       }
       // Link change (admin only)
       if (isAdmin && editLink !== ((problem as any).link || '')) {
@@ -84,16 +99,33 @@ export default function ProblemDetailPage() {
       if (isAdmin && editAuthorName !== problem.author_name) {
         body.author_name = editAuthorName
       }
-      if (Object.keys(body).length === 0) {
+      if (Object.keys(body).length === 0 && visibleTo === ((problem as any).visible_to || [])) {
         setEditMsg('没有修改')
         setSaving(false)
         return
       }
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/${problem.id}`,
-        { method: 'PUT', body: JSON.stringify(body) },
-      )
-      if (!res.success) { setEditMsg(res.message); setSaving(false); return }
+
+      // Save problem fields
+      if (Object.keys(body).length > 0) {
+        const res = await apiFetch<{ success: boolean; message: string }>(
+          `/problems/${problem.id}`,
+          { method: 'PUT', body: JSON.stringify(body) },
+        )
+        if (!res.success) { setEditMsg(res.message); setSaving(false); return }
+      }
+
+      // Save visibility changes (admin only)
+      if (isAdmin) {
+        const origVisible = (problem as any).visible_to || []
+        if (JSON.stringify(visibleTo) !== JSON.stringify(origVisible)) {
+          const visRes = await apiFetch<{ success: boolean; message: string }>(
+            `/problems/visibility/${problem.id}`,
+            { method: 'POST', body: JSON.stringify({ user_ids: visibleTo }) },
+          )
+          if (!visRes.success) { setEditMsg(visRes.message); setSaving(false); return }
+        }
+      }
+
       // Reload problem details
       const updated = await apiFetch<ProblemDetail>(`/problems/detail/${id}`)
       setProblem(updated)
@@ -117,6 +149,14 @@ export default function ProblemDetailPage() {
       setVsSaved(true)
       setTimeout(() => setVsSaved(false), 2000)
     } catch (err) { alert(`保存失败: ${err}`) }
+  }
+
+  const toggleVisibilityMember = (userId: string) => {
+    setVisibleTo(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    )
   }
 
   if (loading) return <div className="p-6 text-center py-12 text-gray-400 dark:text-gray-500">加载中...</div>
@@ -191,6 +231,26 @@ export default function ProblemDetailPage() {
                 <input type="text" value={editAuthorName} onChange={e => setEditAuthorName(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm"
                   placeholder="修改出题人名称" />
+              </div>
+            )}
+
+            {/* Visibility editor — admin only, for pending problems */}
+            {isAdmin && problem.status === 'pending' && members.length > 0 && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">可见性设置（选择可查看此题目的成员）</label>
+                <div className="flex flex-wrap gap-2">
+                  {members.map(m => (
+                    <label key={m.user_id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={visibleTo.includes(m.user_id)}
+                        onChange={() => toggleVisibilityMember(m.user_id)}
+                        className="accent-gray-800 dark:accent-gray-400"
+                      />
+                      {m.name}
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
 
