@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import { useDifficulties, DiffBadge } from '../hooks/useDifficulties'
+import MarkdownEditor from '../components/MarkdownEditor'
 import type { ProblemListItem, AdminPendingProblem } from '../types'
 
 interface TeamMemberOption {
@@ -53,6 +54,7 @@ export default function ProblemsPage() {
   const [formDifficulty, setFormDifficulty] = useState<string>('Medium')
   const [formContent, setFormContent] = useState('')
   const [formSolution, setFormSolution] = useState('')
+  const [formRemark, setFormRemark] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [formError, setFormError] = useState('')
 
@@ -243,6 +245,7 @@ export default function ProblemsPage() {
           difficulty: formDifficulty,
           content: formContent,
           solution: formSolution.trim() ? formSolution : undefined,
+          remark: formRemark.trim() ? formRemark : undefined,
         }),
       })
       setSubmitted(true)
@@ -253,6 +256,7 @@ export default function ProblemsPage() {
         setFormTitle('')
         setFormContent('')
         setFormSolution('')
+        setFormRemark('')
         setContestMode('none')
         setSelectedContestId('')
         setCustomContest('')
@@ -471,21 +475,39 @@ export default function ProblemsPage() {
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">题目内容 (Markdown)</label>
-          <textarea value={formContent} onChange={e => setFormContent(e.target.value)} required
-            rows={15} disabled={submitted}
-            className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 font-mono text-sm dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-            placeholder="# 题目描述&#10;&#10;请在这里编写题目..." />
+          <MarkdownEditor
+            value={formContent}
+            onChange={setFormContent}
+            label="题目内容 (Markdown)"
+            placeholder="# 题目描述&#10;&#10;请在这里编写题目..."
+            disabled={submitted}
+            required
+            rows={30}
+          />
         </div>
 
         <div className="mb-6">
-          <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-            题解 (Markdown) <span className="text-gray-400 dark:text-gray-500 font-normal">— 可选</span>
-          </label>
-          <textarea value={formSolution} onChange={e => setFormSolution(e.target.value)}
-            rows={10} disabled={submitted}
-            className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 font-mono text-sm dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-            placeholder="# 题解&#10;&#10;请在这里编写题解（可选）..." />
+          <MarkdownEditor
+            value={formSolution}
+            onChange={setFormSolution}
+            label="题解 (Markdown)"
+            optionalNote="可选"
+            placeholder="# 题解&#10;&#10;请在这里编写题解（可选）..."
+            disabled={submitted}
+            rows={30}
+          />
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">备注（仅审核阶段可见）</label>
+          <textarea
+            value={formRemark}
+            onChange={e => setFormRemark(e.target.value)}
+            rows={3}
+            disabled={submitted}
+            className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
+            placeholder="给审核员的备注，审核通过后自动隐藏..."
+          />
         </div>
 
         <button type="submit" disabled={submitted}
@@ -634,6 +656,12 @@ export default function ProblemsPage() {
                   </div>
                 </div>
                 {renderVisibilityEditor(p.id)}
+                {(p as AdminPendingProblem).remark && (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800">
+                    <h4 className="text-xs font-semibold text-yellow-800 dark:text-yellow-300 mb-1">备注</h4>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap">{(p as AdminPendingProblem).remark}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>

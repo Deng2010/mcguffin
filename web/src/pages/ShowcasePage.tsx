@@ -4,6 +4,7 @@ import { useAuth } from '../AuthContext'
 import { useSite } from '../SiteContext'
 import { apiFetch } from '../api'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import MarkdownEditor from '../components/MarkdownEditor'
 import { useDifficulties, DiffBadge } from '../hooks/useDifficulties'
 import type { Announcement } from '../types'
 
@@ -302,12 +303,11 @@ export default function ShowcasePage() {
 
         {editing ? (
           <div className="space-y-3">
-            <textarea
+            <MarkdownEditor
               value={draftDescription}
-              onChange={e => setDraftDescription(e.target.value)}
+              onChange={setDraftDescription}
               placeholder="在此输入团队简介..."
-              rows={5}
-              className="w-full border border-gray-300 dark:border-gray-700 p-3 text-sm text-gray-700 dark:text-gray-200 dark:bg-gray-800 resize-y focus:outline-none focus:border-gray-500"
+              rows={20}
             />
             <div className="flex gap-2">
               <button

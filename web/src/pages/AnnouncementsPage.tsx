@@ -3,6 +3,7 @@ import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import type { Announcement } from '../types'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import MarkdownEditor from '../components/MarkdownEditor'
 
 export default function AnnouncementsPage() {
   const { hasPermission, isAuthenticated } = useAuth()
@@ -115,12 +116,11 @@ export default function AnnouncementsPage() {
             />
           </div>
           <div className="mb-3">
-            <textarea
-              placeholder="公告内容（支持 Markdown）"
+            <MarkdownEditor
               value={content}
-              onChange={e => setContent(e.target.value)}
-              rows={6}
-              className="w-full px-3 py-2 border border-gray-300 text-sm focus:outline-none focus:border-gray-500 resize-y dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
+              onChange={setContent}
+              placeholder="公告内容（支持 Markdown）"
+              rows={20}
             />
           </div>
           <div className="mb-3">

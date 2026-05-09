@@ -123,6 +123,11 @@ pub async fn get_problems(
                 claimed_by: p.claimed_by.clone(),
                 has_verifier_solution: p.verifier_solution.is_some(),
                 link: p.link.clone(),
+                remark: if p.status == "pending" && (is_admin_user || current_uid.as_ref().map_or(false, |uid| p.author_id == *uid) || current_display_name.as_ref().map_or(false, |dn| p.author_name == *dn)) {
+                    p.remark.clone()
+                } else {
+                    None
+                },
             }
         })
         .collect();
@@ -227,6 +232,9 @@ pub async fn get_problem_detail(
 
     if show_content {
         resp["content"] = serde_json::Value::String(problem.content);
+        if let Some(remark) = &problem.remark {
+            resp["remark"] = serde_json::Value::String(remark.clone());
+        }
     }
     if show_solution {
         resp["solution"] = serde_json::Value::String(problem.solution.unwrap_or_default());
@@ -289,6 +297,7 @@ pub async fn submit_problem(
         verifier_solution: None,
         visible_to: vec![],
         link: payload.link,
+        remark: payload.remark,
     };
 
     let pid = problem.id.clone();
@@ -608,6 +617,7 @@ pub async fn get_pending_problems_admin(
                 "visible_to": p.visible_to,
                 "claimed_by": p.claimed_by,
                 "has_verifier_solution": p.verifier_solution.is_some(),
+                "remark": p.remark,
             })
         })
         .collect();
@@ -706,6 +716,9 @@ pub async fn update_problem(
         if let Some(val) = payload.author_name {
             problem.author_name = val;
         }
+    }
+    if let Some(val) = payload.remark {
+        problem.remark = if val.is_empty() { None } else { Some(val) };
     }
 
     drop(problems);

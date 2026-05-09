@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
+import MarkdownEditor from '../components/MarkdownEditor'
 import { useDifficulties, DiffBadge } from '../hooks/useDifficulties'
 
 interface ContestItem {
@@ -256,11 +257,13 @@ export default function ContestManagePage() {
             </div>
           </div>
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">简介</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
-              placeholder="比赛简介（可选）" />
+            <MarkdownEditor
+              value={description}
+              onChange={setDescription}
+              label="简介"
+              placeholder="比赛简介（可选）"
+              rows={10}
+            />
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">链接（设为公开时必填）</label>
@@ -346,10 +349,12 @@ export default function ContestManagePage() {
                       className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
                   </div>
                   <div className="mb-6">
-                    <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">简介</label>
-                    <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)}
-                      rows={2}
-                      className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
+                    <MarkdownEditor
+                      value={editDescription}
+                      onChange={setEditDescription}
+                      label="简介"
+rows={10}
+                    />
                   </div>
 
                   {/* Problem order section */}

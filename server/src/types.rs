@@ -183,6 +183,9 @@ pub struct Problem {
     pub visible_to: Vec<String>,              // user_ids who can see pending problem content
     #[serde(default)]
     pub link: Option<String>,
+    #[serde(default)]
+    /// Internal remark for reviewers (hidden after approval)
+    pub remark: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -197,6 +200,8 @@ pub struct SubmitProblemPayload {
     pub solution: Option<String>,
     #[serde(default)]
     pub link: Option<String>,
+    #[serde(default)]
+    pub remark: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -218,6 +223,8 @@ pub struct EditProblemPayload {
     /// author_name to set (admin only)
     #[serde(default)]
     pub author_name: Option<String>,
+    #[serde(default)]
+    pub remark: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -264,6 +271,8 @@ pub struct ProblemListItem {
     pub has_verifier_solution: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remark: Option<String>,
 }
 
 // ============== OAuth ==============

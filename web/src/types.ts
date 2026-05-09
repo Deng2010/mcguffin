@@ -134,6 +134,7 @@ export interface ProblemListItem {
   claimed_by: string | null
   has_verifier_solution: boolean
   link?: string | null
+  remark?: string | null
 }
 
 export interface ProblemDetail {
@@ -146,6 +147,7 @@ export interface ProblemDetail {
   difficulty: Difficulty
   content?: string
   solution?: string
+  remark?: string
   status: ProblemStatus
   created_at: string
   public_at: string | null
@@ -169,11 +171,13 @@ export interface AdminPendingProblem {
   visible_to: string[]
   claimed_by: string | null
   has_verifier_solution: boolean
+  remark?: string | null
 }
 
 export interface SubmitProblemPayload {
   title: string
   contest: string
+  remark?: string
   contest_id?: string
   difficulty: Difficulty
   content: string

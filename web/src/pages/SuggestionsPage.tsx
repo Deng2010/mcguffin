@@ -3,6 +3,7 @@ import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import type { Suggestion, SuggestionStatus } from '../types'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import MarkdownEditor from '../components/MarkdownEditor'
 
 type TabId = 'all' | 'open' | 'in_progress' | 'resolved' | 'closed'
 
@@ -138,12 +139,11 @@ export default function SuggestionsPage() {
             />
           </div>
           <div className="mb-3">
-            <textarea
-              placeholder="详细描述（支持 Markdown）"
+            <MarkdownEditor
               value={content}
-              onChange={e => setContent(e.target.value)}
-              rows={6}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 text-sm focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 resize-y bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+              onChange={setContent}
+              placeholder="详细描述（支持 Markdown）"
+              rows={20}
             />
           </div>
           <button
@@ -272,12 +272,11 @@ export default function SuggestionsPage() {
                       <div className="mt-3">
                         {replyingId === s.id ? (
                           <div>
-                            <textarea
+                            <MarkdownEditor
                               value={replyContent}
-                              onChange={e => setReplyContent(e.target.value)}
-                              rows={3}
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 text-sm focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 resize-y mb-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                              onChange={setReplyContent}
                               placeholder="输入回复（支持 Markdown）"
+rows={10}
                             />
                             <div className="flex gap-2">
                               <button

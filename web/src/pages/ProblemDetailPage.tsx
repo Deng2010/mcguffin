@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import MarkdownEditor from '../components/MarkdownEditor'
 import { useDifficulties, DiffBadge } from '../hooks/useDifficulties'
 import type { ProblemDetail } from '../types'
 
@@ -34,6 +35,7 @@ export default function ProblemDetailPage() {
   const [editContestId, setEditContestId] = useState('')
   const [editLink, setEditLink] = useState('')
   const [editAuthorName, setEditAuthorName] = useState('')
+  const [editRemark, setEditRemark] = useState('')
   const [contests, setContests] = useState<Contest[]>([])
   const [saving, setSaving] = useState(false)
   const [editMsg, setEditMsg] = useState('')
@@ -65,6 +67,7 @@ export default function ProblemDetailPage() {
     setEditDifficulty(problem.difficulty)
     setEditContent(problem.content || '')
     setEditSolution(problem.solution || '')
+    setEditRemark(problem.remark || '')
     setEditContestId(problem.contest_id || '')
     setEditLink((problem as any).link || '')
     setEditAuthorName(problem.author_name)
@@ -98,6 +101,10 @@ export default function ProblemDetailPage() {
       // Author name change (admin only)
       if (isAdmin && editAuthorName !== problem.author_name) {
         body.author_name = editAuthorName
+      }
+      // Remark change
+      if (editRemark !== (problem.remark || '')) {
+        body.remark = editRemark || null
       }
       if (Object.keys(body).length === 0 && visibleTo === ((problem as any).visible_to || [])) {
         setEditMsg('没有修改')
@@ -268,26 +275,34 @@ export default function ProblemDetailPage() {
             </div>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">题目内容 (Markdown)</label>
-              <textarea
+              <MarkdownEditor
                 value={editContent}
-                onChange={e => setEditContent(e.target.value)}
-                rows={15}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 font-mono text-sm"
+                onChange={setEditContent}
+                label="题目内容 (Markdown)"
                 placeholder="# 题目描述"
+                rows={30}
               />
             </div>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-                题解 (Markdown) <span className="text-gray-400 dark:text-gray-500 font-normal">— 留空表示清除题解</span>
-              </label>
-              <textarea
+              <MarkdownEditor
                 value={editSolution}
-                onChange={e => setEditSolution(e.target.value)}
-                rows={10}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 font-mono text-sm"
+                onChange={setEditSolution}
+                label="题解 (Markdown)"
+                optionalNote="留空表示清除题解"
                 placeholder="# 题解"
+                rows={30}
+              />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">备注（仅审核阶段可见）</label>
+              <textarea
+                value={editRemark}
+                onChange={e => setEditRemark(e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm"
+                placeholder="给审核员的备注..."
               />
             </div>
 
@@ -326,17 +341,25 @@ export default function ProblemDetailPage() {
         )}
       </div>
 
+      {/* Remark — only visible in pending status */}
+      {problem.status === 'pending' && problem.remark && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-4 mb-4">
+          <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-300 mb-1">备注</h3>
+          <p className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap">{problem.remark}</p>
+        </div>
+      )}
+
       {/* Verifier solution — editable for the verifier, read-only for other members */}
       {problem.can_submit_verifier_solution ? (
         <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">验题人题解</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">您已认领此题，可以编写验题人题解（出题人题解不可见）</p>
-          <textarea
+          <MarkdownEditor
             value={verifierSolution}
-            onChange={e => setVerifierSolution(e.target.value)}
-            rows={10}
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 font-mono text-sm mb-3"
-            placeholder="# 验题人题解\n\n请在这里编写您的题解..."
+            onChange={setVerifierSolution}
+            label="验题人题解"
+            placeholder="# 验题人题解\\n\\n请在这里编写您的题解..."
+rows={30}
           />
           <button
             onClick={handleSaveVerifierSolution}
