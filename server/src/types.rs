@@ -639,6 +639,7 @@ color = "#ef4444"
             verifier_solution: None,
             visible_to: vec![],
             link: Some("https://example.com".to_string()),
+            remark: None,
         };
 
         let json = serde_json::to_string(&problem).unwrap();
@@ -666,6 +667,7 @@ color = "#ef4444"
             claimed_by: None,
             has_verifier_solution: false,
             link: None,
+            remark: None,
         };
 
         let json = serde_json::to_string(&item).unwrap();

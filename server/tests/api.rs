@@ -77,6 +77,7 @@ fn test_problem_state_operations() {
         verifier_solution: None,
         visible_to: vec![],
         link: None,
+        remark: None,
     };
     state.problems.blocking_write().insert(problem.id.clone(), problem);
 
