@@ -16,6 +16,10 @@ web/*.tsbuildinfo
 web/vite.config.d.ts
 web/vite.config.d.ts.map
 
+# ========== Package manager lock files ==========
+web/bun.lock
+web/package-lock.json
+
 # ========== General ==========
 .DS_Store
 *.swp

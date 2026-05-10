@@ -88,11 +88,18 @@ pub async fn update_profile(
     };
 
     // Apply changes
-    if let Some(name) = payload.display_name {
-        if !name.trim().is_empty() {
-            user.display_name = name.trim().to_string();
-        }
-    }
+                    if let Some(name) = payload.display_name {
+                        let name = name.trim();
+                        if !name.is_empty() {
+                            if name.chars().count() > 30 {
+                                return Json(serde_json::json!({
+                                    "success": false,
+                                    "message": "显示名称不能超过30个字符"
+                                }));
+                            }
+                            user.display_name = name.to_string();
+                        }
+                    }
     if let Some(url) = payload.avatar_url {
         user.avatar_url = if url.trim().is_empty() {
             None

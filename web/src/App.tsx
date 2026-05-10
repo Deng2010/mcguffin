@@ -15,8 +15,9 @@ import ApplyPage from './pages/ApplyPage'
 import ContestManagePage from './pages/ContestManagePage'
 import ProfilePage from './pages/ProfilePage'
 import AdminConfigPage from './pages/AdminConfigPage'
-import AdminBackupPage from './pages/AdminBackupPage'
 import SuggestionsPage from './pages/SuggestionsPage'
+import DiscussionsPage from './pages/DiscussionsPage'
+import DiscussionDetailPage from './pages/DiscussionDetailPage'
 import AnnouncementsPage from './pages/AnnouncementsPage'
 import NotFoundPage from './pages/NotFoundPage'
 
@@ -67,6 +68,14 @@ function AppContent() {
               element={<ProtectedRoute requiredPermission="view_suggestions"><SuggestionsPage /></ProtectedRoute>}
             />
             <Route
+              path="/discussions"
+              element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionsPage /></ProtectedRoute>}
+            />
+            <Route
+              path="/discussions/:id"
+              element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionDetailPage /></ProtectedRoute>}
+            />
+            <Route
               path="/announcements"
               element={<AnnouncementsPage />}
             />
@@ -81,10 +90,6 @@ function AppContent() {
             <Route
               path="/admin/config"
               element={<ProtectedRoute requiredPermission="manage_site"><AdminConfigPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/admin/backup"
-              element={<ProtectedRoute requiredPermission="manage_site"><AdminBackupPage /></ProtectedRoute>}
             />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

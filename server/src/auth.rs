@@ -222,26 +222,39 @@ pub async fn oauth_callback(
                         }
                     };
                     
+                    // Truncate username to 30 characters max
+                    const MAX_USERNAME_LEN: usize = 30;
+                    let username = if userinfo.username.chars().count() > MAX_USERNAME_LEN {
+                        userinfo.username.chars().take(MAX_USERNAME_LEN).collect::<String>()
+                    } else {
+                        userinfo.username
+                    };
+
                     let mut users = state.users.write().await;
                     if let Some(existing) = users.get_mut(&user_id) {
                         // User already exists — preserve custom fields (display_name, avatar_url, bio, created_at)
                         // Only update OAuth-provided fields and computed role/status
-                        existing.username = userinfo.username;
+                        existing.username = username.clone();
                         if !userinfo.email.is_none() {
                             existing.email = userinfo.email;
                         }
                         existing.role = role;
                         existing.team_status = team_status;
                     } else {
-                        // New user — use OAuth data
+                        // New user — use OAuth data, truncate display_name to 30 chars
                         let display_name = if userinfo.display_name.is_empty() {
-                            userinfo.username.clone()
+                            username.clone()
                         } else {
-                            userinfo.display_name
+                            let dn = &userinfo.display_name;
+                            if dn.chars().count() > 30 {
+                                dn.chars().take(30).collect::<String>()
+                            } else {
+                                dn.clone()
+                            }
                         };
                         let user = User {
                             id: user_id.clone(),
-                            username: userinfo.username,
+                            username,
                             display_name,
                             avatar_url: userinfo.avatar_url,
                             email: userinfo.email,

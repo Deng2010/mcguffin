@@ -72,9 +72,9 @@ export default function Navbar() {
             {showManageContests && navLink('/contests', '比赛')}
             {showTeam && navLink('/team', '成员')}
             {showSuggestions && navLink('/suggestions', '建议')}
+            {navLink('/discussions', '讨论')}
             {navLink('/announcements', '公告')}
             {showAdminConfig && navLink('/admin/config', '配置')}
-            {showAdminConfig && navLink('/admin/backup', '备份')}
             {showApply && navLink('/apply', '申请加入')}
           </div>
         </div>

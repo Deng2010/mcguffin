@@ -284,6 +284,7 @@ export default function ProfilePage() {
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
                 disabled={isSuperadmin}
+                maxLength={30}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="您的显示名称"
               />

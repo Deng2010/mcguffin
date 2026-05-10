@@ -35,13 +35,15 @@ export type Permission =
   | 'view_suggestions'
   /** Manage announcements */
   | 'manage_announcements'
+  /** View and participate in discussions */
+  | 'view_discussions'
 
 export const rolePermissions: Record<User['role'], Permission[]> = {
-  superadmin: ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site', 'view_suggestions', 'manage_announcements'],
-  admin:   ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site', 'view_suggestions', 'manage_announcements'],
-  member:  ['view_showcase', 'view_team', 'submit_problem', 'view_problems', 'view_suggestions'],
-  guest:   ['view_showcase', 'apply_join'],
-  pending: ['view_showcase', 'apply_join'],
+  superadmin: ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site', 'view_suggestions', 'manage_announcements', 'view_discussions'],
+  admin:   ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site', 'view_suggestions', 'manage_announcements', 'view_discussions'],
+  member:  ['view_showcase', 'view_team', 'submit_problem', 'view_problems', 'view_suggestions', 'view_discussions'],
+  guest:   ['view_showcase', 'apply_join', 'view_discussions'],
+  pending: ['view_showcase', 'apply_join', 'view_discussions'],
 }
 
 // ============== Suggestion Types ==============

@@ -1,0 +1,467 @@
+use axum::{
+    extract::{Path, State},
+    Json,
+};
+use axum::http::HeaderMap;
+use chrono::Utc;
+use uuid::Uuid;
+
+use crate::state::AppState;
+use crate::types::*;
+use crate::utils::{is_admin, resolve_user};
+
+// ============== Character Limits ==============
+
+const TITLE_MAX_LEN: usize = 30;
+const CONTENT_MAX_LEN: usize = 3000;
+const REPLY_MAX_LEN: usize = 300;
+
+/// Truncate all existing discussions/replies that exceed the character limits.
+/// Called at server startup to clean up legacy data.
+pub async fn truncate_existing_discussions(state: &AppState) {
+    let mut discussions = state.discussions.write().await;
+    let mut changed = false;
+    for d in discussions.values_mut() {
+        if d.title.chars().count() > TITLE_MAX_LEN {
+            d.title = d.title.chars().take(TITLE_MAX_LEN).collect::<String>();
+            changed = true;
+        }
+        if d.content.chars().count() > CONTENT_MAX_LEN {
+            d.content = d.content.chars().take(CONTENT_MAX_LEN).collect::<String>();
+            changed = true;
+        }
+        for r in d.replies.iter_mut() {
+            if r.content.chars().count() > REPLY_MAX_LEN {
+                r.content = r.content.chars().take(REPLY_MAX_LEN).collect::<String>();
+                changed = true;
+            }
+        }
+    }
+    drop(discussions);
+    if changed {
+        tracing::info!("Truncated some existing discussions/replies to meet character limits");
+        state.save().await;
+    }
+}
+
+// ============== List Discussions ==============
+
+pub async fn get_discussions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<serde_json::Value> {
+    let (_, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!([])),
+    };
+    let discussions = state.discussions.read().await;
+    let mut result: Vec<&Discussion> = discussions.values().collect();
+    result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    // Return without replies in listing (replies are fetched in detail)
+    let list: Vec<serde_json::Value> = result.iter().map(|d| {
+        serde_json::json!({
+            "id": d.id,
+            "title": d.title,
+            "content": d.content,
+            "author_id": d.author_id,
+            "author_name": d.author_name,
+            "tags": d.tags,
+            "emoji": d.emoji,
+            "reply_count": d.replies.len(),
+            "created_at": d.created_at,
+            "updated_at": d.updated_at,
+        })
+    }).collect();
+    Json(serde_json::json!(list))
+}
+
+// ============== Create Discussion ==============
+
+pub async fn create_discussion(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateDiscussionPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if payload.title.trim().is_empty() {
+        return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
+    }
+    if payload.title.chars().count() > TITLE_MAX_LEN {
+        return Json(serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}));
+    }
+    if payload.content.trim().is_empty() {
+        return Json(serde_json::json!({"success": false, "message": "内容不能为空"}));
+    }
+    if payload.content.chars().count() > CONTENT_MAX_LEN {
+        return Json(serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}));
+    }
+    let now = Utc::now();
+    let discussion = Discussion {
+        id: Uuid::new_v4().to_string(),
+        title: payload.title.trim().to_string(),
+        content: payload.content,
+        author_id: user_id,
+        author_name: user.display_name,
+        tags: payload.tags,
+        emoji: payload.emoji,
+        replies: vec![],
+        created_at: now,
+        updated_at: now,
+    };
+    state.discussions.write().await.insert(discussion.id.clone(), discussion);
+    state.save().await;
+    Json(serde_json::json!({"success": true, "message": "讨论已发布"}))
+}
+
+// ============== Get Discussion Detail ==============
+
+pub async fn get_discussion_detail(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let (_, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    let discussions = state.discussions.read().await;
+    if let Some(d) = discussions.get(&id) {
+        // Enrich replies with updated author display names
+        let users = state.users.read().await;
+        let enriched_replies: Vec<serde_json::Value> = d.replies.iter().map(|r| {
+            let display_name = users.get(&r.author_id)
+                .map(|u| u.display_name.clone())
+                .unwrap_or_else(|| r.author_name.clone());
+            serde_json::json!({
+                "id": r.id,
+                "author_id": r.author_id,
+                "author_name": display_name,
+                "content": r.content,
+                "created_at": r.created_at,
+            })
+        }).collect();
+        let author_name = users.get(&d.author_id)
+            .map(|u| u.display_name.clone())
+            .unwrap_or_else(|| d.author_name.clone());
+        drop(users);
+
+        return Json(serde_json::json!({
+            "id": d.id,
+            "title": d.title,
+            "content": d.content,
+            "author_id": d.author_id,
+            "author_name": author_name,
+            "tags": d.tags,
+            "emoji": d.emoji,
+            "replies": enriched_replies,
+            "created_at": d.created_at,
+            "updated_at": d.updated_at,
+        }));
+    }
+    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+}
+
+// ============== Update Discussion ==============
+
+pub async fn update_discussion(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateDiscussionPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    let is_admin_user = is_admin(&state, &user_id).await;
+    let mut discussions = state.discussions.write().await;
+    if let Some(d) = discussions.get_mut(&id) {
+        if !is_admin_user && d.author_id != user_id {
+            return Json(serde_json::json!({"success": false, "message": "无权修改"}));
+        }
+        if let Some(ref title) = payload.title {
+            if !title.trim().is_empty() {
+                if title.chars().count() > TITLE_MAX_LEN {
+                    return Json(serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}));
+                }
+                d.title = title.trim().to_string();
+            }
+        }
+        if let Some(ref content) = payload.content {
+            if !content.trim().is_empty() {
+                if content.chars().count() > CONTENT_MAX_LEN {
+                    return Json(serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}));
+                }
+                d.content = content.clone();
+            }
+        }
+        if let Some(ref tags) = payload.tags {
+            d.tags = tags.clone();
+        }
+        if let Some(ref emoji) = payload.emoji {
+            d.emoji = emoji.clone();
+        }
+        d.updated_at = Utc::now();
+        drop(discussions);
+        state.save().await;
+        return Json(serde_json::json!({"success": true, "message": "讨论已更新"}));
+    }
+    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+}
+
+// ============== Delete Discussion ==============
+
+pub async fn delete_discussion(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    let is_admin_user = is_admin(&state, &user_id).await;
+    let mut discussions = state.discussions.write().await;
+    if let Some(d) = discussions.get(&id) {
+        if !is_admin_user && d.author_id != user_id {
+            return Json(serde_json::json!({"success": false, "message": "无权删除"}));
+        }
+        discussions.remove(&id);
+        drop(discussions);
+        state.save().await;
+        return Json(serde_json::json!({"success": true, "message": "讨论已删除"}));
+    }
+    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+}
+
+// ============== Reply to Discussion ==============
+
+pub async fn reply_to_discussion(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<CreateDiscussionReplyPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if payload.content.trim().is_empty() {
+        return Json(serde_json::json!({"success": false, "message": "回复不能为空"}));
+    }
+    if payload.content.chars().count() > REPLY_MAX_LEN {
+        return Json(serde_json::json!({"success": false, "message": format!("回复不能超过{} 字", REPLY_MAX_LEN)}));
+    }
+    let mut discussions = state.discussions.write().await;
+    if let Some(d) = discussions.get_mut(&id) {
+        let reply = DiscussionReply {
+            id: Uuid::new_v4().to_string(),
+            author_id: user_id.clone(),
+            author_name: user.display_name,
+            content: payload.content.trim().to_string(),
+            created_at: Utc::now(),
+        };
+        d.replies.push(reply);
+        d.updated_at = Utc::now();
+        drop(discussions);
+        state.save().await;
+        return Json(serde_json::json!({"success": true, "message": "回复成功"}));
+    }
+    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+}
+
+// ============== Delete Reply ==============
+
+pub async fn delete_discussion_reply(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((discussion_id, reply_id)): Path<(String, String)>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    let is_admin_user = is_admin(&state, &user_id).await;
+    let mut discussions = state.discussions.write().await;
+    if let Some(d) = discussions.get_mut(&discussion_id) {
+        if let Some(reply) = d.replies.iter().find(|r| r.id == reply_id) {
+            if !is_admin_user && reply.author_id != user_id {
+                return Json(serde_json::json!({"success": false, "message": "无权删除"}));
+            }
+        } else {
+            return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
+        }
+        d.replies.retain(|r| r.id != reply_id);
+        d.updated_at = Utc::now();
+        drop(discussions);
+        state.save().await;
+        return Json(serde_json::json!({"success": true, "message": "回复已删除"}));
+    }
+    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+}
+
+// ============== Tags CRUD ==============
+
+pub async fn get_discussion_tags(
+    State(state): State<AppState>,
+) -> Json<Vec<DiscussionTag>> {
+    let tags = state.discussion_tags.read().await;
+    Json(tags.values().cloned().collect())
+}
+
+pub async fn create_discussion_tag(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateDiscussionTagPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if !is_admin(&state, &user_id).await {
+        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
+    }
+    if payload.name.trim().is_empty() {
+        return Json(serde_json::json!({"success": false, "message": "标签名不能为空"}));
+    }
+    if payload.color.trim().is_empty() {
+        return Json(serde_json::json!({"success": false, "message": "颜色不能为空"}));
+    }
+    let tag = DiscussionTag {
+        id: Uuid::new_v4().to_string(),
+        name: payload.name.trim().to_string(),
+        color: payload.color.trim().to_string(),
+        description: payload.description,
+    };
+    state.discussion_tags.write().await.insert(tag.id.clone(), tag);
+    state.save().await;
+    Json(serde_json::json!({"success": true, "message": "标签已创建"}))
+}
+
+pub async fn update_discussion_tag(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateDiscussionTagPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if !is_admin(&state, &user_id).await {
+        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
+    }
+    let mut tags = state.discussion_tags.write().await;
+    if let Some(t) = tags.get_mut(&id) {
+        if let Some(ref name) = payload.name { t.name = name.clone(); }
+        if let Some(ref color) = payload.color { t.color = color.clone(); }
+        if let Some(ref desc) = payload.description { t.description = desc.clone(); }
+        drop(tags);
+        state.save().await;
+        return Json(serde_json::json!({"success": true, "message": "标签已更新"}));
+    }
+    Json(serde_json::json!({"success": false, "message": "标签不存在"}))
+}
+
+pub async fn delete_discussion_tag(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if !is_admin(&state, &user_id).await {
+        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
+    }
+    state.discussion_tags.write().await.remove(&id);
+    state.save().await;
+    Json(serde_json::json!({"success": true, "message": "标签已删除"}))
+}
+
+// ============== Emojis CRUD ==============
+
+pub async fn get_discussion_emojis(
+    State(state): State<AppState>,
+) -> Json<Vec<DiscussionEmoji>> {
+    let emojis = state.discussion_emojis.read().await;
+    Json(emojis.values().cloned().collect())
+}
+
+pub async fn create_discussion_emoji(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateDiscussionEmojiPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if !is_admin(&state, &user_id).await {
+        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
+    }
+    if payload.char.trim().chars().count() != 1 {
+        return Json(serde_json::json!({"success": false, "message": "表情必须是单个字符"}));
+    }
+    if payload.name.trim().is_empty() {
+        return Json(serde_json::json!({"success": false, "message": "表情名称不能为空"}));
+    }
+    let emoji = DiscussionEmoji {
+        id: Uuid::new_v4().to_string(),
+        name: payload.name.trim().to_string(),
+        char: payload.char.trim().to_string(),
+    };
+    state.discussion_emojis.write().await.insert(emoji.id.clone(), emoji);
+    state.save().await;
+    Json(serde_json::json!({"success": true, "message": "表情已创建"}))
+}
+
+pub async fn update_discussion_emoji(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateDiscussionEmojiPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if !is_admin(&state, &user_id).await {
+        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
+    }
+    let mut emojis = state.discussion_emojis.write().await;
+    if let Some(e) = emojis.get_mut(&id) {
+        if let Some(ref name) = payload.name { e.name = name.clone(); }
+        if let Some(ref ch) = payload.char {
+            if ch.trim().chars().count() != 1 {
+                return Json(serde_json::json!({"success": false, "message": "表情必须是单个字符"}));
+            }
+            e.char = ch.trim().to_string();
+        }
+        drop(emojis);
+        state.save().await;
+        return Json(serde_json::json!({"success": true, "message": "表情已更新"}));
+    }
+    Json(serde_json::json!({"success": false, "message": "表情不存在"}))
+}
+
+pub async fn delete_discussion_emoji(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if !is_admin(&state, &user_id).await {
+        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
+    }
+    state.discussion_emojis.write().await.remove(&id);
+    state.save().await;
+    Json(serde_json::json!({"success": true, "message": "表情已删除"}))
+}

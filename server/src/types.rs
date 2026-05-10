@@ -553,6 +553,108 @@ pub struct NotificationResponse {
     pub unread_count: usize,
 }
 
+// ============== Discussion ==============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscussionReply {
+    pub id: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscussionTag {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscussionEmoji {
+    pub id: String,
+    pub name: String,
+    /// unicode single character
+    pub char: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Discussion {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub author_id: String,
+    pub author_name: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub emoji: Option<String>,
+    #[serde(default)]
+    pub replies: Vec<DiscussionReply>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateDiscussionPayload {
+    pub title: String,
+    pub content: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub emoji: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateDiscussionPayload {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub emoji: Option<Option<String>>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateDiscussionReplyPayload {
+    pub content: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateDiscussionTagPayload {
+    pub name: String,
+    pub color: String,
+    pub description: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateDiscussionTagPayload {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateDiscussionEmojiPayload {
+    pub name: String,
+    pub char: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateDiscussionEmojiPayload {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub char: Option<String>,
+}
+
 // ============== Tests ==============
 
 #[cfg(test)]

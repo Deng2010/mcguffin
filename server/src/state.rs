@@ -1,4 +1,4 @@
-use crate::types::{Announcement, Contest, JoinRequest, Notification, Problem, SessionEntry, Suggestion, TeamMember, User, AppConfig};
+use crate::types::{Announcement, Contest, Discussion, DiscussionEmoji, DiscussionTag, JoinRequest, Notification, Problem, SessionEntry, Suggestion, TeamMember, User, AppConfig};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
@@ -38,6 +38,12 @@ struct SavedData {
     showcase_problem_ids: Vec<String>,
     #[serde(default)]
     showcase_contest_ids: Vec<String>,
+    #[serde(default)]
+    discussions: HashMap<String, Discussion>,
+    #[serde(default)]
+    discussion_tags: HashMap<String, DiscussionTag>,
+    #[serde(default)]
+    discussion_emojis: HashMap<String, DiscussionEmoji>,
 }
 
 /// Custom deserializer for sessions that handles both old format
@@ -119,6 +125,12 @@ pub struct AppState {
     pub showcase_contest_ids: Arc<RwLock<Vec<String>>>,
     /// Difficulty display order
     pub difficulty_order: Arc<RwLock<Vec<String>>>,
+    /// Discussions
+    pub discussions: Arc<RwLock<HashMap<String, Discussion>>>,
+    /// Discussion tags
+    pub discussion_tags: Arc<RwLock<HashMap<String, DiscussionTag>>>,
+    /// Discussion emojis
+    pub discussion_emojis: Arc<RwLock<HashMap<String, DiscussionEmoji>>>,
 }
 
 impl AppState {
@@ -135,13 +147,13 @@ impl AppState {
             .ok()
             .and_then(|s| serde_json::from_str::<SavedData>(&s).ok());
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, showcase_problem_ids, showcase_contest_ids) =
+        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, showcase_problem_ids, showcase_contest_ids, discussions, discussion_tags, discussion_emojis) =
             if let Some(data) = saved {
                 tracing::info!("Loaded state from {}", data_file);
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids)
+                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids, data.discussions, data.discussion_tags, data.discussion_emojis)
             } else {
                 tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), Vec::new(), Vec::new())
+                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), Vec::new(), Vec::new(), HashMap::new(), HashMap::new(), HashMap::new())
             };
 
         // Always ensure superadmin user exists AND has correct role
@@ -177,7 +189,7 @@ impl AppState {
 
         let redirect_uri = format!("{}/api/oauth/callback", config.server.site_url);
 
-        Self {
+        let app_state = Self {
             users: Arc::new(RwLock::new(users)),
             sessions: Arc::new(RwLock::new(sessions)),
             refresh_tokens: Arc::new(RwLock::new(refresh_tokens)),
@@ -208,7 +220,13 @@ impl AppState {
                     keys
                 })
             )),
-        }
+            discussions: Arc::new(RwLock::new(discussions)),
+            discussion_tags: Arc::new(RwLock::new(discussion_tags)),
+            discussion_emojis: Arc::new(RwLock::new(discussion_emojis)),
+        };
+
+
+        app_state
     }
 
     /// Persist all in-memory state to JSON file
@@ -227,6 +245,9 @@ impl AppState {
             notifications: self.notifications.read().await.clone(),
             showcase_problem_ids: self.showcase_problem_ids.read().await.clone(),
             showcase_contest_ids: self.showcase_contest_ids.read().await.clone(),
+            discussions: self.discussions.read().await.clone(),
+            discussion_tags: self.discussion_tags.read().await.clone(),
+            discussion_emojis: self.discussion_emojis.read().await.clone(),
         };
         if let Ok(json) = serde_json::to_string_pretty(&data) {
             let tmp_path = format!("{}.tmp", self.data_file);
@@ -256,6 +277,9 @@ impl AppState {
                 *self.notifications.write().await = data.notifications;
                 *self.showcase_problem_ids.write().await = data.showcase_problem_ids;
                 *self.showcase_contest_ids.write().await = data.showcase_contest_ids;
+                *self.discussions.write().await = data.discussions;
+                *self.discussion_tags.write().await = data.discussion_tags;
+                *self.discussion_emojis.write().await = data.discussion_emojis;
                 tracing::info!("State reloaded from {}", self.data_file);
             }
         }

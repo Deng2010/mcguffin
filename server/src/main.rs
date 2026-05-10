@@ -15,6 +15,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let state = AppState::new();
+    crate::discussions::truncate_existing_discussions(&state).await;
 
     let frontend_origin: axum::http::HeaderValue = state.site_url
         .parse()
@@ -124,6 +125,15 @@ async fn main() {
         .route("/api/notifications", get(get_notifications))
         .route("/api/notifications/read/{id}", post(mark_notification_read))
         .route("/api/notifications/read-all", post(mark_all_notifications_read))
+        // Discussion routes
+        .route("/api/discussions", get(get_discussions).post(create_discussion))
+        .route("/api/discussions/{id}", get(get_discussion_detail).put(update_discussion).delete(delete_discussion))
+        .route("/api/discussions/{id}/reply", post(reply_to_discussion))
+        .route("/api/discussions/{id}/reply/{reply_id}", delete(delete_discussion_reply))
+        .route("/api/discussions/tags", get(get_discussion_tags).post(create_discussion_tag))
+        .route("/api/discussions/tags/{id}", put(update_discussion_tag).delete(delete_discussion_tag))
+        .route("/api/discussions/emojis", get(get_discussion_emojis).post(create_discussion_emoji))
+        .route("/api/discussions/emojis/{id}", put(update_discussion_emoji).delete(delete_discussion_emoji))
         // Admin config (superadmin only)
         .route("/api/admin/config", get(get_config).put(update_config))
         .route("/api/admin/restart", post(restart_service))

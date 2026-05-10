@@ -30,3 +30,5 @@ pub use admin::*;
 pub use suggestions::*;
 pub use announcements::*;
 pub use notifications::*;
+pub mod discussions;
+pub use discussions::*;
