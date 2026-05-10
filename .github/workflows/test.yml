@@ -51,8 +51,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
 
       # ── Frontend ───────────────────────────────────────
       - name: 🌐 Install frontend dependencies
@@ -112,8 +110,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
 
       # ── Frontend ────────────────────────────────────────
       - name: 🌐 Build frontend
