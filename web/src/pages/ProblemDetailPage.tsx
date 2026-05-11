@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
@@ -34,11 +34,14 @@ export default function ProblemDetailPage() {
   const [editSolution, setEditSolution] = useState('')
   const [editContestId, setEditContestId] = useState('')
   const [editLink, setEditLink] = useState('')
+  const [editAuthorId, setEditAuthorId] = useState('')
   const [editAuthorName, setEditAuthorName] = useState('')
   const [editRemark, setEditRemark] = useState('')
   const [contests, setContests] = useState<Contest[]>([])
+  const [teamMembers, setTeamMembers] = useState<{ user_id: string; name: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [editMsg, setEditMsg] = useState('')
+  const nameManuallyEdited = useRef(false)
 
   // Visibility editor (admin only)
   const [members, setMembers] = useState<TeamMemberOption[]>([])
@@ -70,13 +73,19 @@ export default function ProblemDetailPage() {
     setEditRemark(problem.remark || '')
     setEditContestId(problem.contest_id || '')
     setEditLink((problem as any).link || '')
+    setEditAuthorId((problem as any).author_id || '')
     setEditAuthorName(problem.author_name)
     setEditMsg('')
+    nameManuallyEdited.current = false
     setEditing(true)
-    // Load members for visibility editor
+    // Load members for visibility editor and author selector
     if (isAdmin && members.length === 0) {
       apiFetch<TeamMemberOption[]>('/problems/admin/members')
         .then(setMembers)
+        .catch(() => {})
+      // Load all team members for author selector
+      apiFetch<{ user_id: string; name: string }[]>('/team/members')
+        .then(setTeamMembers)
         .catch(() => {})
     }
   }
@@ -99,8 +108,19 @@ export default function ProblemDetailPage() {
         body.link = editLink || null
       }
       // Author name change (admin only)
+      // Always send author_name when author_id changes, to prevent the backend
+      // from auto-overwriting the display name with the new user's display_name
+      const authorIdChanged = isAdmin && editAuthorId !== ((problem as any).author_id || '')
       if (isAdmin && editAuthorName !== problem.author_name) {
         body.author_name = editAuthorName
+      }
+      // Author id change (admin only)
+      if (authorIdChanged) {
+        body.author_id = editAuthorId || 'unknown'
+        // Ensure author_name is also sent so backend doesn't auto-fill from user's display_name
+        if (!('author_name' in body)) {
+          body.author_name = editAuthorName
+        }
       }
       // Remark change
       if (editRemark !== (problem.remark || '')) {
@@ -235,9 +255,42 @@ export default function ProblemDetailPage() {
             {isAdmin && (
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">出题人</label>
-                <input type="text" value={editAuthorName} onChange={e => setEditAuthorName(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm"
-                  placeholder="修改出题人名称" />
+                <div className="flex gap-2 items-start">
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">选择出题人</label>
+                    <select
+                      value={editAuthorId}
+                      onChange={e => {
+                        const newId = e.target.value
+                        setEditAuthorId(newId)
+                        // Auto-fill display name only if user hasn't manually edited it
+                        if (!nameManuallyEdited.current) {
+                          if (newId && newId !== 'unknown') {
+                            const member = teamMembers.find(m => m.user_id === newId)
+                            if (member) {
+                              setEditAuthorName(member.name)
+                            }
+                          } else if (newId === 'unknown') {
+                            setEditAuthorName('未知出题人')
+                          }
+                        }
+                      }}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm"
+                    >
+                      <option value="">-- 选择出题人 --</option>
+                      <option value="unknown">未知出题人</option>
+                      {teamMembers.map(m => (
+                        <option key={m.user_id} value={m.user_id}>{m.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">显示名称（可选覆盖）</label>
+                    <input type="text" value={editAuthorName} onChange={e => { nameManuallyEdited.current = true; setEditAuthorName(e.target.value) }}
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm"
+                      placeholder="自定义出题人显示名" />
+                  </div>
+                </div>
               </div>
             )}
 

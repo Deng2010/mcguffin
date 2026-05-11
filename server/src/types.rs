@@ -220,9 +220,12 @@ pub struct EditProblemPayload {
     pub contest_id: Option<Option<String>>,
     #[serde(default)]
     pub link: Option<Option<String>>,
-    /// author_name to set (admin only)
+    /// author_name to set (admin only) — the display name for the author
     #[serde(default)]
     pub author_name: Option<String>,
+    /// author_id to set (admin only, None = no change, Some("unknown") = set unknown, Some("id") = assign to member)
+    #[serde(default)]
+    pub author_id: Option<String>,
     #[serde(default)]
     pub remark: Option<String>,
 }

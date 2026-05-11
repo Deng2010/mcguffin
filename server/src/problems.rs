@@ -713,8 +713,30 @@ pub async fn update_problem(
         }
     }
     if is_admin_user {
-        if let Some(val) = payload.author_name {
-            problem.author_name = val;
+        if let Some(ref val) = payload.author_name {
+            problem.author_name = val.clone();
+        }
+    }
+    if is_admin_user {
+        if let Some(val) = payload.author_id {
+            if val == "unknown" {
+                // Set to unknown author
+                problem.author_id = "unknown".to_string();
+                if payload.author_name.is_none() {
+                    problem.author_name = "未知出题人".to_string();
+                }
+            } else if !val.is_empty() {
+                // Assign to a specific member
+                problem.author_id = val.clone();
+                // Auto-update author_name to match user's display name if not explicitly set
+                if payload.author_name.is_none() {
+                    let users = state.users.read().await;
+                    if let Some(u) = users.get(&val) {
+                        problem.author_name = u.display_name.clone();
+                    }
+                    drop(users);
+                }
+            }
         }
     }
     if let Some(val) = payload.remark {
