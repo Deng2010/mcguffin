@@ -10,6 +10,8 @@ interface ConfigData {
   site: { name: string; title?: string | null; difficulty_order: string[] }
   oauth: { cp_client_id: string; cp_client_secret: string }
   difficulty: Record<string, { label: string; color: string }>
+  discussion_tags?: Record<string, { color: string; description: string }>
+  discussion_emojis?: Record<string, { char: string }>
 }
 
 interface DifficultyEntry {
@@ -81,14 +83,12 @@ export default function AdminConfigPage() {
         ))}
       </div>
 
-      {/* Config tabs (server/admin/site/oauth/difficulty) share the config provider */}
-      {['server', 'admin', 'site', 'oauth', 'difficulty'].includes(activeTab) ? (
-        <ConfigWrapper tab={activeTab as 'server' | 'admin' | 'site' | 'oauth' | 'difficulty'} />
+      {/* Config tabs (server/admin/site/oauth/difficulty/discussions) share the config provider */}
+      {['server', 'admin', 'site', 'oauth', 'difficulty', 'discussions'].includes(activeTab) ? (
+        <ConfigWrapper tab={activeTab as 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'discussions'} />
       ) : activeTab === 'backup' ? (
         <BackupPanel />
-      ) : (
-        <DiscussionsPanel />
-      )}
+      ) : null}
     </div>
   )
 }
@@ -119,11 +119,21 @@ interface ConfigCtx {
   moveDiff: (idx: number, direction: -1 | 1) => void
   removeDiff: (idx: number) => void
   addDiff: () => void
+  // Discussion tags & emojis
+  discussionTags: Record<string, { color: string; description: string }>
+  setDiscussionTags: (v: Record<string, { color: string; description: string }>) => void
+  newTagName: string; setNewTagName: (v: string) => void
+  newTagColor: string; setNewTagColor: (v: string) => void
+  newTagDesc: string; setNewTagDesc: (v: string) => void
+  discussionEmojis: Record<string, { char: string }>
+  setDiscussionEmojis: (v: Record<string, { char: string }>) => void
+  newEmojiName: string; setNewEmojiName: (v: string) => void
+  newEmojiChar: string; setNewEmojiChar: (v: string) => void
 }
 
 const ConfigCtx = createContext<ConfigCtx>(null!)
 
-function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' }) {
+function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'discussions' }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -143,6 +153,14 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
   const [newDiffName, setNewDiffName] = useState('')
   const [newDiffLabel, setNewDiffLabel] = useState('')
   const [newDiffColor, setNewDiffColor] = useState('#888888')
+  // Discussion state
+  const [discussionTags, setDiscussionTags] = useState<Record<string, { color: string; description: string }>>({})
+  const [newTagName, setNewTagName] = useState('')
+  const [newTagColor, setNewTagColor] = useState('#6366f1')
+  const [newTagDesc, setNewTagDesc] = useState('')
+  const [discussionEmojis, setDiscussionEmojis] = useState<Record<string, { char: string }>>({})
+  const [newEmojiName, setNewEmojiName] = useState('')
+  const [newEmojiChar, setNewEmojiChar] = useState('')
 
   const loadConfig = async () => {
     setLoading(true)
@@ -160,6 +178,8 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
       setCpClientSecret(res.config.oauth.cp_client_secret)
       setDifficulties(Object.entries(res.config.difficulty).map(([name, fields]) => ({ name, label: fields.label, color: fields.color })))
       setDifficultyOrder(res.config.site.difficulty_order ?? [])
+      setDiscussionTags(res.config.discussion_tags ?? {})
+      setDiscussionEmojis(res.config.discussion_emojis ?? {})
     } catch (err) { setMsg(`加载配置失败: ${err}`) }
     finally { setLoading(false) }
   }
@@ -204,6 +224,8 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
           site: { name: siteName, title: siteTitle || undefined, difficulty_order: order },
           oauth: { cp_client_id: cpClientId, cp_client_secret: cpClientSecret },
           difficulty: diffObj,
+          discussion_tags: discussionTags,
+          discussion_emojis: discussionEmojis,
         }),
       })
       if (!res.success) { setMsg(`保存失败: ${res.message}`); return }
@@ -232,6 +254,10 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
     difficulties, difficultyOrder,
     newDiffName, setNewDiffName, newDiffLabel, setNewDiffLabel, newDiffColor, setNewDiffColor,
     updateDiff, moveDiff, removeDiff, addDiff,
+    discussionTags, setDiscussionTags,
+    newTagName, setNewTagName, newTagColor, setNewTagColor, newTagDesc, setNewTagDesc,
+    discussionEmojis, setDiscussionEmojis,
+    newEmojiName, setNewEmojiName, newEmojiChar, setNewEmojiChar,
   }
 
   if (loading) return (
@@ -249,6 +275,7 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
       case 'site': return <SiteForm />
       case 'oauth': return <OAuthForm />
       case 'difficulty': return <DifficultyForm />
+      case 'discussions': return <DiscussionForm />
     }
   }
 
@@ -390,6 +417,105 @@ function DifficultyForm() {
   )
 }
 
+// ============== Discussion Form (tags & emojis, saves via config) ==============
+
+function DiscussionForm() {
+  const c = useContext(ConfigCtx)
+
+  const addTag = () => {
+    const name = c.newTagName.trim()
+    if (!name) return
+    if (name in c.discussionTags) return
+    c.setDiscussionTags({ ...c.discussionTags, [name]: { color: c.newTagColor, description: c.newTagDesc.trim() } })
+    c.setNewTagName('')
+    c.setNewTagColor('#6366f1')
+    c.setNewTagDesc('')
+  }
+
+  const removeTag = (name: string) => {
+    const { [name]: _, ...rest } = c.discussionTags
+    c.setDiscussionTags(rest)
+  }
+
+  const addEmoji = () => {
+    const name = c.newEmojiName.trim()
+    if (!name) return
+    if (!c.newEmojiChar.trim()) return
+    if (name in c.discussionEmojis) return
+    c.setDiscussionEmojis({ ...c.discussionEmojis, [name]: { char: c.newEmojiChar.trim() } })
+    c.setNewEmojiName('')
+    c.setNewEmojiChar('')
+  }
+
+  const removeEmoji = (name: string) => {
+    const { [name]: _, ...rest } = c.discussionEmojis
+    c.setDiscussionEmojis(rest)
+  }
+
+  return (
+    <div>
+      {/* Tags */}
+      <section className="mb-10">
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">标签管理</h2>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">保存配置后立即生效。</p>
+        <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+          <div>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">名称</label>
+            <input type="text" value={c.newTagName} onChange={e => c.setNewTagName(e.target.value)} placeholder="标签名" className="w-28 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm" onKeyDown={e => e.key === 'Enter' && addTag()} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">颜色</label>
+            <input type="color" value={c.newTagColor} onChange={e => c.setNewTagColor(e.target.value)} className="w-10 h-8 p-0.5 border border-gray-300 dark:border-gray-700 cursor-pointer bg-white dark:bg-gray-800" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">备注</label>
+            <input type="text" value={c.newTagDesc} onChange={e => c.setNewTagDesc(e.target.value)} placeholder="可选备注" className="w-36 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm" onKeyDown={e => e.key === 'Enter' && addTag()} />
+          </div>
+          <button onClick={addTag} className="px-3 py-1.5 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600">添加</button>
+        </div>
+        <div className="space-y-1">
+          {Object.keys(c.discussionTags).length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">暂无标签</p>}
+          {Object.entries(c.discussionTags).map(([name, fields]) => (
+            <div key={name} className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+              <span className="w-2.5 h-2.5 inline-block shrink-0" style={{ backgroundColor: fields.color }} />
+              <span className="text-sm text-gray-800 dark:text-gray-100 w-24">{name}</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500 flex-1">{fields.description}</span>
+              <button onClick={() => removeTag(name)} className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">删除</button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Emojis */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">表情管理</h2>
+        <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+          <div>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">标识</label>
+            <input type="text" value={c.newEmojiName} onChange={e => c.setNewEmojiName(e.target.value)} placeholder="如：fire" className="w-24 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm" onKeyDown={e => e.key === 'Enter' && addEmoji()} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">字符</label>
+            <input type="text" value={c.newEmojiChar} onChange={e => c.setNewEmojiChar(e.target.value)} placeholder="如：🔥" maxLength={2} className="w-16 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm text-center" onKeyDown={e => e.key === 'Enter' && addEmoji()} />
+          </div>
+          {c.newEmojiChar && <div className="text-2xl leading-none pb-1">{c.newEmojiChar}</div>}
+          <button onClick={addEmoji} className="px-3 py-1.5 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600">添加</button>
+        </div>
+        <div className="space-y-1">
+          {Object.keys(c.discussionEmojis).length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">暂无表情</p>}
+          {Object.entries(c.discussionEmojis).map(([name, fields]) => (
+            <div key={name} className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+              <span className="text-xl w-8 text-center shrink-0">{fields.char}</span>
+              <span className="text-sm text-gray-800 dark:text-gray-100 flex-1">{name}</span>
+              <button onClick={() => removeEmoji(name)} className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">删除</button>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 // ====================================================================
 //  Backup Panel
 // ====================================================================
@@ -523,166 +649,4 @@ function BackupPanel() {
   )
 }
 
-// ====================================================================
-//  Discussions Panel
-// ====================================================================
 
-function DiscussionsPanel() {
-  const [tags, setTags] = useState<DiscussionTag[]>([])
-  const [newTagName, setNewTagName] = useState('')
-  const [newTagColor, setNewTagColor] = useState('#6366f1')
-  const [newTagDesc, setNewTagDesc] = useState('')
-  const [editingTag, setEditingTag] = useState<string | null>(null)
-  const [editTagName, setEditTagName] = useState('')
-  const [editTagColor, setEditTagColor] = useState('')
-  const [editTagDesc, setEditTagDesc] = useState('')
-  const [tagMsg, setTagMsg] = useState('')
-
-  const [emojis, setEmojis] = useState<DiscussionEmoji[]>([])
-  const [newEmojiChar, setNewEmojiChar] = useState('')
-  const [newEmojiName, setNewEmojiName] = useState('')
-  const [editingEmoji, setEditingEmoji] = useState<string | null>(null)
-  const [editEmojiChar, setEditEmojiChar] = useState('')
-  const [editEmojiName, setEditEmojiName] = useState('')
-  const [emojiMsg, setEmojiMsg] = useState('')
-
-  const loadTags = () => apiFetch<DiscussionTag[]>('/discussions/tags').then(setTags).catch(() => {})
-  const loadEmojis = () => apiFetch<DiscussionEmoji[]>('/discussions/emojis').then(setEmojis).catch(() => {})
-  useEffect(() => { loadTags(); loadEmojis() }, [])
-
-  const crud = (endpoint: string, method: string, body?: any) =>
-    apiFetch<{ success: boolean; message: string }>(endpoint, method === 'GET' ? undefined : { method, body: body ? JSON.stringify(body) : undefined })
-
-  const handleCreateTag = async () => {
-    if (!newTagName.trim()) { setTagMsg('标签名不能为空'); return }
-    const res = await crud('/discussions/tags', 'POST', { name: newTagName.trim(), color: newTagColor, description: newTagDesc.trim() })
-    if (res.success) { setNewTagName(''); setNewTagColor('#6366f1'); setNewTagDesc(''); loadTags() }
-    setTagMsg(res.message)
-  }
-
-  const handleUpdateTag = async (id: string) => {
-    const res = await crud(`/discussions/tags/${id}`, 'PUT', {
-      name: editTagName.trim() || undefined, color: editTagColor.trim() || undefined, description: editTagDesc.trim() || undefined,
-    })
-    if (res.success) { setEditingTag(null); loadTags() }
-    setTagMsg(res.message)
-  }
-
-  const handleDeleteTag = async (id: string) => {
-    if (!confirm('确定删除此标签？')) return
-    const res = await crud(`/discussions/tags/${id}`, 'DELETE')
-    setTagMsg(res.message); if (res.success) loadTags()
-  }
-
-  const handleCreateEmoji = async () => {
-    if (!newEmojiChar.trim()) { setEmojiMsg('表情字符不能为空'); return }
-    if ([...newEmojiChar.trim()].length !== 1) { setEmojiMsg('表情必须是单个 Unicode 字符'); return }
-    if (!newEmojiName.trim()) { setEmojiMsg('表情名称不能为空'); return }
-    const res = await crud('/discussions/emojis', 'POST', { char: newEmojiChar.trim(), name: newEmojiName.trim() })
-    if (res.success) { setNewEmojiChar(''); setNewEmojiName(''); loadEmojis() }
-    setEmojiMsg(res.message)
-  }
-
-  const handleUpdateEmoji = async (id: string) => {
-    const body: Record<string, string> = {}
-    if (editEmojiChar.trim()) body.char = editEmojiChar.trim()
-    if (editEmojiName.trim()) body.name = editEmojiName.trim()
-    const res = await crud(`/discussions/emojis/${id}`, 'PUT', body)
-    if (res.success) { setEditingEmoji(null); loadEmojis() }
-    setEmojiMsg(res.message)
-  }
-
-  const handleDeleteEmoji = async (id: string) => {
-    if (!confirm('确定删除此表情？')) return
-    const res = await crud(`/discussions/emojis/${id}`, 'DELETE')
-    setEmojiMsg(res.message); if (res.success) loadEmojis()
-  }
-
-  return (
-    <div>
-      <section className="mb-10">
-        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">标签管理</h2>
-        <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
-          <div>
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">名称</label>
-            <input type="text" value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="标签名" className="w-28 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm" onKeyDown={e => e.key === 'Enter' && handleCreateTag()} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">颜色</label>
-            <input type="color" value={newTagColor} onChange={e => setNewTagColor(e.target.value)} className="w-10 h-8 p-0.5 border border-gray-300 dark:border-gray-700 cursor-pointer bg-white dark:bg-gray-800" />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">备注</label>
-            <input type="text" value={newTagDesc} onChange={e => setNewTagDesc(e.target.value)} placeholder="可选备注" className="w-36 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm" onKeyDown={e => e.key === 'Enter' && handleCreateTag()} />
-          </div>
-          <button onClick={handleCreateTag} className="px-3 py-1.5 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600">添加</button>
-        </div>
-        {tagMsg && <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{tagMsg}</p>}
-        <div className="space-y-1">
-          {tags.length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">暂无标签</p>}
-          {tags.map(tag => (
-            <div key={tag.id} className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
-              {editingTag === tag.id ? (
-                <>
-                  <input type="text" value={editTagName} onChange={e => setEditTagName(e.target.value)} className="w-24 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1 text-sm" />
-                  <input type="color" value={editTagColor} onChange={e => setEditTagColor(e.target.value)} className="w-9 h-7 p-0.5 border border-gray-300 dark:border-gray-700 cursor-pointer bg-white dark:bg-gray-800" />
-                  <input type="text" value={editTagDesc} onChange={e => setEditTagDesc(e.target.value)} className="w-28 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1 text-sm" />
-                  <button onClick={() => handleUpdateTag(tag.id)} className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 px-2">保存</button>
-                  <button onClick={() => setEditingTag(null)} className="text-xs text-gray-400 hover:text-gray-600">取消</button>
-                </>
-              ) : (
-                <>
-                  <span className="w-2.5 h-2.5 inline-block shrink-0" style={{ backgroundColor: tag.color }} />
-                  <span className="text-sm text-gray-800 dark:text-gray-100 w-24">{tag.name}</span>
-                  <span className="text-xs text-gray-400 dark:text-gray-500 flex-1">{tag.description}</span>
-                  <button onClick={() => { setEditingTag(tag.id); setEditTagName(tag.name); setEditTagColor(tag.color); setEditTagDesc(tag.description) }} className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 px-2">编辑</button>
-                  <button onClick={() => handleDeleteTag(tag.id)} className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">删除</button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">表情管理</h2>
-        <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
-          <div>
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">字符</label>
-            <input type="text" value={newEmojiChar} onChange={e => setNewEmojiChar(e.target.value)} placeholder="如：💡" maxLength={2} className="w-16 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm text-center" onKeyDown={e => e.key === 'Enter' && handleCreateEmoji()} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">名称</label>
-            <input type="text" value={newEmojiName} onChange={e => setNewEmojiName(e.target.value)} placeholder="如：灯泡" className="w-28 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm" onKeyDown={e => e.key === 'Enter' && handleCreateEmoji()} />
-          </div>
-          {newEmojiChar && <div className="text-2xl leading-none pb-1">{newEmojiChar}</div>}
-          <button onClick={handleCreateEmoji} className="px-3 py-1.5 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600">添加</button>
-        </div>
-        {emojiMsg && <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{emojiMsg}</p>}
-        <div className="space-y-1">
-          {emojis.length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">暂无表情</p>}
-          {emojis.map(emoji => (
-            <div key={emoji.id} className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
-              {editingEmoji === emoji.id ? (
-                <>
-                  <input type="text" value={editEmojiChar} onChange={e => setEditEmojiChar(e.target.value)} maxLength={2} className="w-16 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1 text-sm text-center" />
-                  <input type="text" value={editEmojiName} onChange={e => setEditEmojiName(e.target.value)} className="w-28 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1 text-sm" />
-                  {editEmojiChar && <span className="text-2xl leading-none">{editEmojiChar}</span>}
-                  <button onClick={() => handleUpdateEmoji(emoji.id)} className="text-xs text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 px-2">保存</button>
-                  <button onClick={() => setEditingEmoji(null)} className="text-xs text-gray-400 hover:text-gray-600">取消</button>
-                </>
-              ) : (
-                <>
-                  <span className="text-xl w-8 text-center shrink-0">{emoji.char}</span>
-                  <span className="text-sm text-gray-800 dark:text-gray-100 flex-1">{emoji.name}</span>
-                  <button onClick={() => { setEditingEmoji(emoji.id); setEditEmojiChar(emoji.char); setEditEmojiName(emoji.name) }} className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 px-2">编辑</button>
-                  <button onClick={() => handleDeleteEmoji(emoji.id)} className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">删除</button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-    </div>
-  )
-}

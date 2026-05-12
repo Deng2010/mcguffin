@@ -363,6 +363,12 @@ pub struct AppConfig {
     pub oauth: OAuthConfig,
     #[serde(default)]
     pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    /// Discussion tags: name → { color, description }
+    #[serde(default)]
+    pub discussion_tags: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    /// Discussion emojis: name → { char }
+    #[serde(default)]
+    pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 }
 
 #[derive(Deserialize)]

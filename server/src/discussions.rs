@@ -344,7 +344,7 @@ pub async fn delete_discussion_reply(
     Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
 }
 
-// ============== Tags CRUD ==============
+// ============== Tags (read-only — managed via config) ==============
 
 pub async fn get_discussion_tags(
     State(state): State<AppState>,
@@ -353,175 +353,13 @@ pub async fn get_discussion_tags(
     Json(tags.values().cloned().collect())
 }
 
-pub async fn create_discussion_tag(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(payload): Json<CreateDiscussionTagPayload>,
-) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
-    };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
-    if payload.name.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "标签名不能为空"}));
-    }
-    if payload.color.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "颜色不能为空"}));
-    }
-    let tag = DiscussionTag {
-        id: Uuid::new_v4().to_string(),
-        name: payload.name.trim().to_string(),
-        color: payload.color.trim().to_string(),
-        description: payload.description,
-    };
-    state.discussion_tags.write().await.insert(tag.id.clone(), tag);
-    state.save().await;
-    Json(serde_json::json!({"success": true, "message": "标签已创建"}))
-}
-
-pub async fn update_discussion_tag(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    Json(payload): Json<UpdateDiscussionTagPayload>,
-) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
-    };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
-    let mut tags = state.discussion_tags.write().await;
-    if let Some(t) = tags.get_mut(&id) {
-        if let Some(ref name) = payload.name { t.name = name.clone(); }
-        if let Some(ref color) = payload.color { t.color = color.clone(); }
-        if let Some(ref desc) = payload.description { t.description = desc.clone(); }
-        drop(tags);
-        state.save().await;
-        return Json(serde_json::json!({"success": true, "message": "标签已更新"}));
-    }
-    Json(serde_json::json!({"success": false, "message": "标签不存在"}))
-}
-
-pub async fn delete_discussion_tag(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
-    };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
-    state.discussion_tags.write().await.remove(&id);
-    state.save().await;
-    Json(serde_json::json!({"success": true, "message": "标签已删除"}))
-}
-
-// ============== Emojis CRUD ==============
+// ============== Emojis (read-only — managed via config) ==============
 
 pub async fn get_discussion_emojis(
     State(state): State<AppState>,
 ) -> Json<Vec<DiscussionEmoji>> {
     let emojis = state.discussion_emojis.read().await;
     Json(emojis.values().cloned().collect())
-}
-
-pub async fn create_discussion_emoji(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(payload): Json<CreateDiscussionEmojiPayload>,
-) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
-    };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
-    if payload.char.trim().chars().filter(|&c| c != '\u{FE0F}' && c != '\u{FE0E}').count() != 1 {
-        return Json(serde_json::json!({"success": false, "message": "表情必须是单个字符"}));
-    }
-    if payload.name.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "表情名称不能为空"}));
-    }
-    let emoji = DiscussionEmoji {
-        id: Uuid::new_v4().to_string(),
-        name: payload.name.trim().to_string(),
-        char: payload.char.trim().to_string(),
-    };
-    state.discussion_emojis.write().await.insert(emoji.id.clone(), emoji);
-    state.save().await;
-    Json(serde_json::json!({"success": true, "message": "表情已创建"}))
-}
-
-pub async fn update_discussion_emoji(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    Json(payload): Json<UpdateDiscussionEmojiPayload>,
-) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
-    };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
-    let mut emojis = state.discussion_emojis.write().await;
-    if let Some(e) = emojis.get_mut(&id) {
-        if let Some(ref name) = payload.name { e.name = name.clone(); }
-        if let Some(ref ch) = payload.char {
-            if ch.trim().chars().filter(|&c| c != '\u{FE0F}' && c != '\u{FE0E}').count() != 1 {
-                return Json(serde_json::json!({"success": false, "message": "表情必须是单个字符"}));
-            }
-            e.char = ch.trim().to_string();
-        }
-        drop(emojis);
-        state.save().await;
-        return Json(serde_json::json!({"success": true, "message": "表情已更新"}));
-    }
-    Json(serde_json::json!({"success": false, "message": "表情不存在"}))
-}
-
-pub async fn delete_discussion_emoji(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
-    };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
-    // Get emoji char before deleting
-    let emoji_char = {
-        let emojis = state.discussion_emojis.read().await;
-        emojis.get(&id).map(|e| e.char.clone())
-    };
-    state.discussion_emojis.write().await.remove(&id);
-
-    // Remove this emoji from all discussion and reply reactions
-    if let Some(ref ec) = emoji_char {
-        let mut discussions = state.discussions.write().await;
-        for d in discussions.values_mut() {
-            d.reactions.remove(ec);
-            for r in d.replies.iter_mut() {
-                r.reactions.remove(ec);
-            }
-        }
-    }
-
-    state.save().await;
-    Json(serde_json::json!({"success": true, "message": "表情已删除"}))
 }
 
 // ============== Reactions ==============

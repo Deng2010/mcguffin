@@ -24,6 +24,10 @@ pub struct ConfigResponse {
     pub site: SiteSection,
     pub oauth: OAuthSection,
     pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub discussion_tags: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -62,6 +66,10 @@ pub struct UpdateConfigPayload {
     pub site: SiteSection,
     pub oauth: OAuthSection,
     pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub discussion_tags: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 }
 
 fn read_config_raw() -> Result<String, String> {
@@ -138,6 +146,44 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         }
     }
 
+    // Parse discussion_tags
+    let mut discussion_tags = std::collections::HashMap::new();
+    if let Some(t) = doc.get("discussion_tags").and_then(|s| s.as_table()) {
+        for (key, item) in t.iter() {
+            let mut fields = std::collections::HashMap::new();
+            if let Some(tbl) = item.as_table() {
+                if let Some(v) = tbl.get("color").and_then(|v| v.as_str()) { fields.insert("color".to_string(), v.to_string()); }
+                if let Some(v) = tbl.get("description").and_then(|v| v.as_str()) { fields.insert("description".to_string(), v.to_string()); }
+            } else if let Some(v) = item.as_value() {
+                if let Some(inline) = v.as_inline_table() {
+                    if let Some(v) = inline.get("color").and_then(|v| v.as_str()) { fields.insert("color".to_string(), v.to_string()); }
+                    if let Some(v) = inline.get("description").and_then(|v| v.as_str()) { fields.insert("description".to_string(), v.to_string()); }
+                }
+            }
+            if !fields.is_empty() {
+                discussion_tags.insert(key.to_string(), fields);
+            }
+        }
+    }
+
+    // Parse discussion_emojis
+    let mut discussion_emojis = std::collections::HashMap::new();
+    if let Some(t) = doc.get("discussion_emojis").and_then(|s| s.as_table()) {
+        for (key, item) in t.iter() {
+            let mut fields = std::collections::HashMap::new();
+            if let Some(tbl) = item.as_table() {
+                if let Some(v) = tbl.get("char").and_then(|v| v.as_str()) { fields.insert("char".to_string(), v.to_string()); }
+            } else if let Some(v) = item.as_value() {
+                if let Some(inline) = v.as_inline_table() {
+                    if let Some(v) = inline.get("char").and_then(|v| v.as_str()) { fields.insert("char".to_string(), v.to_string()); }
+                }
+            }
+            if !fields.is_empty() {
+                discussion_emojis.insert(key.to_string(), fields);
+            }
+        }
+    }
+
     Ok(ConfigResponse {
         server: ServerSection {
             site_url: get_str("server", "site_url"),
@@ -161,6 +207,8 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
             cp_client_secret: get_str("oauth", "cp_client_secret"),
         },
         difficulty,
+        discussion_tags,
+        discussion_emojis,
     })
 }
 
@@ -215,6 +263,33 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         level.insert("color", toml_edit::Value::from(fields.get("color").map(|s| s.as_str()).unwrap_or("#888888")));
         if let Some(t) = doc.get_mut("difficulty").and_then(|s| s.as_table_mut()) {
             t[name] = toml_edit::Item::Value(toml_edit::Value::InlineTable(level));
+        }
+    }
+
+    // Write discussion_tags — remove old, add new
+    if let Some(t) = doc.get_mut("discussion_tags").and_then(|s| s.as_table_mut()) {
+        let keys: Vec<String> = t.iter().map(|(k, _)| k.to_string()).collect();
+        for k in keys { t.remove(&k); }
+    }
+    for (name, fields) in &payload.discussion_tags {
+        let mut it = toml_edit::InlineTable::new();
+        if let Some(v) = fields.get("color") { it.insert("color", toml_edit::Value::from(v.as_str())); }
+        if let Some(v) = fields.get("description") { it.insert("description", toml_edit::Value::from(v.as_str())); }
+        if let Some(t) = doc.get_mut("discussion_tags").and_then(|s| s.as_table_mut()) {
+            t[name] = toml_edit::Item::Value(toml_edit::Value::InlineTable(it));
+        }
+    }
+
+    // Write discussion_emojis — remove old, add new
+    if let Some(t) = doc.get_mut("discussion_emojis").and_then(|s| s.as_table_mut()) {
+        let keys: Vec<String> = t.iter().map(|(k, _)| k.to_string()).collect();
+        for k in keys { t.remove(&k); }
+    }
+    for (name, fields) in &payload.discussion_emojis {
+        let mut it = toml_edit::InlineTable::new();
+        if let Some(v) = fields.get("char") { it.insert("char", toml_edit::Value::from(v.as_str())); }
+        if let Some(t) = doc.get_mut("discussion_emojis").and_then(|s| s.as_table_mut()) {
+            t[name] = toml_edit::Item::Value(toml_edit::Value::InlineTable(it));
         }
     }
 
@@ -296,6 +371,32 @@ pub async fn update_config(
             // Also update difficulty_order in-memory so it applies immediately
             if !payload.site.difficulty_order.is_empty() {
                 *state.difficulty_order.write().await = payload.site.difficulty_order.clone();
+            }
+            // Update in-memory discussion_tags and discussion_emojis immediately
+            {
+                let mut tags = state.discussion_tags.write().await;
+                tags.clear();
+                for (name, fields) in &payload.discussion_tags {
+                    tags.insert(name.clone(), crate::types::DiscussionTag {
+                        id: name.clone(),
+                        name: name.clone(),
+                        color: fields.get("color").cloned().unwrap_or_else(|| "#888888".to_string()),
+                        description: fields.get("description").cloned().unwrap_or_default(),
+                    });
+                }
+            }
+            {
+                let mut emojis = state.discussion_emojis.write().await;
+                emojis.clear();
+                for (name, fields) in &payload.discussion_emojis {
+                    if let Some(ch) = fields.get("char") {
+                        emojis.insert(name.clone(), crate::types::DiscussionEmoji {
+                            id: name.clone(),
+                            name: name.clone(),
+                            char: ch.clone(),
+                        });
+                    }
+                }
             }
             Json(serde_json::json!({"success": true, "message": "配置已保存，立即生效"}))
         }

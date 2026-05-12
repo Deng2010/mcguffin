@@ -40,10 +40,6 @@ struct SavedData {
     showcase_contest_ids: Vec<String>,
     #[serde(default)]
     discussions: HashMap<String, Discussion>,
-    #[serde(default)]
-    discussion_tags: HashMap<String, DiscussionTag>,
-    #[serde(default)]
-    discussion_emojis: HashMap<String, DiscussionEmoji>,
 }
 
 /// Custom deserializer for sessions that handles both old format
@@ -147,13 +143,17 @@ impl AppState {
             .ok()
             .and_then(|s| serde_json::from_str::<SavedData>(&s).ok());
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, showcase_problem_ids, showcase_contest_ids, discussions, discussion_tags, discussion_emojis) =
+        // Discussion tags and emojis come from config.toml, not saved data
+        let discussion_tags = load_discussion_tags(&config);
+        let discussion_emojis = load_discussion_emojis(&config);
+
+        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, showcase_problem_ids, showcase_contest_ids, discussions) =
             if let Some(data) = saved {
                 tracing::info!("Loaded state from {}", data_file);
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids, data.discussions, data.discussion_tags, data.discussion_emojis)
+                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids, data.discussions)
             } else {
                 tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), Vec::new(), Vec::new(), HashMap::new(), HashMap::new(), HashMap::new())
+                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), Vec::new(), Vec::new(), HashMap::new())
             };
 
         // Always ensure superadmin user exists AND has correct role
@@ -246,8 +246,6 @@ impl AppState {
             showcase_problem_ids: self.showcase_problem_ids.read().await.clone(),
             showcase_contest_ids: self.showcase_contest_ids.read().await.clone(),
             discussions: self.discussions.read().await.clone(),
-            discussion_tags: self.discussion_tags.read().await.clone(),
-            discussion_emojis: self.discussion_emojis.read().await.clone(),
         };
         if let Ok(json) = serde_json::to_string_pretty(&data) {
             let tmp_path = format!("{}.tmp", self.data_file);
@@ -278,8 +276,7 @@ impl AppState {
                 *self.showcase_problem_ids.write().await = data.showcase_problem_ids;
                 *self.showcase_contest_ids.write().await = data.showcase_contest_ids;
                 *self.discussions.write().await = data.discussions;
-                *self.discussion_tags.write().await = data.discussion_tags;
-                *self.discussion_emojis.write().await = data.discussion_emojis;
+                // discussion_tags and discussion_emojis stay from config.toml
                 tracing::info!("State reloaded from {}", self.data_file);
             }
         }
@@ -292,6 +289,37 @@ impl AppState {
     fn default_problems() -> HashMap<String, Problem> {
         HashMap::new()
     }
+}
+
+/// Convert config.toml discussion_tags format to HashMap<String, DiscussionTag>
+fn load_discussion_tags(config: &AppConfig) -> std::collections::HashMap<String, DiscussionTag> {
+    let mut map = std::collections::HashMap::new();
+    for (name, fields) in &config.discussion_tags {
+        let color = fields.get("color").cloned().unwrap_or_else(|| "#888888".to_string());
+        let description = fields.get("description").cloned().unwrap_or_default();
+        map.insert(name.clone(), DiscussionTag {
+            id: name.clone(),
+            name: name.clone(),
+            color,
+            description,
+        });
+    }
+    map
+}
+
+/// Convert config.toml discussion_emojis format to HashMap<String, DiscussionEmoji>
+fn load_discussion_emojis(config: &AppConfig) -> std::collections::HashMap<String, DiscussionEmoji> {
+    let mut map = std::collections::HashMap::new();
+    for (name, fields) in &config.discussion_emojis {
+        let char = fields.get("char").cloned().unwrap_or_default();
+        if char.is_empty() { continue; }
+        map.insert(name.clone(), DiscussionEmoji {
+            id: name.clone(),
+            name: name.clone(),
+            char,
+        });
+    }
+    map
 }
 
 /// Convert raw HashMap config to DifficultyConfig
@@ -360,6 +388,8 @@ fn load_config() -> AppConfig {
                 .unwrap_or_else(|_| "Q7DgkUHQIXMLWM-TzcdUEH_21zMK3JJwMlqX-2VrhuM".to_string()),
         },
         difficulty: std::collections::HashMap::new(),
+        discussion_tags: std::collections::HashMap::new(),
+        discussion_emojis: std::collections::HashMap::new(),
     }
 }
 
@@ -389,6 +419,8 @@ mod tests {
                 cp_client_secret: "secret".to_string(),
             },
             difficulty: HashMap::new(),
+            discussion_tags: HashMap::new(),
+            discussion_emojis: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 3); // falls back to Default
@@ -419,6 +451,8 @@ mod tests {
                 cp_client_secret: "secret".to_string(),
             },
             difficulty: diff,
+            discussion_tags: HashMap::new(),
+            discussion_emojis: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 1);
@@ -449,6 +483,8 @@ mod tests {
                 cp_client_secret: "secret".to_string(),
             },
             difficulty: diff,
+            discussion_tags: HashMap::new(),
+            discussion_emojis: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.get("CustomDiff").unwrap().label, "CustomDiff");
