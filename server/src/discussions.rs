@@ -55,16 +55,23 @@ pub async fn get_discussions(
         None => return Json(serde_json::json!([])),
     };
     let discussions = state.discussions.read().await;
+    let users = state.users.read().await;
     let mut result: Vec<&Discussion> = discussions.values().collect();
     result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     // Return without replies in listing (replies are fetched in detail)
     let list: Vec<serde_json::Value> = result.iter().map(|d| {
+        let user_info = users.get(&d.author_id);
+        let display_name = user_info.map(|u| u.display_name.as_str())
+            .unwrap_or(&d.author_name)
+            .to_string();
+        let avatar_url = user_info.and_then(|u| u.avatar_url.clone());
         serde_json::json!({
             "id": d.id,
             "title": d.title,
             "content": d.content,
             "author_id": d.author_id,
-            "author_name": d.author_name,
+            "author_name": display_name,
+            "author_avatar_url": avatar_url,
             "tags": d.tags,
             "emoji": d.emoji,
             "reply_count": d.replies.len(),
@@ -72,6 +79,7 @@ pub async fn get_discussions(
             "updated_at": d.updated_at,
         })
     }).collect();
+    drop(users);
     Json(serde_json::json!(list))
 }
 
@@ -129,23 +137,26 @@ pub async fn get_discussion_detail(
     };
     let discussions = state.discussions.read().await;
     if let Some(d) = discussions.get(&id) {
-        // Enrich replies with updated author display names
+        // Enrich replies with updated author display names and avatars
         let users = state.users.read().await;
         let enriched_replies: Vec<serde_json::Value> = d.replies.iter().map(|r| {
-            let display_name = users.get(&r.author_id)
-                .map(|u| u.display_name.clone())
+            let user_info = users.get(&r.author_id);
+            let display_name = user_info.map(|u| u.display_name.clone())
                 .unwrap_or_else(|| r.author_name.clone());
+            let avatar_url = user_info.and_then(|u| u.avatar_url.clone());
             serde_json::json!({
                 "id": r.id,
                 "author_id": r.author_id,
                 "author_name": display_name,
+                "author_avatar_url": avatar_url,
                 "content": r.content,
                 "created_at": r.created_at,
             })
         }).collect();
-        let author_name = users.get(&d.author_id)
-            .map(|u| u.display_name.clone())
+        let author_info = users.get(&d.author_id);
+        let author_name = author_info.map(|u| u.display_name.clone())
             .unwrap_or_else(|| d.author_name.clone());
+        let author_avatar_url = author_info.and_then(|u| u.avatar_url.clone());
         drop(users);
 
         return Json(serde_json::json!({
@@ -154,6 +165,7 @@ pub async fn get_discussion_detail(
             "content": d.content,
             "author_id": d.author_id,
             "author_name": author_name,
+            "author_avatar_url": author_avatar_url,
             "tags": d.tags,
             "emoji": d.emoji,
             "replies": enriched_replies,

@@ -24,6 +24,7 @@ interface Discussion {
   content: string
   author_id: string
   author_name: string
+  author_avatar_url: string | null
   tags: DiscussionTag[]
   emoji: string
   reply_count: number
@@ -273,7 +274,16 @@ export default function DiscussionsPage() {
 
                 {/* Meta */}
                 <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500 ml-9">
-                  <span>{d.author_name}</span>
+                  <span className="flex items-center gap-1.5">
+                    {d.author_avatar_url ? (
+                      <img src={d.author_avatar_url} className="w-5 h-5 rounded-full object-cover" alt="" />
+                    ) : (
+                      <span className="w-5 h-5 inline-flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-bold shrink-0">
+                        {d.author_name?.charAt(0) || '?'}
+                      </span>
+                    )}
+                    <span>{d.author_name}</span>
+                  </span>
                   <span>{d.reply_count} 条回复</span>
                   <span>{formatTime(d.created_at)}</span>
                 </div>

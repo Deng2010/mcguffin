@@ -17,6 +17,7 @@ interface DiscussionReply {
   id: string
   author_id: string
   author_name: string
+  author_avatar_url: string | null
   content: string
   created_at: string
 }
@@ -27,6 +28,7 @@ interface DiscussionDetail {
   content: string
   author_id: string
   author_name: string
+  author_avatar_url: string | null
   tags: DiscussionTag[]
   emoji: string
   replies: DiscussionReply[]
@@ -160,7 +162,16 @@ export default function DiscussionDetailPage() {
 
         {/* Meta */}
         <div className="flex items-center gap-3 text-xs text-gray-400 dark:text-gray-500 mb-3 ml-0">
-          <span>{discussion.author_name}</span>
+          <span className="flex items-center gap-1.5">
+            {discussion.author_avatar_url ? (
+              <img src={discussion.author_avatar_url} className="w-5 h-5 rounded-full object-cover" alt="" />
+            ) : (
+              <span className="w-5 h-5 inline-flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-bold shrink-0">
+                {discussion.author_name?.charAt(0) || '?'}
+              </span>
+            )}
+            <span>{discussion.author_name}</span>
+          </span>
           <span>{formatTime(discussion.created_at)}</span>
         </div>
 
@@ -198,10 +209,14 @@ export default function DiscussionDetailPage() {
             {discussion.replies.map(reply => (
               <div key={reply.id} className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4">
                 <div className="flex items-start gap-3">
-                  {/* Avatar initial */}
-                  <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 text-sm font-bold shrink-0">
-                    {reply.author_name?.charAt(0) || '?'}
-                  </div>
+                  {/* Avatar */}
+                  {reply.author_avatar_url ? (
+                    <img src={reply.author_avatar_url} className="w-8 h-8 rounded-full object-cover shrink-0" alt="" />
+                  ) : (
+                    <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 text-sm font-bold shrink-0">
+                      {reply.author_name?.charAt(0) || '?'}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <div className="flex items-center gap-2">

@@ -27,3 +27,8 @@ web/package-lock.json
 *~
 *.bak
 .env
+restart.sh
+
+# ========== AI-Generated Python Script ==========
+server/*.py
+web/*.py
