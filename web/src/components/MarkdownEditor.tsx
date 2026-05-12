@@ -12,6 +12,8 @@ interface MarkdownEditorProps {
   required?: boolean
   /** 在 label 旁显示 "— {optionalNote}" */
   optionalNote?: string
+  /** 键盘事件（如 Ctrl+Enter 提交） */
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
 }
 
 const FONT_FAMILY = "'JetBrains Mono', monospace"
@@ -39,6 +41,7 @@ export default function MarkdownEditor({
   disabled = false,
   required = false,
   optionalNote,
+  onKeyDown,
 }: MarkdownEditorProps) {
   const [showPreview, setShowPreview] = useState(true)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -153,6 +156,7 @@ export default function MarkdownEditor({
             value={value}
             onChange={e => onChange(e.target.value)}
             onScroll={onTAScroll}
+            onKeyDown={onKeyDown}
             disabled={disabled}
             required={required}
             placeholder={placeholder}

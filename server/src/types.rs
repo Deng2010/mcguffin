@@ -565,6 +565,13 @@ pub struct DiscussionReply {
     pub author_name: String,
     pub content: String,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub reactions: std::collections::HashMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    /// The author_name of the parent reply, e.g. for showing "回复 @xxx"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -596,6 +603,8 @@ pub struct Discussion {
     pub emoji: Option<String>,
     #[serde(default)]
     pub replies: Vec<DiscussionReply>,
+    #[serde(default)]
+    pub reactions: std::collections::HashMap<String, Vec<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -625,6 +634,15 @@ pub struct UpdateDiscussionPayload {
 #[derive(Deserialize)]
 pub struct CreateDiscussionReplyPayload {
     pub content: String,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub reply_to: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ReactPayload {
+    pub emoji: String,
 }
 
 #[derive(Deserialize)]

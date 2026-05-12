@@ -56,6 +56,7 @@ pub async fn get_discussions(
     };
     let discussions = state.discussions.read().await;
     let users = state.users.read().await;
+    let all_tags = state.discussion_tags.read().await;
     let mut result: Vec<&Discussion> = discussions.values().collect();
     result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     // Return without replies in listing (replies are fetched in detail)
@@ -65,6 +66,13 @@ pub async fn get_discussions(
             .unwrap_or(&d.author_name)
             .to_string();
         let avatar_url = user_info.and_then(|u| u.avatar_url.clone());
+        let enriched_tags: Vec<serde_json::Value> = d.tags.iter().filter_map(|tid| {
+            all_tags.get(tid).map(|t| serde_json::json!({
+                "id": t.id,
+                "name": t.name,
+                "color": t.color,
+            }))
+        }).collect();
         serde_json::json!({
             "id": d.id,
             "title": d.title,
@@ -72,13 +80,15 @@ pub async fn get_discussions(
             "author_id": d.author_id,
             "author_name": display_name,
             "author_avatar_url": avatar_url,
-            "tags": d.tags,
+            "tags": enriched_tags,
+            "reactions": d.reactions,
             "emoji": d.emoji,
             "reply_count": d.replies.len(),
             "created_at": d.created_at,
             "updated_at": d.updated_at,
         })
     }).collect();
+    drop(all_tags);
     drop(users);
     Json(serde_json::json!(list))
 }
@@ -116,6 +126,7 @@ pub async fn create_discussion(
         tags: payload.tags,
         emoji: payload.emoji,
         replies: vec![],
+        reactions: std::collections::HashMap::new(),
         created_at: now,
         updated_at: now,
     };
@@ -150,6 +161,9 @@ pub async fn get_discussion_detail(
                 "author_name": display_name,
                 "author_avatar_url": avatar_url,
                 "content": r.content,
+                "reactions": r.reactions,
+                "parent_id": r.parent_id,
+                "reply_to": r.reply_to,
                 "created_at": r.created_at,
             })
         }).collect();
@@ -157,6 +171,15 @@ pub async fn get_discussion_detail(
         let author_name = author_info.map(|u| u.display_name.clone())
             .unwrap_or_else(|| d.author_name.clone());
         let author_avatar_url = author_info.and_then(|u| u.avatar_url.clone());
+        let all_tags = state.discussion_tags.read().await;
+        let enriched_tags: Vec<serde_json::Value> = d.tags.iter().filter_map(|tid| {
+            all_tags.get(tid).map(|t| serde_json::json!({
+                "id": t.id,
+                "name": t.name,
+                "color": t.color,
+            }))
+        }).collect();
+        drop(all_tags);
         drop(users);
 
         return Json(serde_json::json!({
@@ -166,7 +189,8 @@ pub async fn get_discussion_detail(
             "author_id": d.author_id,
             "author_name": author_name,
             "author_avatar_url": author_avatar_url,
-            "tags": d.tags,
+            "tags": enriched_tags,
+            "reactions": d.reactions,
             "emoji": d.emoji,
             "replies": enriched_replies,
             "created_at": d.created_at,
@@ -274,6 +298,9 @@ pub async fn reply_to_discussion(
             author_id: user_id.clone(),
             author_name: user.display_name,
             content: payload.content.trim().to_string(),
+            reactions: std::collections::HashMap::new(),
+            parent_id: payload.parent_id,
+            reply_to: payload.reply_to,
             created_at: Utc::now(),
         };
         d.replies.push(reply);
@@ -307,6 +334,8 @@ pub async fn delete_discussion_reply(
             return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
         }
         d.replies.retain(|r| r.id != reply_id);
+        // Also delete child replies (replies to this reply)
+        d.replies.retain(|r| r.parent_id.as_deref() != Some(&reply_id));
         d.updated_at = Utc::now();
         drop(discussions);
         state.save().await;
@@ -416,7 +445,7 @@ pub async fn create_discussion_emoji(
     if !is_admin(&state, &user_id).await {
         return Json(serde_json::json!({"success": false, "message": "权限不足"}));
     }
-    if payload.char.trim().chars().count() != 1 {
+    if payload.char.trim().chars().filter(|&c| c != '\u{FE0F}' && c != '\u{FE0E}').count() != 1 {
         return Json(serde_json::json!({"success": false, "message": "表情必须是单个字符"}));
     }
     if payload.name.trim().is_empty() {
@@ -449,7 +478,7 @@ pub async fn update_discussion_emoji(
     if let Some(e) = emojis.get_mut(&id) {
         if let Some(ref name) = payload.name { e.name = name.clone(); }
         if let Some(ref ch) = payload.char {
-            if ch.trim().chars().count() != 1 {
+            if ch.trim().chars().filter(|&c| c != '\u{FE0F}' && c != '\u{FE0E}').count() != 1 {
                 return Json(serde_json::json!({"success": false, "message": "表情必须是单个字符"}));
             }
             e.char = ch.trim().to_string();
@@ -473,7 +502,134 @@ pub async fn delete_discussion_emoji(
     if !is_admin(&state, &user_id).await {
         return Json(serde_json::json!({"success": false, "message": "权限不足"}));
     }
+    // Get emoji char before deleting
+    let emoji_char = {
+        let emojis = state.discussion_emojis.read().await;
+        emojis.get(&id).map(|e| e.char.clone())
+    };
     state.discussion_emojis.write().await.remove(&id);
+
+    // Remove this emoji from all discussion and reply reactions
+    if let Some(ref ec) = emoji_char {
+        let mut discussions = state.discussions.write().await;
+        for d in discussions.values_mut() {
+            d.reactions.remove(ec);
+            for r in d.replies.iter_mut() {
+                r.reactions.remove(ec);
+            }
+        }
+    }
+
     state.save().await;
     Json(serde_json::json!({"success": true, "message": "表情已删除"}))
+}
+
+// ============== Reactions ==============
+
+/// Toggle a reaction on a discussion.
+pub async fn react_to_discussion(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<ReactPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if payload.emoji.trim().is_empty() {
+        return Json(serde_json::json!({"success": false, "message": "表情不能为空"}));
+    }
+    let mut discussions = state.discussions.write().await;
+    if let Some(d) = discussions.get_mut(&id) {
+        let emoji = payload.emoji.trim().to_string();
+        let users = d.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
+        if let Some(pos) = users.iter().position(|u| u == &user_id) {
+            users.remove(pos);
+            if users.is_empty() {
+                d.reactions.remove(&emoji);
+            }
+        } else {
+            users.push(user_id.clone());
+        }
+        d.updated_at = Utc::now();
+        drop(discussions);
+        state.save().await;
+        return Json(serde_json::json!({"success": true}));
+    }
+    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+}
+
+/// Toggle a reaction on a reply.
+pub async fn react_to_reply(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((discussion_id, reply_id)): Path<(String, String)>,
+    Json(payload): Json<ReactPayload>,
+) -> Json<serde_json::Value> {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    };
+    if payload.emoji.trim().is_empty() {
+        return Json(serde_json::json!({"success": false, "message": "表情不能为空"}));
+    }
+    let mut discussions = state.discussions.write().await;
+    if let Some(d) = discussions.get_mut(&discussion_id) {
+        if let Some(reply) = d.replies.iter_mut().find(|r| r.id == reply_id) {
+            let emoji = payload.emoji.trim().to_string();
+            let users = reply.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
+            if let Some(pos) = users.iter().position(|u| u == &user_id) {
+                users.remove(pos);
+                if users.is_empty() {
+                    reply.reactions.remove(&emoji);
+                }
+            } else {
+                users.push(user_id.clone());
+            }
+            d.updated_at = Utc::now();
+            drop(discussions);
+            state.save().await;
+            return Json(serde_json::json!({"success": true}));
+        } else {
+            return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
+        }
+    }
+    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+}
+
+/// Remove reactions whose emoji character is no longer in discussion_emojis.
+/// Called at server startup to clean up orphaned reactions.
+pub async fn cleanup_orphan_reactions(state: &AppState) {
+    let valid_emojis: std::collections::HashSet<String> = {
+        let emojis = state.discussion_emojis.read().await;
+        emojis.values().map(|e| e.char.clone()).collect()
+    };
+
+    let mut discussions = state.discussions.write().await;
+    let mut changed = false;
+
+    for d in discussions.values_mut() {
+        // Clean discussion-level reactions
+        let before = d.reactions.len();
+        d.reactions.retain(|emoji, _| valid_emojis.contains(emoji));
+        if d.reactions.len() != before {
+            changed = true;
+        }
+
+        // Clean reply-level reactions
+        for r in d.replies.iter_mut() {
+            let before_reply = r.reactions.len();
+            r.reactions.retain(|emoji, _| valid_emojis.contains(emoji));
+            if r.reactions.len() != before_reply {
+                changed = true;
+            }
+        }
+    }
+    drop(discussions);
+
+    if changed {
+        tracing::info!("Cleaned up orphaned discussion reactions");
+        state.save().await;
+    }
 }

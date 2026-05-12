@@ -16,6 +16,7 @@ async fn main() {
 
     let state = AppState::new();
     crate::discussions::truncate_existing_discussions(&state).await;
+    crate::discussions::cleanup_orphan_reactions(&state).await;
 
     let frontend_origin: axum::http::HeaderValue = state.site_url
         .parse()
@@ -130,6 +131,8 @@ async fn main() {
         .route("/api/discussions/{id}", get(get_discussion_detail).put(update_discussion).delete(delete_discussion))
         .route("/api/discussions/{id}/reply", post(reply_to_discussion))
         .route("/api/discussions/{id}/reply/{reply_id}", delete(delete_discussion_reply))
+        .route("/api/discussions/{id}/react", post(react_to_discussion))
+        .route("/api/discussions/{id}/reply/{reply_id}/react", post(react_to_reply))
         .route("/api/discussions/tags", get(get_discussion_tags).post(create_discussion_tag))
         .route("/api/discussions/tags/{id}", put(update_discussion_tag).delete(delete_discussion_tag))
         .route("/api/discussions/emojis", get(get_discussion_emojis).post(create_discussion_emoji))

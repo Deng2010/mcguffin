@@ -26,6 +26,7 @@ interface Discussion {
   author_name: string
   author_avatar_url: string | null
   tags: DiscussionTag[]
+  reactions: Record<string, string[]>
   emoji: string
   reply_count: number
   created_at: string
@@ -294,6 +295,21 @@ export default function DiscussionsPage() {
                     {d.content.length > 100
                       ? d.content.slice(0, 100) + '...'
                       : d.content}
+                  </div>
+                )}
+
+                {/* Reactions */}
+                {d.reactions && Object.keys(d.reactions).length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-9">
+                    {Object.entries(d.reactions).map(([emoji, users]) => (
+                      <span
+                        key={emoji}
+                        className="inline-flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500"
+                      >
+                        <span>{emoji}</span>
+                        <span>{users.length}</span>
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>

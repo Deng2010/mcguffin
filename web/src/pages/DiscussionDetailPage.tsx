@@ -13,12 +13,21 @@ interface DiscussionTag {
   color: string
 }
 
+interface DiscussionEmoji {
+  id: string
+  char: string
+  name: string
+}
+
 interface DiscussionReply {
   id: string
   author_id: string
   author_name: string
   author_avatar_url: string | null
   content: string
+  reactions: Record<string, string[]>
+  parent_id: string | null
+  reply_to: string | null
   created_at: string
 }
 
@@ -31,6 +40,7 @@ interface DiscussionDetail {
   author_avatar_url: string | null
   tags: DiscussionTag[]
   emoji: string
+  reactions: Record<string, string[]>
   replies: DiscussionReply[]
   created_at: string
   updated_at: string
@@ -55,6 +65,142 @@ function formatTime(dateStr: string) {
   return d.toLocaleDateString('zh-CN')
 }
 
+// Group flat replies into parent→children tree
+function groupReplies(replies: DiscussionReply[]) {
+  const topLevel: DiscussionReply[] = []
+  const childrenMap: Record<string, DiscussionReply[]> = {}
+  for (const r of replies) {
+    if (r.parent_id) {
+      if (!childrenMap[r.parent_id]) childrenMap[r.parent_id] = []
+      childrenMap[r.parent_id].push(r)
+    } else {
+      topLevel.push(r)
+    }
+  }
+  return { topLevel, childrenMap }
+}
+
+// ============== Reaction Row ==============
+
+function ReactionRow({
+  reactions,
+  emojis,
+  currentUserId,
+  onReact,
+}: {
+  reactions: Record<string, string[]>
+  emojis: DiscussionEmoji[]
+  currentUserId: string | undefined
+  onReact: (emoji: string) => void
+}) {
+  if (emojis.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-0">
+      {emojis.map(e => {
+        const users = reactions[e.char] || []
+        const count = users.length
+        const active = currentUserId ? users.includes(currentUserId) : false
+        return (
+          <button
+            key={e.id}
+            onClick={() => onReact(e.char)}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs border transition-colors ${
+              active
+                ? 'border-gray-500 dark:border-gray-400 bg-gray-100 dark:bg-gray-800'
+                : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+            title={count > 0 ? `${count} 人` : e.name}
+          >
+            <span>{e.char}</span>
+            {count > 0 && <span className="text-gray-500 dark:text-gray-400">{count}</span>}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ============== Single Reply Card ==============
+
+function ReplyCard({
+  reply,
+  emojis,
+  currentUserId,
+  isAdmin,
+  children,
+  onDelete,
+  onReact,
+  onReply,
+}: {
+  reply: DiscussionReply
+  emojis: DiscussionEmoji[]
+  currentUserId: string | undefined
+  isAdmin: boolean
+  children?: React.ReactNode
+  onDelete: (id: string) => void
+  onReact: (id: string, emoji: string) => void
+  onReply: (reply: DiscussionReply) => void
+}) {
+  return (
+    <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4">
+      <div className="flex items-start gap-3">
+        {/* Avatar */}
+        {reply.author_avatar_url ? (
+          <img src={reply.author_avatar_url} className="w-8 h-8 rounded-full object-cover shrink-0" alt="" />
+        ) : (
+          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 text-sm font-bold shrink-0">
+            {reply.author_name?.charAt(0) || '?'}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{reply.author_name}</span>
+              {reply.reply_to && (
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  回复 <span className="text-gray-500 dark:text-gray-400">@{reply.reply_to}</span>
+                </span>
+              )}
+              <span className="text-xs text-gray-400 dark:text-gray-500">{formatTime(reply.created_at)}</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => onReply(reply)}
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                回复
+              </button>
+              {(isAdmin || reply.author_id === currentUserId) && (
+                <button
+                  onClick={() => onDelete(reply.id)}
+                  className="text-xs text-red-400 hover:text-red-500"
+                >
+                  删除
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="text-sm text-gray-700 dark:text-gray-300 prose prose-sm max-w-none">
+            <MarkdownRenderer content={reply.content} />
+          </div>
+
+          {/* Reactions on reply */}
+          <ReactionRow
+            reactions={reply.reactions}
+            emojis={emojis}
+            currentUserId={currentUserId}
+            onReact={(emoji) => onReact(reply.id, emoji)}
+          />
+
+          {/* Children (nested replies) */}
+          {children}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ============== Component ==============
 
 export default function DiscussionDetailPage() {
@@ -65,6 +211,13 @@ export default function DiscussionDetailPage() {
   const [loading, setLoading] = useState(true)
   const [replyContent, setReplyContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [emojis, setEmojis] = useState<DiscussionEmoji[]>([])
+  const [allTags, setAllTags] = useState<DiscussionTag[]>([])
+  const [editingTags, setEditingTags] = useState(false)
+  const [editTagIds, setEditTagIds] = useState<string[]>([])
+  const [savingTags, setSavingTags] = useState(false)
+  // Sub-reply state
+  const [replyTo, setReplyTo] = useState<DiscussionReply | null>(null)
 
   const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
   const canDeleteDiscussion = discussion && (isAdmin || discussion.author_id === user?.id)
@@ -78,7 +231,15 @@ export default function DiscussionDetailPage() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadDiscussion() }, [id])
+  useEffect(() => {
+    loadDiscussion()
+    apiFetch<DiscussionEmoji[]>('/discussions/emojis')
+      .then(setEmojis)
+      .catch(() => {})
+    apiFetch<DiscussionTag[]>('/discussions/tags')
+      .then(setAllTags)
+      .catch(() => {})
+  }, [id])
 
   const handleReply = async () => {
     if (!replyContent.trim() || !id) return
@@ -88,11 +249,17 @@ export default function DiscussionDetailPage() {
     }
     setSubmitting(true)
     try {
+      const body: Record<string, any> = { content: replyContent.trim() }
+      if (replyTo) {
+        body.parent_id = replyTo.id
+        body.reply_to = replyTo.author_name
+      }
       await apiFetch(`/discussions/${id}/reply`, {
         method: 'POST',
-        body: JSON.stringify({ content: replyContent.trim() }),
+        body: JSON.stringify(body),
       })
       setReplyContent('')
+      setReplyTo(null)
       loadDiscussion()
     } catch (err) { alert(`回复失败: ${err}`) }
     finally { setSubmitting(false) }
@@ -124,8 +291,56 @@ export default function DiscussionDetailPage() {
     } catch (err) { alert(`删除失败: ${err}`) }
   }
 
+  const handleReactDiscussion = async (emoji: string) => {
+    if (!id) return
+    try {
+      await apiFetch(`/discussions/${id}/react`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      })
+      loadDiscussion()
+    } catch { /* ignore */ }
+  }
+
+  const toggleEditTag = (tagId: string) => {
+    setEditTagIds(prev =>
+      prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]
+    )
+  }
+
+  const handleSaveTags = async () => {
+    if (!id) return
+    setSavingTags(true)
+    try {
+      await apiFetch(`/discussions/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ tags: editTagIds }),
+      })
+      setEditingTags(false)
+      loadDiscussion()
+    } catch (err) { alert(`保存失败: ${err}`) }
+    finally { setSavingTags(false) }
+  }
+
+  const handleReactReply = async (replyId: string, emoji: string) => {
+    if (!id) return
+    try {
+      await apiFetch(`/discussions/${id}/reply/${replyId}/react`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      })
+      loadDiscussion()
+    } catch { /* ignore */ }
+  }
+
+  const handleStartReply = (reply: DiscussionReply) => {
+    setReplyTo(replyTo?.id === reply.id ? null : reply)
+  }
+
   if (loading) return <div className="p-6 text-center text-gray-400 dark:text-gray-500 py-12">加载中...</div>
   if (!discussion) return <div className="p-6 text-center text-gray-400 dark:text-gray-500 py-12">讨论不存在</div>
+
+  const { topLevel, childrenMap } = groupReplies(discussion.replies)
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -176,8 +391,43 @@ export default function DiscussionDetailPage() {
         </div>
 
         {/* Tags */}
-        {discussion.tags && discussion.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-4 ml-0">
+        {editingTags ? (
+          <div className="mb-4">
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {allTags.map(tag => (
+                <button
+                  key={tag.id}
+                  type="button"
+                  onClick={() => toggleEditTag(tag.id)}
+                  className={`text-xs px-2 py-0.5 inline-flex items-center gap-1 border ${
+                    editTagIds.includes(tag.id)
+                      ? 'border-gray-600 dark:border-gray-400 bg-gray-100 dark:bg-gray-700'
+                      : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: tag.color }} />
+                  {tag.name}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveTags}
+                disabled={savingTags}
+                className="px-3 py-1 text-xs bg-gray-800 text-white hover:bg-gray-700 disabled:opacity-50"
+              >
+                {savingTags ? '保存中...' : '保存'}
+              </button>
+              <button
+                onClick={() => { setEditingTags(false) }}
+                className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : (discussion.tags && discussion.tags.length > 0 || isAdmin) && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-4 ml-0">
             {discussion.tags.map(tag => (
               <span
                 key={tag.id}
@@ -187,6 +437,18 @@ export default function DiscussionDetailPage() {
                 {tag.name}
               </span>
             ))}
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setEditTagIds(discussion.tags.map(t => t.id))
+                  setEditingTags(true)
+                }}
+                className="text-xs px-2 py-0.5 border border-dashed border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                title="编辑标签"
+              >
+                + 编辑标签
+              </button>
+            )}
           </div>
         )}
 
@@ -194,6 +456,14 @@ export default function DiscussionDetailPage() {
         <div className="prose prose-sm max-w-none text-gray-700 dark:text-gray-200">
           <MarkdownRenderer content={discussion.content} />
         </div>
+
+        {/* Reactions on discussion */}
+        <ReactionRow
+          reactions={discussion.reactions}
+          emojis={emojis}
+          currentUserId={user?.id}
+          onReact={handleReactDiscussion}
+        />
       </div>
 
       {/* Replies section */}
@@ -202,48 +472,84 @@ export default function DiscussionDetailPage() {
           回复 ({discussion.replies?.length || 0})
         </h2>
 
-        {(!discussion.replies || discussion.replies.length === 0) ? (
+        {topLevel.length === 0 ? (
           <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">暂无回复</div>
         ) : (
           <div className="space-y-3">
-            {discussion.replies.map(reply => (
-              <div key={reply.id} className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4">
-                <div className="flex items-start gap-3">
-                  {/* Avatar */}
-                  {reply.author_avatar_url ? (
-                    <img src={reply.author_avatar_url} className="w-8 h-8 rounded-full object-cover shrink-0" alt="" />
-                  ) : (
-                    <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 text-sm font-bold shrink-0">
-                      {reply.author_name?.charAt(0) || '?'}
+            {topLevel.map(reply => (
+              <div key={reply.id}>
+                <ReplyCard
+                  reply={reply}
+                  emojis={emojis}
+                  currentUserId={user?.id}
+                  isAdmin={isAdmin}
+                  onDelete={handleDeleteReply}
+                  onReact={handleReactReply}
+                  onReply={handleStartReply}
+                >
+                  {/* Children (sub-replies) */}
+                  {childrenMap[reply.id] && childrenMap[reply.id].length > 0 && (
+                    <div className="mt-3 space-y-2 ml-0 border-l-2 border-gray-200 dark:border-gray-700 pl-4">
+                      {childrenMap[reply.id].map(child => (
+                        <ReplyCard
+                          key={child.id}
+                          reply={child}
+                          emojis={emojis}
+                          currentUserId={user?.id}
+                          isAdmin={isAdmin}
+                          onDelete={handleDeleteReply}
+                          onReact={handleReactReply}
+                          onReply={handleStartReply}
+                        />
+                      ))}
                     </div>
                   )}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{reply.author_name}</span>
-                        <span className="text-xs text-gray-400 dark:text-gray-500">{formatTime(reply.created_at)}</span>
+
+                  {/* Sub-reply form inline */}
+                  {replyTo?.id === reply.id && (
+                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                      <div className="text-xs text-gray-400 dark:text-gray-500 mb-2">
+                        回复 <span className="font-medium text-gray-600 dark:text-gray-300">@{replyTo.author_name}</span>
                       </div>
-                      {(isAdmin || reply.author_id === user?.id) && (
+                      <div className="flex gap-2 items-start">
+                        <input
+                          type="text"
+                          value={replyContent}
+                          onChange={e => {
+                            if (e.target.value.length <= REPLY_MAX_LEN) setReplyContent(e.target.value)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') { setReplyTo(null); setReplyContent('') }
+                            if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); handleReply() }
+                          }}
+                          placeholder="输入回复..."
+                          autoFocus
+                          className="flex-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-3 py-2 text-sm"
+                        />
                         <button
-                          onClick={() => handleDeleteReply(reply.id)}
-                          className="text-xs text-red-400 hover:text-red-500 shrink-0"
+                          onClick={handleReply}
+                          disabled={submitting || !replyContent.trim()}
+                          className="px-3 py-2 bg-gray-800 text-white text-xs hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
                         >
-                          删除
+                          {submitting ? '...' : '发送'}
                         </button>
-                      )}
+                      </div>
+                      <div className="flex justify-between mt-1">
+                        <span className="text-xs text-gray-400 dark:text-gray-500">Esc 取消</span>
+                        <span className={`text-xs ${replyCharsLeft < 0 ? 'text-red-500 font-bold' : replyCharsLeft < 30 ? 'text-yellow-500' : 'text-gray-400 dark:text-gray-500'}`}>
+                          {replyContent.length} / {REPLY_MAX_LEN}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-700 dark:text-gray-300 prose prose-sm max-w-none">
-                      <MarkdownRenderer content={reply.content} />
-                    </div>
-                  </div>
-                </div>
+                  )}
+                </ReplyCard>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Reply form */}
+      {/* Top-level reply form */}
       <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">回复</h3>
         <MarkdownEditor
@@ -251,6 +557,12 @@ export default function DiscussionDetailPage() {
           onChange={setReplyContent}
           placeholder="输入回复（支持 Markdown）"
           rows={10}
+          onKeyDown={(e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+              e.preventDefault()
+              handleReply()
+            }
+          }}
         />
         <div className="flex items-center justify-between mt-2">
           <span className={`text-xs ${replyCharsLeft < 0 ? 'text-red-500 font-bold' : replyCharsLeft < 30 ? 'text-yellow-500' : 'text-gray-400 dark:text-gray-500'}`}>
