@@ -132,6 +132,7 @@ function ReplyCard({
   onDelete,
   onReact,
   onReply,
+  hideReplyButton,
 }: {
   reply: DiscussionReply
   emojis: DiscussionEmoji[]
@@ -141,6 +142,7 @@ function ReplyCard({
   onDelete: (id: string) => void
   onReact: (id: string, emoji: string) => void
   onReply: (reply: DiscussionReply) => void
+  hideReplyButton?: boolean
 }) {
   return (
     <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4">
@@ -165,12 +167,14 @@ function ReplyCard({
               <span className="text-xs text-gray-400 dark:text-gray-500">{formatTime(reply.created_at)}</span>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => onReply(reply)}
-                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-              >
-                回复
-              </button>
+              {!hideReplyButton && (
+                <button
+                  onClick={() => onReply(reply)}
+                  className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                >
+                  回复
+                </button>
+              )}
               {(isAdmin || reply.author_id === currentUserId) && (
                 <button
                   onClick={() => onDelete(reply.id)}
@@ -500,6 +504,7 @@ export default function DiscussionDetailPage() {
                           onDelete={handleDeleteReply}
                           onReact={handleReactReply}
                           onReply={handleStartReply}
+                          hideReplyButton
                         />
                       ))}
                     </div>
