@@ -16,6 +16,21 @@ interface Props {
 // ============== Luogu Markdown Preprocessing ==============
 
 /**
+ * Pre-process @mention patterns (@display_name) into styled spans.
+ */
+function preprocessMentions(md: string): string {
+  return md.replace(
+    /(?:^|[\s，。、！？；：])@([^\s，。、！？；：]+)/g,
+    (match) => {
+      const atIdx = match.lastIndexOf('@')
+      const prefix = match.slice(0, atIdx)
+      const name = match.slice(atIdx + 1)
+      return `${prefix}<span class="mention">@${name}</span>`
+    }
+  )
+}
+
+/**
  * Pre-process Luogu-specific Markdown syntax into standard HTML
  * before passing to ReactMarkdown.
  *
@@ -150,7 +165,7 @@ const components: Components = {
 }
 
 export default function MarkdownRenderer({ content, className = '' }: Props) {
-  const processed = preprocessLuoguMarkdown(content)
+  const processed = preprocessMentions(preprocessLuoguMarkdown(content))
   return (
     <div className={`${className}`}>
       <ReactMarkdown

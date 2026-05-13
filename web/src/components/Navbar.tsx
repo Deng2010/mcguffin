@@ -2,8 +2,9 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { useSite } from '../SiteContext'
 import { useDarkMode } from '../DarkModeContext'
-import { useNotifications } from '../NotificationContext'
 import { useState, useRef, useEffect } from 'react'
+import { useNotifications } from '../NotificationContext'
+import NotificationDropdown from './NotificationDropdown'
 
 export default function Navbar() {
   const { user, isAuthenticated, logout, hasPermission } = useAuth()
@@ -48,19 +49,6 @@ export default function Navbar() {
   const showSuggestions = hasPermission('view_suggestions')
   const showApply = isAuthenticated && user?.team_status !== 'joined'
   const showAdminConfig = user?.role === 'superadmin'
-
-  const formatTime = (dateStr: string) => {
-    const d = new Date(dateStr)
-    const now = new Date()
-    const diff = now.getTime() - d.getTime()
-    const mins = Math.floor(diff / 60000)
-    if (mins < 60) return `${mins}分钟前`
-    const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}小时前`
-    const days = Math.floor(hours / 24)
-    if (days < 7) return `${days}天前`
-    return d.toLocaleDateString('zh-CN')
-  }
 
   return (
     <nav className="bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 px-6 py-3">
@@ -115,60 +103,14 @@ export default function Navbar() {
               </button>
 
               {/* Notification dropdown */}
-              {showNotifications && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 shadow-lg z-50 max-h-96 flex flex-col">
-                  <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700">
-                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">通知</span>
-                    {unreadCount > 0 && (
-                      <button
-                        onClick={markAllRead}
-                        className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-                      >
-                        全部已读
-                      </button>
-                    )}
-                  </div>
-                  <div className="overflow-y-auto flex-1">
-                    {notifications.length === 0 ? (
-                      <div className="px-4 py-8 text-center text-sm text-gray-400 dark:text-gray-500">
-                        暂无通知
-                      </div>
-                    ) : (
-                      notifications.map(n => (
-                        <div
-                          key={n.id}
-                          className={`px-4 py-3 border-b border-gray-100 dark:border-gray-700/50 cursor-pointer transition-colors ${
-                            n.read
-                              ? 'hover:bg-gray-50 dark:hover:bg-gray-700/30'
-                              : 'bg-gray-50 dark:bg-gray-700/20 hover:bg-gray-100 dark:hover:bg-gray-700/40'
-                          }`}
-                          onClick={() => {
-                            markRead(n.id)
-                            setShowNotifications(false)
-                          }}
-                        >
-                          <div className="flex items-start gap-2">
-                            {!n.read && (
-                              <span className="w-2 h-2 bg-red-500 rounded-full mt-1.5 shrink-0" />
-                            )}
-                            <div className={`flex-1 min-w-0 ${n.read ? 'ml-4' : ''}`}>
-                              <Link
-                                to={n.link || '#'}
-                                className="text-sm font-medium text-gray-800 dark:text-gray-200 hover:underline block"
-                                onClick={() => setShowNotifications(false)}
-                              >
-                                {n.title}
-                              </Link>
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{n.body}</p>
-                              <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">{formatTime(n.created_at)}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
+              <NotificationDropdown
+                notifications={notifications}
+                unreadCount={unreadCount}
+                open={showNotifications}
+                onClose={() => setShowNotifications(false)}
+                onMarkRead={markRead}
+                onMarkAllRead={markAllRead}
+              />
             </div>
           )}
 

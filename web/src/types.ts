@@ -208,3 +208,65 @@ export interface ApiResponse {
   message: string
   data?: unknown
 }
+
+// ============== Discussion Types ==============
+
+export interface DiscussionTag {
+  id: string
+  name: string
+  color: string
+}
+
+export interface DiscussionEmoji {
+  id: string
+  char: string
+  name: string
+}
+
+export interface DiscussionReply {
+  id: string
+  author_id: string
+  author_name: string
+  author_avatar_url: string | null
+  content: string
+  reactions: Record<string, string[]>
+  parent_id: string | null
+  reply_to: string | null
+  created_at: string
+}
+
+/** 讨论列表项 */
+export interface Discussion {
+  id: string
+  title: string
+  content: string
+  author_id: string
+  author_name: string
+  author_avatar_url: string | null
+  tags: DiscussionTag[]
+  reactions: Record<string, string[]>
+  emoji: string
+  reply_count: number
+  created_at: string
+  updated_at: string
+  pinned: boolean
+  team_only: boolean
+}
+
+/** 讨论详情（含回复） */
+export interface DiscussionDetail {
+  id: string
+  title: string
+  content: string
+  author_id: string
+  author_name: string
+  author_avatar_url: string | null
+  tags: DiscussionTag[]
+  emoji: string
+  reactions: Record<string, string[]>
+  replies: DiscussionReply[]
+  created_at: string
+  updated_at: string
+  pinned: boolean
+  team_only: boolean
+}

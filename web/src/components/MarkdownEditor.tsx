@@ -14,6 +14,8 @@ interface MarkdownEditorProps {
   optionalNote?: string
   /** 键盘事件（如 Ctrl+Enter 提交） */
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  /** 在内容变化时额外回调，传递光标位置（用于 @mention 检测） */
+  onCursorChange?: (value: string, cursorPos: number) => void
 }
 
 const FONT_FAMILY = "'JetBrains Mono', monospace"
@@ -42,6 +44,7 @@ export default function MarkdownEditor({
   required = false,
   optionalNote,
   onKeyDown,
+  onCursorChange,
 }: MarkdownEditorProps) {
   const [showPreview, setShowPreview] = useState(true)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -154,7 +157,10 @@ export default function MarkdownEditor({
           <textarea
             ref={taRef}
             value={value}
-            onChange={e => onChange(e.target.value)}
+            onChange={e => {
+              onChange(e.target.value)
+              onCursorChange?.(e.target.value, e.target.selectionStart)
+            }}
             onScroll={onTAScroll}
             onKeyDown={onKeyDown}
             disabled={disabled}

@@ -257,6 +257,35 @@ impl AppState {
         }
     }
 
+    const MAX_SESSIONS_PER_USER: usize = 3;
+
+    /// Create a session for the given user, automatically evicting the oldest
+    /// session if they already have MAX_SESSIONS_PER_USER sessions.
+    pub async fn create_session(&self, user_id: &str) -> String {
+        let mut sessions = self.sessions.write().await;
+
+        // Collect sessions for this user, sorted oldest-first
+        let mut user_sessions: Vec<(String, chrono::DateTime<Utc>)> = sessions
+            .iter()
+            .filter(|(_, e)| e.user_id == user_id)
+            .map(|(token, e)| (token.clone(), e.last_active))
+            .collect();
+        user_sessions.sort_by(|a, b| a.1.cmp(&b.1));
+
+        // Evict oldest sessions beyond the limit
+        while user_sessions.len() >= Self::MAX_SESSIONS_PER_USER {
+            let (oldest_token, _) = user_sessions.remove(0);
+            sessions.remove(&oldest_token);
+        }
+
+        let token = uuid::Uuid::new_v4().to_string();
+        sessions.insert(token.clone(), SessionEntry {
+            user_id: user_id.to_string(),
+            last_active: Utc::now(),
+        });
+        token
+    }
+
     /// Reload all in-memory state from the current data file on disk
     /// Used after restoring from backup
     pub async fn reload(&self) {

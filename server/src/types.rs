@@ -613,6 +613,10 @@ pub struct Discussion {
     pub reactions: std::collections::HashMap<String, Vec<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
+    pub team_only: bool,
 }
 
 #[derive(Deserialize)]
@@ -623,6 +627,13 @@ pub struct CreateDiscussionPayload {
     pub tags: Vec<String>,
     #[serde(default)]
     pub emoji: Option<String>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+    #[serde(default)]
+    pub team_only: Option<bool>,
+    /// User IDs of team members @mentioned in the content
+    #[serde(default)]
+    pub mentioned_user_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -635,6 +646,10 @@ pub struct UpdateDiscussionPayload {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub emoji: Option<Option<String>>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+    #[serde(default)]
+    pub team_only: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -644,6 +659,9 @@ pub struct CreateDiscussionReplyPayload {
     pub parent_id: Option<String>,
     #[serde(default)]
     pub reply_to: Option<String>,
+    /// User IDs of team members @mentioned in the content
+    #[serde(default)]
+    pub mentioned_user_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]

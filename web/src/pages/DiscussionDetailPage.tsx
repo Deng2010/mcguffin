@@ -4,206 +4,19 @@ import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import MarkdownEditor from '../components/MarkdownEditor'
-
-// ============== Types ==============
-
-interface DiscussionTag {
-  id: string
-  name: string
-  color: string
-}
-
-interface DiscussionEmoji {
-  id: string
-  char: string
-  name: string
-}
-
-interface DiscussionReply {
-  id: string
-  author_id: string
-  author_name: string
-  author_avatar_url: string | null
-  content: string
-  reactions: Record<string, string[]>
-  parent_id: string | null
-  reply_to: string | null
-  created_at: string
-}
-
-interface DiscussionDetail {
-  id: string
-  title: string
-  content: string
-  author_id: string
-  author_name: string
-  author_avatar_url: string | null
-  tags: DiscussionTag[]
-  emoji: string
-  reactions: Record<string, string[]>
-  replies: DiscussionReply[]
-  created_at: string
-  updated_at: string
-}
+import ReactionRow from '../components/ReactionRow'
+import ReplyCard from '../components/ReplyCard'
+import MentionDropdown from '../components/MentionDropdown'
+import { useMention } from '../hooks/useMention'
+import { formatTime } from '../utils/time'
+import { groupReplies } from '../utils/groups'
+import type { MentionMember } from '../hooks/useMention'
+import type { DiscussionTag, DiscussionEmoji, DiscussionReply, DiscussionDetail } from '../types'
 
 // ============== Constants ==============
 
 const REPLY_MAX_LEN = 300
-
-// ============== Helpers ==============
-
-function formatTime(dateStr: string) {
-  const d = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins}分钟前`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}小时前`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}天前`
-  return d.toLocaleDateString('zh-CN')
-}
-
-// Group flat replies into parent→children tree
-function groupReplies(replies: DiscussionReply[]) {
-  const topLevel: DiscussionReply[] = []
-  const childrenMap: Record<string, DiscussionReply[]> = {}
-  for (const r of replies) {
-    if (r.parent_id) {
-      if (!childrenMap[r.parent_id]) childrenMap[r.parent_id] = []
-      childrenMap[r.parent_id].push(r)
-    } else {
-      topLevel.push(r)
-    }
-  }
-  return { topLevel, childrenMap }
-}
-
-// ============== Reaction Row ==============
-
-function ReactionRow({
-  reactions,
-  emojis,
-  currentUserId,
-  onReact,
-}: {
-  reactions: Record<string, string[]>
-  emojis: DiscussionEmoji[]
-  currentUserId: string | undefined
-  onReact: (emoji: string) => void
-}) {
-  if (emojis.length === 0) return null
-
-  return (
-    <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-0">
-      {emojis.map(e => {
-        const users = reactions[e.char] || []
-        const count = users.length
-        const active = currentUserId ? users.includes(currentUserId) : false
-        return (
-          <button
-            key={e.id}
-            onClick={() => onReact(e.char)}
-            className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs border transition-colors ${
-              active
-                ? 'border-gray-500 dark:border-gray-400 bg-gray-100 dark:bg-gray-800'
-                : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
-            }`}
-            title={count > 0 ? `${count} 人` : e.name}
-          >
-            <span>{e.char}</span>
-            {count > 0 && <span className="text-gray-500 dark:text-gray-400">{count}</span>}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ============== Single Reply Card ==============
-
-function ReplyCard({
-  reply,
-  emojis,
-  currentUserId,
-  isAdmin,
-  children,
-  onDelete,
-  onReact,
-  onReply,
-  hideReplyButton,
-}: {
-  reply: DiscussionReply
-  emojis: DiscussionEmoji[]
-  currentUserId: string | undefined
-  isAdmin: boolean
-  children?: React.ReactNode
-  onDelete: (id: string) => void
-  onReact: (id: string, emoji: string) => void
-  onReply: (reply: DiscussionReply) => void
-  hideReplyButton?: boolean
-}) {
-  return (
-    <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4">
-      <div className="flex items-start gap-3">
-        {/* Avatar */}
-        {reply.author_avatar_url ? (
-          <img src={reply.author_avatar_url} className="w-8 h-8 rounded-full object-cover shrink-0" alt="" />
-        ) : (
-          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 text-sm font-bold shrink-0">
-            {reply.author_name?.charAt(0) || '?'}
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{reply.author_name}</span>
-              {reply.reply_to && (
-                <span className="text-xs text-gray-400 dark:text-gray-500">
-                  回复 <span className="text-gray-500 dark:text-gray-400">@{reply.reply_to}</span>
-                </span>
-              )}
-              <span className="text-xs text-gray-400 dark:text-gray-500">{formatTime(reply.created_at)}</span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {!hideReplyButton && (
-                <button
-                  onClick={() => onReply(reply)}
-                  className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                >
-                  回复
-                </button>
-              )}
-              {(isAdmin || reply.author_id === currentUserId) && (
-                <button
-                  onClick={() => onDelete(reply.id)}
-                  className="text-xs text-red-400 hover:text-red-500"
-                >
-                  删除
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="text-sm text-gray-700 dark:text-gray-300 prose prose-sm max-w-none">
-            <MarkdownRenderer content={reply.content} />
-          </div>
-
-          {/* Reactions on reply */}
-          <ReactionRow
-            reactions={reply.reactions}
-            emojis={emojis}
-            currentUserId={currentUserId}
-            onReact={(emoji) => onReact(reply.id, emoji)}
-          />
-
-          {/* Children (nested replies) */}
-          {children}
-        </div>
-      </div>
-    </div>
-  )
-}
+const REPLY_PAGE_SIZE = 10
 
 // ============== Component ==============
 
@@ -222,6 +35,12 @@ export default function DiscussionDetailPage() {
   const [savingTags, setSavingTags] = useState(false)
   // Sub-reply state
   const [replyTo, setReplyTo] = useState<DiscussionReply | null>(null)
+  const [replyPage, setReplyPage] = useState(1)
+
+  // Team members for @mention
+  const [teamMembers, setTeamMembers] = useState<MentionMember[]>([])
+  const mainMention = useMention(teamMembers)
+  const inlineMention = useMention(teamMembers)
 
   const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
   const canDeleteDiscussion = discussion && (isAdmin || discussion.author_id === user?.id)
@@ -230,7 +49,10 @@ export default function DiscussionDetailPage() {
   const loadDiscussion = () => {
     if (!id) return
     apiFetch<DiscussionDetail>(`/discussions/${id}`)
-      .then(setDiscussion)
+      .then(data => {
+        setDiscussion(data)
+        setReplyPage(1)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
@@ -243,6 +65,10 @@ export default function DiscussionDetailPage() {
     apiFetch<DiscussionTag[]>('/discussions/tags')
       .then(setAllTags)
       .catch(() => {})
+    // Load team members for @mention
+    apiFetch<MentionMember[]>('/team/members')
+      .then(setTeamMembers)
+      .catch(() => {})
   }, [id])
 
   const handleReply = async () => {
@@ -254,6 +80,7 @@ export default function DiscussionDetailPage() {
     setSubmitting(true)
     try {
       const body: Record<string, any> = { content: replyContent.trim() }
+      body.mentioned_user_ids = mainMention.getMentionedUserIds(replyContent)
       if (replyTo) {
         body.parent_id = replyTo.id
         body.reply_to = replyTo.author_name
@@ -326,6 +153,28 @@ export default function DiscussionDetailPage() {
     finally { setSavingTags(false) }
   }
 
+  const handleTogglePinned = async () => {
+    if (!id || !discussion) return
+    try {
+      await apiFetch(`/discussions/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ pinned: !discussion.pinned }),
+      })
+      loadDiscussion()
+    } catch (err) { alert(`操作失败: ${err}`) }
+  }
+
+  const handleToggleTeamOnly = async () => {
+    if (!id || !discussion) return
+    try {
+      await apiFetch(`/discussions/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ team_only: !discussion.team_only }),
+      })
+      loadDiscussion()
+    } catch (err) { alert(`操作失败: ${err}`) }
+  }
+
   const handleReactReply = async (replyId: string, emoji: string) => {
     if (!id) return
     try {
@@ -345,6 +194,9 @@ export default function DiscussionDetailPage() {
   if (!discussion) return <div className="p-6 text-center text-gray-400 dark:text-gray-500 py-12">讨论不存在</div>
 
   const { topLevel, childrenMap } = groupReplies(discussion.replies)
+  const replyTotalPages = Math.max(1, Math.ceil(topLevel.length / REPLY_PAGE_SIZE))
+  const safeReplyPage = Math.min(replyPage, replyTotalPages)
+  const pagedTopLevel = topLevel.slice((safeReplyPage - 1) * REPLY_PAGE_SIZE, safeReplyPage * REPLY_PAGE_SIZE)
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -367,7 +219,19 @@ export default function DiscussionDetailPage() {
             <span className="text-4xl leading-none shrink-0 mt-0.5">{discussion.emoji}</span>
           )}
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{discussion.title}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">{discussion.title}</h1>
+              {discussion.pinned && (
+                <span className="text-xs px-1.5 py-0.5 border border-red-300 dark:border-red-800 text-red-500 dark:text-red-400 leading-none">
+                  置顶
+                </span>
+              )}
+              {discussion.team_only && (
+                <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">
+                  内部
+                </span>
+              )}
+            </div>
           </div>
           {canDeleteDiscussion && (
             <button
@@ -456,6 +320,32 @@ export default function DiscussionDetailPage() {
           </div>
         )}
 
+        {/* Admin controls: pinned / team_only */}
+        {isAdmin && (
+          <div className="flex items-center gap-3 mb-4 ml-0">
+            <button
+              onClick={() => handleTogglePinned()}
+              className={`text-xs px-2 py-0.5 border ${
+                discussion.pinned
+                  ? 'border-red-300 dark:border-red-800 text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20'
+                  : 'border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              {discussion.pinned ? '取消置顶' : '置顶'}
+            </button>
+            <button
+              onClick={() => handleToggleTeamOnly()}
+              className={`text-xs px-2 py-0.5 border ${
+                discussion.team_only
+                  ? 'border-gray-600 dark:border-gray-400 text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800'
+                  : 'border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              {discussion.team_only ? '设为公开' : '设为内部'}
+            </button>
+          </div>
+        )}
+
         {/* Content */}
         <div className="prose prose-sm max-w-none text-gray-700 dark:text-gray-200">
           <MarkdownRenderer content={discussion.content} />
@@ -480,7 +370,7 @@ export default function DiscussionDetailPage() {
           <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-sm">暂无回复</div>
         ) : (
           <div className="space-y-3">
-            {topLevel.map(reply => (
+            {pagedTopLevel.map(reply => (
               <div key={reply.id}>
                 <ReplyCard
                   reply={reply}
@@ -516,20 +406,45 @@ export default function DiscussionDetailPage() {
                       <div className="text-xs text-gray-400 dark:text-gray-500 mb-2">
                         回复 <span className="font-medium text-gray-600 dark:text-gray-300">@{replyTo.author_name}</span>
                       </div>
-                      <div className="flex gap-2 items-start">
+                      <div className="flex gap-2 items-start relative">
                         <input
                           type="text"
                           value={replyContent}
                           onChange={e => {
-                            if (e.target.value.length <= REPLY_MAX_LEN) setReplyContent(e.target.value)
+                            const val = e.target.value
+                            if (val.length <= REPLY_MAX_LEN) {
+                              setReplyContent(val)
+                              inlineMention.handleTextChange(val, e.target.selectionStart)
+                            }
                           }}
                           onKeyDown={(e) => {
+                            if (inlineMention.handleKeyDown(e)) return
+                            if (inlineMention.open && (e.key === 'Enter' || e.key === 'Tab')) {
+                              e.preventDefault()
+                              const [newText, selected] = inlineMention.insertSelected(replyContent, e.currentTarget.selectionStart)
+                              if (selected) {
+                                setReplyContent(newText)
+                              }
+                              return
+                            }
                             if (e.key === 'Escape') { setReplyTo(null); setReplyContent('') }
                             if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); handleReply() }
                           }}
                           placeholder="输入回复..."
                           autoFocus
                           className="flex-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-3 py-2 text-sm"
+                        />
+                        <MentionDropdown
+                          open={inlineMention.open}
+                          filtered={inlineMention.filtered}
+                          selectedIndex={inlineMention.selectedIndex}
+                          className="top-full mt-1 left-0"
+                          onSelect={(m) => {
+                            const inp = document.querySelector<HTMLInputElement>('input')
+                            const cursorPos = inp?.selectionStart ?? replyContent.length
+                            const newText = inlineMention.insertMention(replyContent, cursorPos, m)
+                            setReplyContent(newText)
+                          }}
                         />
                         <button
                           onClick={handleReply}
@@ -552,23 +467,62 @@ export default function DiscussionDetailPage() {
             ))}
           </div>
         )}
+
+        {/* Reply pagination */}
+        {replyTotalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <button
+              disabled={safeReplyPage <= 1}
+              onClick={() => setReplyPage(p => Math.max(1, p - 1))}
+              className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              上一页
+            </button>
+            <span className="text-xs text-gray-400 dark:text-gray-500 px-2">
+              {safeReplyPage} / {replyTotalPages}
+            </span>
+            <button
+              disabled={safeReplyPage >= replyTotalPages}
+              onClick={() => setReplyPage(p => Math.min(replyTotalPages, p + 1))}
+              className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              下一页
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Top-level reply form */}
-      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4">
+      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4 relative">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">回复</h3>
-        <MarkdownEditor
-          value={replyContent}
-          onChange={setReplyContent}
-          placeholder="输入回复（支持 Markdown）"
-          rows={10}
-          onKeyDown={(e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
-              e.preventDefault()
-              handleReply()
-            }
-          }}
-        />
+        <div className="relative">
+          <MarkdownEditor
+            value={replyContent}
+            onChange={setReplyContent}
+            placeholder="输入回复（支持 Markdown）"
+            rows={10}
+            onCursorChange={(val, pos) => mainMention.handleTextChange(val, pos)}
+            onKeyDown={(e) => {
+              if (mainMention.handleKeyDown(e)) return
+              if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault()
+                handleReply()
+              }
+            }}
+          />
+          <MentionDropdown
+            open={mainMention.open}
+            filtered={mainMention.filtered}
+            selectedIndex={mainMention.selectedIndex}
+            className="mt-1.5"
+            onSelect={(m) => {
+              const ta = document.querySelector<HTMLTextAreaElement>('textarea')
+              const cursorPos = ta?.selectionStart ?? replyContent.length
+              const newText = mainMention.insertMention(replyContent, cursorPos, m)
+              setReplyContent(newText)
+            }}
+          />
+        </div>
         <div className="flex items-center justify-between mt-2">
           <span className={`text-xs ${replyCharsLeft < 0 ? 'text-red-500 font-bold' : replyCharsLeft < 30 ? 'text-yellow-500' : 'text-gray-400 dark:text-gray-500'}`}>
             {replyContent.length} / {REPLY_MAX_LEN}

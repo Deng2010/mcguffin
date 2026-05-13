@@ -6,9 +6,10 @@ use axum::http::HeaderMap;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::notifications::create_notification;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{is_admin, resolve_user};
+use crate::utils::{is_admin, is_team_member, resolve_user};
 
 // ============== Character Limits ==============
 
@@ -50,15 +51,27 @@ pub async fn get_discussions(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_, _) = match resolve_user(&state, &headers).await {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!([])),
     };
+    let is_team_member = is_team_member(&state, &user_id).await;
     let discussions = state.discussions.read().await;
     let users = state.users.read().await;
     let all_tags = state.discussion_tags.read().await;
-    let mut result: Vec<&Discussion> = discussions.values().collect();
-    result.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    let mut result: Vec<&Discussion> = discussions.values().filter(|d| {
+        // Filter out team-only discussions for non-team-member users
+        if d.team_only && !is_team_member { return false; }
+        true
+    }).collect();
+    // Sort: pinned first, then by created_at desc
+    result.sort_by(|a, b| {
+        if a.pinned != b.pinned {
+            if a.pinned { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
+        } else {
+            b.created_at.cmp(&a.created_at)
+        }
+    });
     // Return without replies in listing (replies are fetched in detail)
     let list: Vec<serde_json::Value> = result.iter().map(|d| {
         let user_info = users.get(&d.author_id);
@@ -86,6 +99,8 @@ pub async fn get_discussions(
             "reply_count": d.replies.len(),
             "created_at": d.created_at,
             "updated_at": d.updated_at,
+            "pinned": d.pinned,
+            "team_only": d.team_only,
         })
     }).collect();
     drop(all_tags);
@@ -117,21 +132,40 @@ pub async fn create_discussion(
         return Json(serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}));
     }
     let now = Utc::now();
+    let is_admin_user = is_admin(&state, &user_id).await;
+    let display_name = user.display_name;
     let discussion = Discussion {
         id: Uuid::new_v4().to_string(),
         title: payload.title.trim().to_string(),
         content: payload.content,
-        author_id: user_id,
-        author_name: user.display_name,
+        author_id: user_id.clone(),
+        author_name: display_name.clone(),
         tags: payload.tags,
         emoji: payload.emoji,
+        pinned: payload.pinned.unwrap_or(false) && is_admin_user,
+        team_only: payload.team_only.unwrap_or(false),
         replies: vec![],
         reactions: std::collections::HashMap::new(),
         created_at: now,
         updated_at: now,
     };
-    state.discussions.write().await.insert(discussion.id.clone(), discussion);
+    let discussion_id = discussion.id.clone();
+    state.discussions.write().await.insert(discussion_id.clone(), discussion);
     state.save().await;
+
+    // Create notifications for @mentioned users
+    for uid in &payload.mentioned_user_ids {
+        if uid != &user_id {
+            create_notification(
+                &state,
+                uid,
+                &format!("在讨论中提到了你"),
+                &format!("{} 在讨论「{}」中提到了你", display_name, payload.title.trim()),
+                Some(&format!("/discussions/{}", discussion_id)),
+            ).await;
+        }
+    }
+
     Json(serde_json::json!({"success": true, "message": "讨论已发布"}))
 }
 
@@ -142,12 +176,16 @@ pub async fn get_discussion_detail(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (_, _) = match resolve_user(&state, &headers).await {
+    let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
     let discussions = state.discussions.read().await;
     if let Some(d) = discussions.get(&id) {
+        // Check access for team-only discussions
+        if d.team_only && !is_team_member(&state, &user_id).await {
+            return Json(serde_json::json!({"success": false, "message": "无权查看"}));
+        }
         // Enrich replies with updated author display names and avatars
         let users = state.users.read().await;
         let enriched_replies: Vec<serde_json::Value> = d.replies.iter().map(|r| {
@@ -195,6 +233,8 @@ pub async fn get_discussion_detail(
             "replies": enriched_replies,
             "created_at": d.created_at,
             "updated_at": d.updated_at,
+            "pinned": d.pinned,
+            "team_only": d.team_only,
         }));
     }
     Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
@@ -239,6 +279,18 @@ pub async fn update_discussion(
         }
         if let Some(ref emoji) = payload.emoji {
             d.emoji = emoji.clone();
+        }
+        // pinned: only admin can change
+        if let Some(pinned) = payload.pinned {
+            if is_admin_user {
+                d.pinned = pinned;
+            }
+        }
+        // team_only: admin or author can change
+        if let Some(team_only) = payload.team_only {
+            if is_admin_user || d.author_id == user_id {
+                d.team_only = team_only;
+            }
         }
         d.updated_at = Utc::now();
         drop(discussions);
@@ -293,10 +345,11 @@ pub async fn reply_to_discussion(
     }
     let mut discussions = state.discussions.write().await;
     if let Some(d) = discussions.get_mut(&id) {
+        let display_name = user.display_name;
         let reply = DiscussionReply {
             id: Uuid::new_v4().to_string(),
             author_id: user_id.clone(),
-            author_name: user.display_name,
+            author_name: display_name.clone(),
             content: payload.content.trim().to_string(),
             reactions: std::collections::HashMap::new(),
             parent_id: payload.parent_id,
@@ -307,6 +360,21 @@ pub async fn reply_to_discussion(
         d.updated_at = Utc::now();
         drop(discussions);
         state.save().await;
+
+        // Create notifications for @mentioned users
+        let discussion_title = state.discussions.read().await.get(&id).map(|d| d.title.clone()).unwrap_or_default();
+        for uid in &payload.mentioned_user_ids {
+            if uid != &user_id {
+                create_notification(
+                    &state,
+                    uid,
+                    "在回复中提到了你",
+                    &format!("{} 在讨论「{}」的回复中提到了你", display_name, discussion_title),
+                    Some(&format!("/discussions/{}", id)),
+                ).await;
+            }
+        }
+
         return Json(serde_json::json!({"success": true, "message": "回复成功"}));
     }
     Json(serde_json::json!({"success": false, "message": "讨论不存在"}))

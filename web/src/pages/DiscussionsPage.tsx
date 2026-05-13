@@ -3,55 +3,17 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import MarkdownEditor from '../components/MarkdownEditor'
-
-// ============== Types ==============
-
-interface DiscussionTag {
-  id: string
-  name: string
-  color: string
-}
-
-interface DiscussionEmoji {
-  id: string
-  char: string
-  name: string
-}
-
-interface Discussion {
-  id: string
-  title: string
-  content: string
-  author_id: string
-  author_name: string
-  author_avatar_url: string | null
-  tags: DiscussionTag[]
-  reactions: Record<string, string[]>
-  emoji: string
-  reply_count: number
-  created_at: string
-  updated_at: string
-}
+import MentionDropdown from '../components/MentionDropdown'
+import { useMention } from '../hooks/useMention'
+import { formatTime } from '../utils/time'
+import type { MentionMember } from '../hooks/useMention'
+import type { DiscussionTag, DiscussionEmoji, Discussion } from '../types'
 
 // ============== Constants ==============
 
 const TITLE_MAX_LEN = 30
 const CONTENT_MAX_LEN = 3000
-
-// ============== Helpers ==============
-
-function formatTime(dateStr: string) {
-  const d = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - d.getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `${mins}分钟前`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}小时前`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}天前`
-  return d.toLocaleDateString('zh-CN')
-}
+const PAGE_SIZE = 10
 
 // ============== Component ==============
 
@@ -64,18 +26,26 @@ export default function DiscussionsPage() {
   const [content, setContent] = useState('')
   const [selectedEmoji, setSelectedEmoji] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [teamOnly, setTeamOnly] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   // Fetch options
   const [emojis, setEmojis] = useState<DiscussionEmoji[]>([])
   const [tags, setTags] = useState<DiscussionTag[]>([])
+  const [emojiBarOpen, setEmojiBarOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [teamMembers, setTeamMembers] = useState<MentionMember[]>([])
+  const createMention = useMention(teamMembers)
 
   const titleCharsLeft = TITLE_MAX_LEN - title.length
   const contentCharsLeft = CONTENT_MAX_LEN - content.length
 
   const loadDiscussions = () => {
     apiFetch<Discussion[]>('/discussions')
-      .then(setDiscussions)
+      .then(data => {
+        setDiscussions(data)
+        setPage(1)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
@@ -94,6 +64,10 @@ export default function DiscussionsPage() {
   useEffect(() => {
     loadDiscussions()
     loadOptions()
+    // Load team members for @mention
+    apiFetch<MentionMember[]>('/team/members')
+      .then(setTeamMembers)
+      .catch(() => {})
   }, [])
 
   const handleCreate = async () => {
@@ -107,12 +81,15 @@ export default function DiscussionsPage() {
           content,
           emoji: selectedEmoji || undefined,
           tags: selectedTags,
+          team_only: teamOnly,
+          mentioned_user_ids: createMention.getMentionedUserIds(content),
         }),
       })
       setTitle('')
       setContent('')
       setSelectedEmoji('')
       setSelectedTags([])
+      setTeamOnly(false)
       setShowForm(false)
       loadDiscussions()
     } catch (err) { alert(`提交失败: ${err}`) }
@@ -126,6 +103,9 @@ export default function DiscussionsPage() {
   }
 
   if (loading) return <div className="p-6 text-center text-gray-400 dark:text-gray-500 py-12">加载中...</div>
+
+  const totalPages = Math.max(1, Math.ceil(discussions.length / PAGE_SIZE))
+  const pagedDiscussions = discussions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
@@ -163,12 +143,30 @@ export default function DiscussionsPage() {
 
           {/* Content */}
           <div className="mb-3">
-            <MarkdownEditor
-              value={content}
-              onChange={setContent}
-              placeholder="详细描述（支持 Markdown）"
-              rows={20}
-            />
+            <div className="relative">
+              <MarkdownEditor
+                value={content}
+                onChange={setContent}
+                placeholder="详细描述（支持 Markdown）"
+                rows={20}
+                onCursorChange={(val, pos) => createMention.handleTextChange(val, pos)}
+                onKeyDown={(e) => {
+                  createMention.handleKeyDown(e)
+                }}
+              />
+              <MentionDropdown
+                open={createMention.open}
+                filtered={createMention.filtered}
+                selectedIndex={createMention.selectedIndex}
+                className="top-0 left-0"
+                onSelect={(m) => {
+                  const ta = document.querySelector<HTMLTextAreaElement>('textarea')
+                  const cursorPos = ta?.selectionStart ?? content.length
+                  const newText = createMention.insertMention(content, cursorPos, m)
+                  setContent(newText)
+                }}
+              />
+            </div>
             <div className="flex justify-end mt-1">
               <span className={`text-xs ${contentCharsLeft < 0 ? 'text-red-500 font-bold' : contentCharsLeft < 100 ? 'text-yellow-500' : 'text-gray-400 dark:text-gray-500'}`}>
                 {content.length} / {CONTENT_MAX_LEN}
@@ -176,27 +174,41 @@ export default function DiscussionsPage() {
             </div>
           </div>
 
-          {/* Emoji selector */}
+          {/* Emoji selector — collapsible */}
           <div className="mb-3">
-            <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">表情符号</label>
-            <div className="flex flex-wrap gap-1.5">
-              {emojis.map(emoji => (
-                <button
-                  key={emoji.id}
-                  type="button"
-                  onClick={() => setSelectedEmoji(selectedEmoji === emoji.char ? '' : emoji.char)}
-                  className={`px-2 py-1 border text-sm ${
-                    selectedEmoji === emoji.char
-                      ? 'border-gray-600 dark:border-gray-400 bg-gray-100 dark:bg-gray-700'
-                      : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
-                  }`}
-                  title={emoji.name}
-                >
-                  <span className="mr-1">{emoji.char}</span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{emoji.name}</span>
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              onClick={() => setEmojiBarOpen(!emojiBarOpen)}
+              className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 mb-1.5 hover:text-gray-800 dark:hover:text-gray-200"
+            >
+              <svg
+                className={`w-3 h-3 transition-transform ${emojiBarOpen ? 'rotate-90' : ''}`}
+                fill="none" stroke="currentColor" viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              表情符号 {selectedEmoji && <span className="ml-1">{selectedEmoji}</span>}
+            </button>
+            {emojiBarOpen && (
+              <div className="flex flex-wrap gap-1.5">
+                {emojis.map(emoji => (
+                  <button
+                    key={emoji.id}
+                    type="button"
+                    onClick={() => setSelectedEmoji(selectedEmoji === emoji.char ? '' : emoji.char)}
+                    className={`px-2 py-1 border text-sm ${
+                      selectedEmoji === emoji.char
+                        ? 'border-gray-600 dark:border-gray-400 bg-gray-100 dark:bg-gray-700'
+                        : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                    }`}
+                    title={emoji.name}
+                  >
+                    <span className="mr-1">{emoji.char}</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{emoji.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Tag selector */}
@@ -221,6 +233,19 @@ export default function DiscussionsPage() {
             </div>
           </div>
 
+          {/* Team-only toggle */}
+          <div className="mb-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={teamOnly}
+                onChange={e => setTeamOnly(e.target.checked)}
+                className="w-3.5 h-3.5"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">仅团队成员可见</span>
+            </label>
+          </div>
+
           {/* Submit */}
           <button
             onClick={handleCreate}
@@ -237,7 +262,7 @@ export default function DiscussionsPage() {
         {discussions.length === 0 ? (
           <div className="text-center py-12 text-gray-400 dark:text-gray-500">暂无讨论</div>
         ) : (
-          discussions.map(d => (
+          pagedDiscussions.map(d => (
             <div
               key={d.id}
               className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 border-l-4 border-l-gray-300"
@@ -249,12 +274,24 @@ export default function DiscussionsPage() {
                     <span className="text-2xl leading-none mt-0.5 shrink-0">{d.emoji}</span>
                   )}
                   <div className="min-w-0 flex-1">
-                    <Link
-                      to={`/discussions/${d.id}`}
-                      className="font-medium text-gray-800 dark:text-gray-100 hover:text-gray-600 dark:hover:text-gray-300"
-                    >
-                      {d.title}
-                    </Link>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Link
+                        to={`/discussions/${d.id}`}
+                        className="font-medium text-gray-800 dark:text-gray-100 hover:text-gray-600 dark:hover:text-gray-300"
+                      >
+                        {d.title}
+                      </Link>
+                      {d.pinned && (
+                        <span className="text-xs px-1.5 py-0.5 border border-red-300 dark:border-red-800 text-red-500 dark:text-red-400 leading-none">
+                          置顶
+                        </span>
+                      )}
+                      {d.team_only && (
+                        <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">
+                          内部
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -317,6 +354,29 @@ export default function DiscussionsPage() {
           ))
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-6">
+          <button
+            disabled={page <= 1}
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            上一页
+          </button>
+          <span className="text-xs text-gray-400 dark:text-gray-500 px-2">
+            {page} / {totalPages}
+          </span>
+          <button
+            disabled={page >= totalPages}
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            className="px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            下一页
+          </button>
+        </div>
+      )}
     </div>
   )
 }

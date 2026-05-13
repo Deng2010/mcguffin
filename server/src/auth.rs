@@ -38,8 +38,7 @@ pub async fn login(
                         match bcrypt::verify(&payload.password, hash) {
                             Ok(true) => {
                                 // Password correct — create session
-                                let session_token = Uuid::new_v4().to_string();
-                                state.sessions.write().await.insert(session_token.clone(), SessionEntry { user_id: user.id.clone(), last_active: Utc::now() });
+                                let session_token = state.create_session(&user.id).await;
                                 Json(LoginResponse {
                                     success: true,
                                     message: "登录成功".to_string(),
@@ -76,8 +75,7 @@ pub async fn login(
             });
         }
 
-        let session_token = Uuid::new_v4().to_string();
-        state.sessions.write().await.insert(session_token.clone(), SessionEntry { user_id: ADMIN_USER_ID.to_string(), last_active: Utc::now() });
+        let session_token = state.create_session(ADMIN_USER_ID).await;
 
         Json(LoginResponse {
             success: true,
@@ -268,8 +266,7 @@ pub async fn oauth_callback(
                     }
                     drop(users);
                     
-                    let session_token = Uuid::new_v4().to_string();
-                    state.sessions.write().await.insert(session_token.clone(), SessionEntry { user_id: user_id.clone(), last_active: Utc::now() });
+                    let session_token = state.create_session(&user_id).await;
                     // Remove old refresh tokens for this user to prevent accumulation
                     {
                         let mut rts = state.refresh_tokens.write().await;
