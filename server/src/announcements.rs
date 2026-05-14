@@ -1,3 +1,8 @@
+// ============== Legacy Announcement Compat Layer ==============
+//
+// These routes are kept for backward compatibility.
+// They delegate to the unified post handlers.
+
 use axum::{
     extract::{Path, State},
     Json,
@@ -10,7 +15,7 @@ use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{is_admin, is_team_member, resolve_user};
 
-// ============== List Announcements ==============
+// ============== List Announcements (backward compat) ==============
 
 pub async fn get_announcements(
     State(state): State<AppState>,
@@ -25,7 +30,7 @@ pub async fn get_announcements(
     let users = state.users.read().await;
     let mut result: Vec<serde_json::Value> = Vec::new();
     for p in posts.values() {
-        if p.kind != "announcement" { continue; }
+        if !p.tags.contains(&"公告".to_string()) { continue; }
         if !can_see_all && !p.public { continue; }
         let author_name = users.get(&p.author_id)
             .map(|u| u.display_name.clone())
@@ -55,12 +60,12 @@ pub async fn get_announcements(
     Json(serde_json::json!(result))
 }
 
-// ============== Create Announcement ==============
+// ============== Create Announcement (backward compat) ==============
 
 pub async fn create_announcement(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<CreateAnnouncementPayload>,
+    Json(payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
@@ -69,28 +74,31 @@ pub async fn create_announcement(
     if !is_admin(&state, &user_id).await {
         return Json(serde_json::json!({"success": false, "message": "权限不足"}));
     }
-    if payload.title.trim().is_empty() {
+    let title = payload.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let pinned = payload.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_public = payload.get("public").and_then(|v| v.as_bool()).unwrap_or(true);
+    if title.trim().is_empty() {
         return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
     }
     let now = Utc::now();
     let post = Post {
         id: Uuid::new_v4().to_string(),
-        kind: "announcement".to_string(),
-        title: payload.title.trim().to_string(),
-        content: payload.content,
+        title: title.trim().to_string(),
+        content,
         author_id: user_id,
         author_name: user.display_name,
-        pinned: payload.pinned,
-        public: payload.public,
-        created_at: now,
-        updated_at: now,
-        tags: vec![],
+        tags: vec!["公告".to_string()],
+        pinned,
         team_only: false,
+        public: is_public,
         emoji: None,
         reactions: std::collections::HashMap::new(),
         replies: vec![],
         mentioned_user_ids: vec![],
         status: String::new(),
+        created_at: now,
+        updated_at: now,
     };
     let post_id = post.id.clone();
     state.posts.write().await.insert(post_id, post);
@@ -98,7 +106,7 @@ pub async fn create_announcement(
     Json(serde_json::json!({"success": true, "message": "公告已发布"}))
 }
 
-// ============== Get Announcement Detail ==============
+// ============== Get Announcement Detail (backward compat) ==============
 
 pub async fn get_announcement_detail(
     State(state): State<AppState>,
@@ -108,13 +116,8 @@ pub async fn get_announcement_detail(
     let auth_info = resolve_user(&state, &headers).await;
     let is_admin_user = if let Some((ref uid, _)) = auth_info { is_admin(&state, uid).await } else { false };
     let is_team = if let Some((ref uid, _)) = auth_info { is_team_member(&state, uid).await } else { false };
-
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
-        if p.kind != "announcement" {
-            return Json(serde_json::json!({"success": false, "message": "公告不存在"}));
-        }
-        // Check visibility
         if !is_admin_user && !is_team && !p.public {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
@@ -138,13 +141,13 @@ pub async fn get_announcement_detail(
     Json(serde_json::json!({"success": false, "message": "公告不存在"}))
 }
 
-// ============== Update Announcement ==============
+// ============== Update Announcement (backward compat) ==============
 
 pub async fn update_announcement(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-    Json(payload): Json<UpdateAnnouncementPayload>,
+    Json(payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
@@ -155,23 +158,20 @@ pub async fn update_announcement(
     }
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
-        if p.kind != "announcement" {
-            return Json(serde_json::json!({"success": false, "message": "公告不存在"}));
-        }
-        if let Some(ref title) = payload.title {
+        if let Some(title) = payload.get("title").and_then(|v| v.as_str()) {
             if title.trim().is_empty() {
                 return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
             }
             p.title = title.trim().to_string();
         }
-        if let Some(ref content) = payload.content {
-            p.content = content.clone();
+        if let Some(content) = payload.get("content").and_then(|v| v.as_str()) {
+            p.content = content.to_string();
         }
-        if let Some(pinned) = payload.pinned {
+        if let Some(pinned) = payload.get("pinned").and_then(|v| v.as_bool()) {
             p.pinned = pinned;
         }
-        if let Some(public) = payload.public {
-            p.public = public;
+        if let Some(is_public) = payload.get("public").and_then(|v| v.as_bool()) {
+            p.public = is_public;
         }
         p.updated_at = Utc::now();
         drop(posts);
@@ -196,10 +196,7 @@ pub async fn delete_announcement(
         return Json(serde_json::json!({"success": false, "message": "权限不足"}));
     }
     let mut posts = state.posts.write().await;
-    if let Some(p) = posts.get(&id) {
-        if p.kind != "announcement" {
-            return Json(serde_json::json!({"success": false, "message": "公告不存在"}));
-        }
+    if posts.contains_key(&id) {
         posts.remove(&id);
         drop(posts);
         state.save().await;

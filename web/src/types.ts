@@ -215,6 +215,7 @@ export interface DiscussionTag {
   id: string
   name: string
   color: string
+  admin_only?: boolean
 }
 
 export interface DiscussionEmoji {
@@ -269,4 +270,25 @@ export interface DiscussionDetail {
   updated_at: string
   pinned: boolean
   team_only: boolean
+}
+
+// ============== Unified Post Types ==============
+
+export interface PostDetail {
+  id: string
+  title: string
+  content: string
+  author_id: string
+  author_name: string
+  author_avatar_url: string | null
+  tags: DiscussionTag[]
+  emoji: string | null
+  reactions: Record<string, string[]>
+  replies: DiscussionReply[]
+  created_at: string
+  updated_at: string
+  pinned: boolean
+  team_only: boolean
+  public: boolean
+  status: string
 }

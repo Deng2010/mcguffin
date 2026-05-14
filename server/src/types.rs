@@ -458,87 +458,7 @@ pub struct LoginResponse {
     pub token: Option<String>,
 }
 
-// ============== Suggestion ==============
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SuggestionReply {
-    pub id: String,
-    pub author_id: String,
-    pub author_name: String,
-    pub content: String,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Suggestion {
-    pub id: String,
-    pub title: String,
-    pub content: String,
-    pub author_id: String,
-    pub author_name: String,
-    pub status: String, // "open" | "in_progress" | "resolved" | "closed"
-    #[serde(default)]
-    pub replies: Vec<SuggestionReply>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Deserialize)]
-pub struct CreateSuggestionPayload {
-    pub title: String,
-    pub content: String,
-}
-
-#[derive(Deserialize)]
-pub struct CreateSuggestionReplyPayload {
-    pub content: String,
-}
-
-#[derive(Deserialize)]
-pub struct UpdateSuggestionPayload {
-    #[serde(default)]
-    pub status: Option<String>,
-}
-
-// ============== Announcement ==============
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Announcement {
-    pub id: String,
-    pub title: String,
-    pub content: String,
-    pub author_id: String,
-    pub author_name: String,
-    pub pinned: bool,
-    #[serde(default = "default_public")]
-    pub public: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
 fn default_public() -> bool { true }
-
-#[derive(Deserialize)]
-pub struct CreateAnnouncementPayload {
-    pub title: String,
-    pub content: String,
-    #[serde(default)]
-    pub pinned: bool,
-    #[serde(default = "default_public")]
-    pub public: bool,
-}
-
-#[derive(Deserialize)]
-pub struct UpdateAnnouncementPayload {
-    #[serde(default)]
-    pub title: Option<String>,
-    #[serde(default)]
-    pub content: Option<String>,
-    #[serde(default)]
-    pub pinned: Option<bool>,
-    #[serde(default)]
-    pub public: Option<bool>,
-}
 
 // ============== Notification ==============
 
@@ -562,23 +482,7 @@ pub struct NotificationResponse {
     pub unread_count: usize,
 }
 
-// ============== Discussion ==============
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DiscussionReply {
-    pub id: String,
-    pub author_id: String,
-    pub author_name: String,
-    pub content: String,
-    pub created_at: DateTime<Utc>,
-    #[serde(default)]
-    pub reactions: std::collections::HashMap<String, Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_id: Option<String>,
-    /// The author_name of the parent reply, e.g. for showing "回复 @xxx"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reply_to: Option<String>,
-}
+// ============== Discussion Tags & Emojis ==============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscussionTag {
@@ -586,6 +490,8 @@ pub struct DiscussionTag {
     pub name: String,
     pub color: String,
     pub description: String,
+    #[serde(default)]
+    pub admin_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -596,31 +502,67 @@ pub struct DiscussionEmoji {
     pub char: String,
 }
 
+// ============== Unified Post Model ==============
+
+/// Unified post type — categorization is done via `tags` field only.
+/// There is no "kind" distinction; "公告", "建议" etc are just tags.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Discussion {
+pub struct Post {
     pub id: String,
     pub title: String,
     pub content: String,
     pub author_id: String,
     pub author_name: String,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub emoji: Option<String>,
-    #[serde(default)]
-    pub replies: Vec<DiscussionReply>,
-    #[serde(default)]
-    pub reactions: std::collections::HashMap<String, Vec<String>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+
+    // ── Categorization ──
+    #[serde(default)]
+    pub tags: Vec<String>,
+
+    // ── Common flags ──
     #[serde(default)]
     pub pinned: bool,
     #[serde(default)]
     pub team_only: bool,
+    #[serde(default = "default_public")]
+    pub public: bool,
+
+    // ── Discussion features ──
+    #[serde(default)]
+    pub emoji: Option<String>,
+    #[serde(default)]
+    pub reactions: std::collections::HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub replies: Vec<PostReply>,
+    #[serde(default)]
+    pub mentioned_user_ids: Vec<String>,
+
+    // ── Review status (suggestion-style, applicable to any post) ──
+    #[serde(default)]
+    pub status: String,
 }
 
+/// Unified reply type
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostReply {
+    pub id: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub reactions: std::collections::HashMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
+}
+
+// ============== Post Payloads ==============
+
 #[derive(Deserialize)]
-pub struct CreateDiscussionPayload {
+pub struct CreatePostPayload {
     pub title: String,
     pub content: String,
     #[serde(default)]
@@ -631,13 +573,15 @@ pub struct CreateDiscussionPayload {
     pub pinned: Option<bool>,
     #[serde(default)]
     pub team_only: Option<bool>,
+    #[serde(default)]
+    pub public: Option<bool>,
     /// User IDs of team members @mentioned in the content
     #[serde(default)]
     pub mentioned_user_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
-pub struct UpdateDiscussionPayload {
+pub struct UpdatePostPayload {
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
@@ -650,10 +594,14 @@ pub struct UpdateDiscussionPayload {
     pub pinned: Option<bool>,
     #[serde(default)]
     pub team_only: Option<bool>,
+    #[serde(default)]
+    pub public: Option<bool>,
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 #[derive(Deserialize)]
-pub struct CreateDiscussionReplyPayload {
+pub struct CreatePostReplyPayload {
     pub content: String,
     #[serde(default)]
     pub parent_id: Option<String>,
@@ -700,171 +648,11 @@ pub struct UpdateDiscussionEmojiPayload {
     pub char: Option<String>,
 }
 
-// ============== Unified Post Model ==============
-
-/// Unified post type that replaces Discussion, Suggestion, and Announcement.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Post {
-    pub id: String,
-    /// "discussion" | "suggestion" | "announcement"
-    pub kind: String,
-    pub title: String,
-    pub content: String,
-    pub author_id: String,
-    pub author_name: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-
-    // ── Common ──
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub pinned: bool,
-
-    // ── Discussion-specific ──
-    #[serde(default)]
-    pub team_only: bool,
-    #[serde(default)]
-    pub emoji: Option<String>,
-    #[serde(default)]
-    pub reactions: std::collections::HashMap<String, Vec<String>>,
-    #[serde(default)]
-    pub replies: Vec<PostReply>,
-    #[serde(default)]
-    pub mentioned_user_ids: Vec<String>,
-
-    // ── Suggestion-specific ──
-    /// "open" | "in_progress" | "resolved" | "closed" (empty string for non-suggestions)
-    #[serde(default)]
-    pub status: String,
-
-    // ── Announcement-specific ──
-    #[serde(default = "default_public")]
-    pub public: bool,
-}
-
-/// Unified reply type — replaces DiscussionReply and SuggestionReply.
-/// SuggestionReply is a subset (reactions/parent_id/reply_to left empty).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PostReply {
-    pub id: String,
-    pub author_id: String,
-    pub author_name: String,
-    pub content: String,
-    pub created_at: DateTime<Utc>,
-    #[serde(default)]
-    pub reactions: std::collections::HashMap<String, Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reply_to: Option<String>,
-}
-
-impl Post {
-    /// Create a new Post from a Discussion (legacy migration helper).
-    pub fn from_discussion(d: &Discussion) -> Self {
-        Post {
-            id: d.id.clone(),
-            kind: "discussion".to_string(),
-            title: d.title.clone(),
-            content: d.content.clone(),
-            author_id: d.author_id.clone(),
-            author_name: d.author_name.clone(),
-            created_at: d.created_at,
-            updated_at: d.updated_at,
-            tags: d.tags.clone(),
-            pinned: d.pinned,
-            team_only: d.team_only,
-            emoji: d.emoji.clone(),
-            reactions: d.reactions.clone(),
-            replies: d.replies.iter().map(|r| PostReply::from_discussion_reply(r)).collect(),
-            mentioned_user_ids: vec![],
-            status: String::new(),
-            public: true,
-        }
-    }
-
-    /// Create a new Post from a Suggestion (legacy migration helper).
-    pub fn from_suggestion(s: &Suggestion) -> Self {
-        Post {
-            id: s.id.clone(),
-            kind: "suggestion".to_string(),
-            title: s.title.clone(),
-            content: s.content.clone(),
-            author_id: s.author_id.clone(),
-            author_name: s.author_name.clone(),
-            created_at: s.created_at,
-            updated_at: s.updated_at,
-            tags: vec![],
-            pinned: false,
-            team_only: false,
-            emoji: None,
-            reactions: std::collections::HashMap::new(),
-            replies: s.replies.iter().map(|r| PostReply::from_suggestion_reply(r)).collect(),
-            mentioned_user_ids: vec![],
-            status: s.status.clone(),
-            public: true,
-        }
-    }
-
-    /// Create a new Post from an Announcement (legacy migration helper).
-    pub fn from_announcement(a: &Announcement) -> Self {
-        Post {
-            id: a.id.clone(),
-            kind: "announcement".to_string(),
-            title: a.title.clone(),
-            content: a.content.clone(),
-            author_id: a.author_id.clone(),
-            author_name: a.author_name.clone(),
-            created_at: a.created_at,
-            updated_at: a.updated_at,
-            tags: vec![],
-            pinned: a.pinned,
-            team_only: false,
-            emoji: None,
-            reactions: std::collections::HashMap::new(),
-            replies: vec![],
-            mentioned_user_ids: vec![],
-            status: String::new(),
-            public: a.public,
-        }
-    }
-}
-
-impl PostReply {
-    fn from_discussion_reply(r: &DiscussionReply) -> Self {
-        PostReply {
-            id: r.id.clone(),
-            author_id: r.author_id.clone(),
-            author_name: r.author_name.clone(),
-            content: r.content.clone(),
-            created_at: r.created_at,
-            reactions: r.reactions.clone(),
-            parent_id: r.parent_id.clone(),
-            reply_to: r.reply_to.clone(),
-        }
-    }
-
-    fn from_suggestion_reply(r: &SuggestionReply) -> Self {
-        PostReply {
-            id: r.id.clone(),
-            author_id: r.author_id.clone(),
-            author_name: r.author_name.clone(),
-            content: r.content.clone(),
-            created_at: r.created_at,
-            reactions: std::collections::HashMap::new(),
-            parent_id: None,
-            reply_to: None,
-        }
-    }
-}
-
 // ============== Community (unified post list) ==============
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PostListItem {
     pub id: String,
-    pub kind: String,                    // "discussion" | "suggestion" | "announcement"
     pub title: String,
     pub content_preview: String,
     pub author_id: String,
@@ -877,25 +665,20 @@ pub struct PostListItem {
     pub updated_at: DateTime<Utc>,
     #[serde(default)]
     pub pinned: bool,
-    // Suggestion-specific
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    // Announcement-specific
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub public: Option<bool>,
-    // Discussion-specific
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub team_only: Option<bool>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default = "default_public")]
+    pub public: bool,
+    #[serde(default)]
+    pub team_only: bool,
     #[serde(default)]
     pub reply_count: usize,
-    /// Original detail URL path (e.g. "/discussions/id", "/suggestions/id")
+    /// Detail URL path (e.g. "/post/id")
     pub detail_url: String,
 }
 
 #[derive(Deserialize)]
 pub struct CommunityQuery {
-    #[serde(default)]
-    pub kind: Option<String>,            // filter by kind: "discussion"|"suggestion"|"announcement"
     #[serde(default)]
     pub tags: Option<String>,            // comma-separated tag IDs
     #[serde(default)]

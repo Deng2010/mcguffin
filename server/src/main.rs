@@ -53,7 +53,7 @@ async fn main() {
     println!("Public URL: {}", state.site_url);
 
     let app = Router::new()
-        // SPA entry point — serve the built frontend at root
+        // SPA entry point
         .route("/", get(move || {
             let html = spa_index.clone();
             async move {
@@ -65,7 +65,7 @@ async fn main() {
                     .unwrap()
             }
         }))
-        // Static assets from the production build
+        // Static assets
         .nest_service("/assets", ServeDir::new("../web/dist/assets"))
         // Server-rendered pages (backward compatible)
         .route("/login", get(login_page))
@@ -108,46 +108,55 @@ async fn main() {
         .route("/api/contests/{contest_id}/status", post(set_contest_status))
         .route("/api/contests/{contest_id}/problems", get(get_contest_problems))
         .route("/api/contests/{contest_id}/problem-order", post(set_problem_order))
-        // Problem contest assignment
         .route("/api/problems/contest/{problem_id}", post(set_problem_contest))
         // Site info
         .route("/api/site/info", get(get_site_info))
         .route("/api/site/description", put(update_site_description))
         .route("/api/site/difficulties", get(get_difficulties))
-        // Suggestion routes
+        // Unified Post routes (primary)
+        .route("/api/posts", get(get_posts).post(create_post))
+        .route("/api/posts/{id}", get(get_post_detail).put(update_post).delete(delete_post))
+        .route("/api/posts/{id}/reply", post(reply_to_post))
+        .route("/api/posts/{id}/reply/{reply_id}", delete(delete_post_reply))
+        .route("/api/posts/{id}/react", post(react_to_post))
+        .route("/api/posts/{id}/reply/{reply_id}/react", post(react_to_reply))
+        // Community (unified) routes
+        .route("/api/community/posts", get(get_community_posts))
+        // Tags & emojis
+        .route("/api/posts/tags", get(get_discussion_tags))
+        .route("/api/posts/emojis", get(get_discussion_emojis))
+        // Legacy compat routes
+        .route("/api/discussions", get(get_posts).post(create_post))
+        .route("/api/discussions/{id}", get(get_post_detail).put(update_post).delete(delete_post))
+        .route("/api/discussions/{id}/reply", post(reply_to_post))
+        .route("/api/discussions/{id}/reply/{reply_id}", delete(delete_post_reply))
+        .route("/api/discussions/{id}/react", post(react_to_post))
+        .route("/api/discussions/{id}/reply/{reply_id}/react", post(react_to_reply))
+        .route("/api/discussions/tags", get(get_discussion_tags))
+        .route("/api/discussions/emojis", get(get_discussion_emojis))
+        // Legacy suggestion routes
         .route("/api/suggestions", get(get_suggestions).post(create_suggestion))
         .route("/api/suggestions/{id}", get(get_suggestion_detail).put(update_suggestion).delete(delete_suggestion))
         .route("/api/suggestions/{id}/reply", post(reply_to_suggestion))
         .route("/api/suggestions/{id}/reply/{reply_id}", delete(delete_suggestion_reply))
-        // Announcement routes
+        // Legacy announcement routes
         .route("/api/announcements", get(get_announcements).post(create_announcement))
         .route("/api/announcements/{id}", get(get_announcement_detail).put(update_announcement).delete(delete_announcement))
-        // Community (unified) routes
-        .route("/api/community/posts", get(get_community_posts))
         // Notification routes
         .route("/api/notifications", get(get_notifications))
         .route("/api/notifications/read/{id}", post(mark_notification_read))
         .route("/api/notifications/read-all", post(mark_all_notifications_read))
-        // Discussion routes
-        .route("/api/discussions", get(get_discussions).post(create_discussion))
-        .route("/api/discussions/{id}", get(get_discussion_detail).put(update_discussion).delete(delete_discussion))
-        .route("/api/discussions/{id}/reply", post(reply_to_discussion))
-        .route("/api/discussions/{id}/reply/{reply_id}", delete(delete_discussion_reply))
-        .route("/api/discussions/{id}/react", post(react_to_discussion))
-        .route("/api/discussions/{id}/reply/{reply_id}/react", post(react_to_reply))
-        .route("/api/discussions/tags", get(get_discussion_tags))
-        .route("/api/discussions/emojis", get(get_discussion_emojis))
-        // Admin config (superadmin only)
+        // Admin config
         .route("/api/admin/config", get(get_config).put(update_config))
         .route("/api/admin/restart", post(restart_service))
-        // Admin backup (superadmin only)
+        // Admin backup
         .route("/api/admin/backup", post(create_backup))
         .route("/api/admin/backups", get(list_backups))
         .route("/api/admin/backup/restore/{name}", post(restore_backup))
         .route("/api/admin/backup/{name}", delete(delete_backup))
-        // Admin showcase config (superadmin only)
+        // Admin showcase
         .route("/api/admin/showcase", get(get_showcase_config).put(update_showcase_config))
-        // Admin export (superadmin only)
+        // Admin export
         .route("/api/admin/export/data", get(export_data))
         .route("/api/admin/export/config", get(export_config))
         .layer(cors)
@@ -162,7 +171,11 @@ async fn main() {
     println!("  /              → SPA frontend (React app)");
     println!("  /login         → Server-rendered login page (legacy)");
     println!("  /portfolio     → Server-rendered portfolio page (legacy)");
-    println!("  /api/*         → API endpoints");
+    println!("  /api/posts     → Unified post CRUD");
+    println!("  /api/community/posts → Unified community feed");
+    println!("  /api/discussions/*   → Legacy compat routes");
+    println!("  /api/suggestions/*   → Legacy compat routes");
+    println!("  /api/announcements/* → Legacy compat routes");
 
     axum::serve(listener, app).await.unwrap();
 }

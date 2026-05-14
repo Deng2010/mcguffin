@@ -377,12 +377,13 @@ pub async fn update_config(
                 let mut tags = state.discussion_tags.write().await;
                 tags.clear();
                 for (name, fields) in &payload.discussion_tags {
-                    tags.insert(name.clone(), crate::types::DiscussionTag {
-                        id: name.clone(),
-                        name: name.clone(),
-                        color: fields.get("color").cloned().unwrap_or_else(|| "#888888".to_string()),
-                        description: fields.get("description").cloned().unwrap_or_default(),
-                    });
+            tags.insert(name.clone(), crate::types::DiscussionTag {
+                id: name.clone(),
+                name: name.clone(),
+                color: fields.get("color").cloned().unwrap_or_else(|| "#888888".to_string()),
+                description: fields.get("description").cloned().unwrap_or_default(),
+                admin_only: fields.get("admin_only").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false),
+            });
                 }
             }
             {

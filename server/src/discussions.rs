@@ -1,7 +1,8 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Query, State},
     Json,
 };
+use axum::extract::Path;
 use axum::http::HeaderMap;
 use chrono::Utc;
 use serde::Deserialize;
@@ -24,7 +25,6 @@ pub async fn truncate_existing_posts(state: &AppState) {
     let mut posts = state.posts.write().await;
     let mut changed = false;
     for p in posts.values_mut() {
-        if p.kind != "discussion" { continue; }
         if p.title.chars().count() > TITLE_MAX_LEN {
             p.title = p.title.chars().take(TITLE_MAX_LEN).collect::<String>();
             changed = true;
@@ -47,22 +47,20 @@ pub async fn truncate_existing_posts(state: &AppState) {
     }
 }
 
-// ============== List Discussions ==============
+// ============== List Posts ==============
 
 #[derive(Debug, Deserialize)]
-pub struct ListDiscussionsQuery {
-    /// Single tag filter (backward compatible)
+pub struct ListPostsQuery {
     #[serde(default)]
     pub tag: Option<String>,
-    /// Comma-separated multi-tag filter (overrides `tag` if both present)
     #[serde(default)]
     pub tags: Option<String>,
 }
 
-pub async fn get_discussions(
+pub async fn get_posts(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(query): Query<ListDiscussionsQuery>,
+    Query(query): Query<ListPostsQuery>,
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
@@ -73,7 +71,6 @@ pub async fn get_discussions(
     let users = state.users.read().await;
     let all_tags = state.discussion_tags.read().await;
     let mut result: Vec<&Post> = posts.values().filter(|p| {
-        if p.kind != "discussion" { return false; }
         if p.team_only && !is_team { return false; }
         if let Some(ref tag_ids) = query.tags {
             if !tag_ids.is_empty() {
@@ -124,6 +121,8 @@ pub async fn get_discussions(
             "updated_at": p.updated_at,
             "pinned": p.pinned,
             "team_only": p.team_only,
+            "public": p.public,
+            "status": p.status,
         })
     }).collect();
     drop(all_tags);
@@ -131,12 +130,12 @@ pub async fn get_discussions(
     Json(serde_json::json!(list))
 }
 
-// ============== Create Discussion ==============
+// ============== Create Post ==============
 
-pub async fn create_discussion(
+pub async fn create_post(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(payload): Json<CreateDiscussionPayload>,
+    Json(payload): Json<CreatePostPayload>,
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
@@ -154,25 +153,37 @@ pub async fn create_discussion(
     if payload.content.chars().count() > CONTENT_MAX_LEN {
         return Json(serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}));
     }
+
     let now = Utc::now();
     let is_admin_user = is_admin(&state, &user_id).await;
     let display_name = user.display_name;
+
+    // Validate admin-only tags
+    let all_tags = state.discussion_tags.read().await;
+    for tag_id in &payload.tags {
+        if let Some(tag) = all_tags.get(tag_id) {
+            if tag.admin_only && !is_admin_user {
+                return Json(serde_json::json!({"success": false, "message": format!("标签「{}」仅管理员可用", tag.name)}));
+            }
+        }
+    }
+    drop(all_tags);
+
     let post = Post {
         id: Uuid::new_v4().to_string(),
-        kind: "discussion".to_string(),
         title: payload.title.trim().to_string(),
         content: payload.content,
         author_id: user_id.clone(),
         author_name: display_name.clone(),
-        tags: payload.tags,
+        tags: payload.tags.clone(),
         pinned: payload.pinned.unwrap_or(false) && is_admin_user,
         team_only: payload.team_only.unwrap_or(false),
+        public: payload.public.unwrap_or(true),
         emoji: payload.emoji,
         reactions: std::collections::HashMap::new(),
         replies: vec![],
         mentioned_user_ids: payload.mentioned_user_ids.clone(),
         status: String::new(),
-        public: true,
         created_at: now,
         updated_at: now,
     };
@@ -186,19 +197,19 @@ pub async fn create_discussion(
             create_notification(
                 &state,
                 uid,
-                "在讨论中提到了你",
-                &format!("{} 在讨论「{}」中提到了你", display_name, payload.title.trim()),
-                Some(&format!("/discussions/{}", post_id)),
+                "在帖子中提到了你",
+                &format!("{} 在帖子「{}」中提到了你", display_name, payload.title.trim()),
+                Some(&format!("/post/{}", post_id)),
             ).await;
         }
     }
 
-    Json(serde_json::json!({"success": true, "message": "讨论已发布"}))
+    Json(serde_json::json!({"success": true, "message": "帖子已发布", "id": post_id}))
 }
 
-// ============== Get Discussion Detail ==============
+// ============== Get Post Detail ==============
 
-pub async fn get_discussion_detail(
+pub async fn get_post_detail(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
@@ -209,9 +220,6 @@ pub async fn get_discussion_detail(
     };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
-        if p.kind != "discussion" {
-            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
-        }
         if p.team_only && !is_team_member(&state, &user_id).await {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
@@ -243,6 +251,7 @@ pub async fn get_discussion_detail(
                 "id": t.id,
                 "name": t.name,
                 "color": t.color,
+                "admin_only": t.admin_only,
             }))
         }).collect();
         drop(all_tags);
@@ -263,18 +272,20 @@ pub async fn get_discussion_detail(
             "updated_at": p.updated_at,
             "pinned": p.pinned,
             "team_only": p.team_only,
+            "public": p.public,
+            "status": p.status,
         }));
     }
-    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+    Json(serde_json::json!({"success": false, "message": "帖子不存在"}))
 }
 
-// ============== Update Discussion ==============
+// ============== Update Post ==============
 
-pub async fn update_discussion(
+pub async fn update_post(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-    Json(payload): Json<UpdateDiscussionPayload>,
+    Json(payload): Json<UpdatePostPayload>,
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
@@ -283,9 +294,6 @@ pub async fn update_discussion(
     let is_admin_user = is_admin(&state, &user_id).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
-        if p.kind != "discussion" {
-            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
-        }
         if !is_admin_user && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权修改"}));
         }
@@ -306,7 +314,16 @@ pub async fn update_discussion(
             }
         }
         if let Some(ref tags) = payload.tags {
-            p.tags = tags.clone();
+            // Validate admin-only tags
+            if is_admin_user {
+                p.tags = tags.clone();
+            } else {
+                // Non-admin: only keep tags they're allowed to set
+                let all_tags = state.discussion_tags.read().await;
+                p.tags = tags.iter().filter(|tid| {
+                    all_tags.get(*tid).map(|t| !t.admin_only).unwrap_or(true)
+                }).cloned().collect();
+            }
         }
         if let Some(ref emoji) = payload.emoji {
             p.emoji = emoji.clone();
@@ -321,17 +338,54 @@ pub async fn update_discussion(
                 p.team_only = team_only;
             }
         }
+        if let Some(is_public) = payload.public {
+            if is_admin_user {
+                p.public = is_public;
+            }
+        }
+        if let Some(ref status) = payload.status {
+            if is_admin_user {
+                let valid = ["open", "in_progress", "resolved", "closed"];
+                if valid.contains(&status.as_str()) {
+                    let old_status = p.status.clone();
+                    let author_id = p.author_id.clone();
+                    let post_title = p.title.clone();
+                    p.status = status.clone();
+
+                    // Notify post author on resolve/close
+                    if status == "resolved" && author_id != user_id {
+                        create_notification(
+                            &state,
+                            &author_id,
+                            "帖子状态已更新",
+                            &format!("你的帖子「{}」已被标记为已解决", post_title),
+                            Some(&format!("/post/{}", id)),
+                        ).await;
+                    } else if status == "closed" && author_id != user_id && old_status != "closed" {
+                        create_notification(
+                            &state,
+                            &author_id,
+                            "帖子已关闭",
+                            &format!("你的帖子「{}」已被关闭", post_title),
+                            Some(&format!("/post/{}", id)),
+                        ).await;
+                    }
+                } else {
+                    return Json(serde_json::json!({"success": false, "message": "无效状态"}));
+                }
+            }
+        }
         p.updated_at = Utc::now();
         drop(posts);
         state.save().await;
-        return Json(serde_json::json!({"success": true, "message": "讨论已更新"}));
+        return Json(serde_json::json!({"success": true, "message": "帖子已更新"}));
     }
-    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+    Json(serde_json::json!({"success": false, "message": "帖子不存在"}))
 }
 
-// ============== Delete Discussion ==============
+// ============== Delete Post ==============
 
-pub async fn delete_discussion(
+pub async fn delete_post(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
@@ -343,27 +397,24 @@ pub async fn delete_discussion(
     let is_admin_user = is_admin(&state, &user_id).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get(&id) {
-        if p.kind != "discussion" {
-            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
-        }
         if !is_admin_user && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权删除"}));
         }
         posts.remove(&id);
         drop(posts);
         state.save().await;
-        return Json(serde_json::json!({"success": true, "message": "讨论已删除"}));
+        return Json(serde_json::json!({"success": true, "message": "帖子已删除"}));
     }
-    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+    Json(serde_json::json!({"success": false, "message": "帖子不存在"}))
 }
 
-// ============== Reply to Discussion ==============
+// ============== Reply to Post ==============
 
-pub async fn reply_to_discussion(
+pub async fn reply_to_post(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-    Json(payload): Json<CreateDiscussionReplyPayload>,
+    Json(payload): Json<CreatePostReplyPayload>,
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
@@ -377,9 +428,6 @@ pub async fn reply_to_discussion(
     }
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
-        if p.kind != "discussion" {
-            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
-        }
         let display_name = user.display_name;
         let reply = PostReply {
             id: Uuid::new_v4().to_string(),
@@ -393,10 +441,22 @@ pub async fn reply_to_discussion(
         };
         p.replies.push(reply);
         p.updated_at = Utc::now();
-        let discussion_title = p.title.clone();
+        let post_title = p.title.clone();
+        let post_author_id = p.author_id.clone();
         let mentioned = payload.mentioned_user_ids.clone();
         drop(posts);
         state.save().await;
+
+        // Notify post author when someone replies
+        if post_author_id != user_id {
+            create_notification(
+                &state,
+                &post_author_id,
+                "帖子有新回复",
+                &format!("你的帖子「{}」收到了新回复", post_title),
+                Some(&format!("/post/{}", id)),
+            ).await;
+        }
 
         // Create notifications for @mentioned users
         for uid in &mentioned {
@@ -405,23 +465,23 @@ pub async fn reply_to_discussion(
                     &state,
                     uid,
                     "在回复中提到了你",
-                    &format!("{} 在讨论「{}」的回复中提到了你", display_name, discussion_title),
-                    Some(&format!("/discussions/{}", id)),
+                    &format!("{} 在帖子「{}」的回复中提到了你", display_name, post_title),
+                    Some(&format!("/post/{}", id)),
                 ).await;
             }
         }
 
         return Json(serde_json::json!({"success": true, "message": "回复成功"}));
     }
-    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+    Json(serde_json::json!({"success": false, "message": "帖子不存在"}))
 }
 
 // ============== Delete Reply ==============
 
-pub async fn delete_discussion_reply(
+pub async fn delete_post_reply(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((discussion_id, reply_id)): Path<(String, String)>,
+    Path((post_id, reply_id)): Path<(String, String)>,
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
@@ -429,10 +489,7 @@ pub async fn delete_discussion_reply(
     };
     let is_admin_user = is_admin(&state, &user_id).await;
     let mut posts = state.posts.write().await;
-    if let Some(p) = posts.get_mut(&discussion_id) {
-        if p.kind != "discussion" {
-            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
-        }
+    if let Some(p) = posts.get_mut(&post_id) {
         if let Some(reply) = p.replies.iter().find(|r| r.id == reply_id) {
             if !is_admin_user && reply.author_id != user_id {
                 return Json(serde_json::json!({"success": false, "message": "无权删除"}));
@@ -447,7 +504,7 @@ pub async fn delete_discussion_reply(
         state.save().await;
         return Json(serde_json::json!({"success": true, "message": "回复已删除"}));
     }
-    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+    Json(serde_json::json!({"success": false, "message": "帖子不存在"}))
 }
 
 // ============== Tags (read-only — managed via config) ==============
@@ -470,8 +527,8 @@ pub async fn get_discussion_emojis(
 
 // ============== Reactions ==============
 
-/// Toggle a reaction on a discussion.
-pub async fn react_to_discussion(
+/// Toggle a reaction on a post.
+pub async fn react_to_post(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
@@ -486,9 +543,6 @@ pub async fn react_to_discussion(
     }
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
-        if p.kind != "discussion" {
-            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
-        }
         let emoji = payload.emoji.trim().to_string();
         let users_set = p.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
         if let Some(pos) = users_set.iter().position(|u| u == &user_id) {
@@ -497,21 +551,20 @@ pub async fn react_to_discussion(
                 p.reactions.remove(&emoji);
             }
         } else {
-            users_set.push(user_id.clone());
+            users_set.push(user_id);
         }
-        p.updated_at = Utc::now();
         drop(posts);
         state.save().await;
         return Json(serde_json::json!({"success": true}));
     }
-    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+    Json(serde_json::json!({"success": false, "message": "帖子不存在"}))
 }
 
 /// Toggle a reaction on a reply.
 pub async fn react_to_reply(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Path((discussion_id, reply_id)): Path<(String, String)>,
+    Path((post_id, reply_id)): Path<(String, String)>,
     Json(payload): Json<ReactPayload>,
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
@@ -522,12 +575,9 @@ pub async fn react_to_reply(
         return Json(serde_json::json!({"success": false, "message": "表情不能为空"}));
     }
     let mut posts = state.posts.write().await;
-    if let Some(p) = posts.get_mut(&discussion_id) {
-        if p.kind != "discussion" {
-            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
-        }
+    if let Some(p) = posts.get_mut(&post_id) {
+        let emoji = payload.emoji.trim().to_string();
         if let Some(reply) = p.replies.iter_mut().find(|r| r.id == reply_id) {
-            let emoji = payload.emoji.trim().to_string();
             let users_set = reply.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
             if let Some(pos) = users_set.iter().position(|u| u == &user_id) {
                 users_set.remove(pos);
@@ -535,49 +585,49 @@ pub async fn react_to_reply(
                     reply.reactions.remove(&emoji);
                 }
             } else {
-                users_set.push(user_id.clone());
+                users_set.push(user_id);
             }
-            p.updated_at = Utc::now();
             drop(posts);
             state.save().await;
             return Json(serde_json::json!({"success": true}));
-        } else {
-            return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
         }
+        return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
     }
-    Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
+    Json(serde_json::json!({"success": false, "message": "帖子不存在"}))
 }
 
-/// Remove reactions whose emoji character is no longer in discussion_emojis.
-/// Called at server startup to clean up orphaned reactions.
+// ============== Cleanup Orphan Reactions ==============
+
+/// Remove reactions that reference emoji IDs that no longer exist in the config.
 pub async fn cleanup_orphan_reactions(state: &AppState) {
-    let valid_emojis: std::collections::HashSet<String> = {
-        let emojis = state.discussion_emojis.read().await;
-        emojis.values().map(|e| e.char.clone()).collect()
-    };
+    let emojis = state.discussion_emojis.read().await;
+    let valid_emoji_ids: std::collections::HashSet<String> = emojis.keys().cloned().collect();
+    drop(emojis);
 
     let mut posts = state.posts.write().await;
     let mut changed = false;
-
     for p in posts.values_mut() {
-        if p.kind != "discussion" { continue; }
-        let before = p.reactions.len();
-        p.reactions.retain(|emoji, _| valid_emojis.contains(emoji));
-        if p.reactions.len() != before {
-            changed = true;
-        }
-        for r in p.replies.iter_mut() {
-            let before_reply = r.reactions.len();
-            r.reactions.retain(|emoji, _| valid_emojis.contains(emoji));
-            if r.reactions.len() != before_reply {
+        // Clean up post reactions
+        let old_keys: Vec<String> = p.reactions.keys().cloned().collect();
+        for k in old_keys {
+            if !valid_emoji_ids.contains(&k) {
+                p.reactions.remove(&k);
                 changed = true;
+            }
+        }
+        // Clean up reply reactions
+        for r in p.replies.iter_mut() {
+            let old_keys: Vec<String> = r.reactions.keys().cloned().collect();
+            for k in old_keys {
+                if !valid_emoji_ids.contains(&k) {
+                    r.reactions.remove(&k);
+                    changed = true;
+                }
             }
         }
     }
     drop(posts);
-
     if changed {
-        tracing::info!("Cleaned up orphaned discussion reactions");
-        state.save().await;
+        tracing::info!("Cleaned up orphan reactions");
     }
 }

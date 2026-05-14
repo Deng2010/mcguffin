@@ -6,7 +6,7 @@ use axum::http::HeaderMap;
 
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{is_admin, is_team_member, resolve_user};
+use crate::utils::{is_team_member, resolve_user};
 
 // ============== Unified Community Feed ==============
 
@@ -16,8 +16,6 @@ pub async fn get_community_posts(
     Query(query): Query<CommunityQuery>,
 ) -> Json<serde_json::Value> {
     let auth_info = resolve_user(&state, &headers).await;
-    let user_id = auth_info.as_ref().map(|(id, _)| id.clone()).unwrap_or_default();
-    let is_admin_user = if let Some((ref uid, _)) = auth_info { is_admin(&state, uid).await } else { false };
     let is_team = if let Some((ref uid, _)) = auth_info { is_team_member(&state, uid).await } else { false };
 
     // Parse tag filter
@@ -39,28 +37,11 @@ pub async fn get_community_posts(
     let mut result: Vec<PostListItem> = Vec::new();
 
     for p in posts.values() {
-        // ── Visibility per kind ──
-        match p.kind.as_str() {
-            "discussion" => {
-                if p.team_only && !is_team { continue; }
-            }
-            "suggestion" => {
-                if !is_admin_user && !is_team && p.author_id != user_id { continue; }
-            }
-            "announcement" => {
-                if !is_admin_user && !is_team && !p.public { continue; }
-            }
-            _ => continue,
-        }
+        // ── Visibility ──
+        if p.team_only && !is_team { continue; }
 
-        // ── Kind filter ──
-        if let Some(ref kind) = query.kind {
-            if *kind != p.kind { continue; }
-        }
-
-        // ── Tag filter (only discussions have tags) ──
+        // ── Tag filter ──
         if !filter_tags.is_empty() {
-            if p.kind != "discussion" { continue; }
             if !p.tags.iter().any(|t| filter_tags.contains(t)) { continue; }
         }
 
@@ -71,15 +52,8 @@ pub async fn get_community_posts(
 
         let content_preview = p.content.chars().take(200).collect::<String>();
 
-        let detail_url = match p.kind.as_str() {
-            "discussion" => format!("/discussions/{}", p.id),
-            "suggestion" => format!("/suggestions/{}", p.id),
-            _ => format!("/announcements/{}", p.id),
-        };
-
         result.push(PostListItem {
             id: p.id.clone(),
-            kind: p.kind.clone(),
             title: p.title.clone(),
             content_preview,
             author_id: p.author_id.clone(),
@@ -89,11 +63,11 @@ pub async fn get_community_posts(
             created_at: p.created_at,
             updated_at: p.updated_at,
             pinned: p.pinned,
-            status: if p.kind == "suggestion" { Some(p.status.clone()) } else { None },
-            public: if p.kind == "announcement" { Some(p.public) } else { None },
-            team_only: if p.kind == "discussion" { Some(p.team_only) } else { None },
+            status: p.status.clone(),
+            public: p.public,
+            team_only: p.team_only,
             reply_count: p.replies.len(),
-            detail_url,
+            detail_url: format!("/post/{}", p.id),
         });
     }
 

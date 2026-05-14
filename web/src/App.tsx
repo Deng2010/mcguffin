@@ -22,6 +22,7 @@ import SuggestionDetailPage from './pages/SuggestionDetailPage'
 import AnnouncementDetailPage from './pages/AnnouncementDetailPage'
 import AnnouncementsPage from './pages/AnnouncementsPage'
 import CommunityPage from './pages/CommunityPage'
+import PostDetailPage from './pages/PostDetailPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 function Footer() {
@@ -93,6 +94,10 @@ function AppContent() {
             <Route
               path="/community"
               element={<CommunityPage />}
+            />
+            <Route
+              path="/post/:id"
+              element={<PostDetailPage />}
             />
             <Route
               path="/profile"

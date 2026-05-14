@@ -1,4 +1,4 @@
-use crate::types::{Announcement, Contest, Discussion, DiscussionEmoji, DiscussionTag, JoinRequest, Notification, Post, Problem, SessionEntry, Suggestion, TeamMember, User, AppConfig};
+use crate::types::{Contest, DiscussionEmoji, DiscussionTag, JoinRequest, Notification, Post, Problem, SessionEntry, TeamMember, User, AppConfig};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
@@ -39,42 +39,177 @@ struct SavedData {
     #[serde(default)]
     posts: HashMap<String, Post>,
 
-    // ── Legacy fields (kept for backward-compat deserialization ──
+    // ── Legacy fields (kept for backward-compat deserialization) ──
     // These are read on load IF posts is empty, then migrated.
     #[serde(default)]
-    suggestions: HashMap<String, Suggestion>,
+    suggestions: HashMap<String, serde_json::Value>,
     #[serde(default)]
-    announcements: HashMap<String, Announcement>,
+    announcements: HashMap<String, serde_json::Value>,
     #[serde(default)]
-    discussions: HashMap<String, Discussion>,
+    discussions: HashMap<String, serde_json::Value>,
 }
 
-/// Migrate legacy suggestion/announcement/discussion data into unified posts.
+/// Migrate legacy data into unified posts.
+/// Handles both old Post format (with `kind` field) and legacy maps.
 fn migrate_legacy_data(
     posts: &mut HashMap<String, Post>,
-    suggestions: &HashMap<String, Suggestion>,
-    announcements: &HashMap<String, Announcement>,
-    discussions: &HashMap<String, Discussion>,
+    suggestions: &HashMap<String, serde_json::Value>,
+    announcements: &HashMap<String, serde_json::Value>,
+    discussions: &HashMap<String, serde_json::Value>,
 ) -> bool {
     let mut migrated = false;
-    for (id, s) in suggestions {
+
+    // Helper to convert a legacy value to a Post
+    let extract = |v: &serde_json::Value, field: &str| -> String {
+        v.get(field).and_then(|v| v.as_str()).unwrap_or("").to_string()
+    };
+    let extract_bool = |v: &serde_json::Value, field: &str, default: bool| -> bool {
+        v.get(field).and_then(|v| v.as_bool()).unwrap_or(default)
+    };
+
+    for (id, v) in suggestions {
         if !posts.contains_key(id) {
-            posts.insert(id.clone(), Post::from_suggestion(s));
+            let now = Utc::now();
+            let created_at = v.get("created_at").and_then(|c| {
+                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
+            }).unwrap_or(now);
+            let updated_at = v.get("updated_at").and_then(|c| {
+                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
+            }).unwrap_or(now);
+            // Convert legacy SuggestionReply if any
+            let replies: Vec<crate::types::PostReply> = v.get("replies").and_then(|r| r.as_array()).map(|arr| {
+                arr.iter().map(|rv| {
+                    let aid = extract(rv, "author_id");
+                    let an = extract(rv, "author_name");
+                    crate::types::PostReply {
+                        id: extract(rv, "id"),
+                        author_id: aid.clone(),
+                        author_name: an,
+                        content: extract(rv, "content"),
+                        created_at: rv.get("created_at").and_then(|c| {
+                            c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
+                        }).unwrap_or(now),
+                        reactions: HashMap::new(),
+                        parent_id: None,
+                        reply_to: None,
+                    }
+                }).collect()
+            }).unwrap_or_default();
+
+            posts.insert(id.clone(), Post {
+                id: id.clone(),
+                title: extract(v, "title"),
+                content: extract(v, "content"),
+                author_id: extract(v, "author_id"),
+                author_name: extract(v, "author_name"),
+                tags: vec!["建议".to_string()],
+                pinned: false,
+                team_only: false,
+                public: true,
+                emoji: None,
+                reactions: HashMap::new(),
+                replies,
+                mentioned_user_ids: vec![],
+                status: extract(v, "status"),
+                created_at,
+                updated_at,
+            });
             migrated = true;
         }
     }
-    for (id, a) in announcements {
+
+    for (id, v) in announcements {
         if !posts.contains_key(id) {
-            posts.insert(id.clone(), Post::from_announcement(a));
+            let now = Utc::now();
+            let created_at = v.get("created_at").and_then(|c| {
+                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
+            }).unwrap_or(now);
+            let updated_at = v.get("updated_at").and_then(|c| {
+                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
+            }).unwrap_or(now);
+            posts.insert(id.clone(), Post {
+                id: id.clone(),
+                title: extract(v, "title"),
+                content: extract(v, "content"),
+                author_id: extract(v, "author_id"),
+                author_name: extract(v, "author_name"),
+                tags: vec!["公告".to_string()],
+                pinned: extract_bool(v, "pinned", false),
+                team_only: false,
+                public: extract_bool(v, "public", true),
+                emoji: None,
+                reactions: HashMap::new(),
+                replies: vec![],
+                mentioned_user_ids: vec![],
+                status: String::new(),
+                created_at,
+                updated_at,
+            });
             migrated = true;
         }
     }
-    for (id, d) in discussions {
+
+    for (id, v) in discussions {
         if !posts.contains_key(id) {
-            posts.insert(id.clone(), Post::from_discussion(d));
+            let now = Utc::now();
+            let created_at = v.get("created_at").and_then(|c| {
+                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
+            }).unwrap_or(now);
+            let updated_at = v.get("updated_at").and_then(|c| {
+                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
+            }).unwrap_or(now);
+            let tags: Vec<String> = v.get("tags").and_then(|t| t.as_array()).map(|arr| {
+                arr.iter().filter_map(|t| t.as_str().map(|s| s.to_string())).collect()
+            }).unwrap_or_default();
+            let emoji: Option<String> = v.get("emoji").and_then(|e| e.as_str().map(|s| s.to_string()));
+            let team_only = extract_bool(v, "team_only", false);
+            let pinned = extract_bool(v, "pinned", false);
+            let reactions: HashMap<String, Vec<String>> = v.get("reactions").and_then(|r| {
+                serde_json::from_value(r.clone()).ok()
+            }).unwrap_or_default();
+            let replies: Vec<crate::types::PostReply> = v.get("replies").and_then(|r| r.as_array()).map(|arr| {
+                arr.iter().map(|rv| {
+                    let aid = extract(rv, "author_id");
+                    let an = extract(rv, "author_name");
+                    let reactions: HashMap<String, Vec<String>> = rv.get("reactions").and_then(|r| {
+                        serde_json::from_value(r.clone()).ok()
+                    }).unwrap_or_default();
+                    crate::types::PostReply {
+                        id: extract(rv, "id"),
+                        author_id: aid.clone(),
+                        author_name: an,
+                        content: extract(rv, "content"),
+                        created_at: rv.get("created_at").and_then(|c| {
+                            c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
+                        }).unwrap_or(now),
+                        reactions,
+                        parent_id: rv.get("parent_id").and_then(|p| p.as_str().map(|s| s.to_string())),
+                        reply_to: rv.get("reply_to").and_then(|p| p.as_str().map(|s| s.to_string())),
+                    }
+                }).collect()
+            }).unwrap_or_default();
+            posts.insert(id.clone(), Post {
+                id: id.clone(),
+                title: extract(v, "title"),
+                content: extract(v, "content"),
+                author_id: extract(v, "author_id"),
+                author_name: extract(v, "author_name"),
+                tags,
+                pinned,
+                team_only,
+                public: true,
+                emoji,
+                reactions,
+                replies,
+                mentioned_user_ids: vec![],
+                status: String::new(),
+                created_at,
+                updated_at,
+            });
             migrated = true;
         }
     }
+
     migrated
 }
 
@@ -371,6 +506,7 @@ fn load_discussion_tags(config: &AppConfig) -> std::collections::HashMap<String,
             name: name.clone(),
             color,
             description,
+            admin_only: fields.get("admin_only").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false),
         });
     }
     map

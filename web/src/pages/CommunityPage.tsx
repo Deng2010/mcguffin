@@ -10,7 +10,6 @@ import type { DiscussionTag } from '../types'
 
 interface PostListItem {
   id: string
-  kind: 'discussion' | 'suggestion' | 'announcement'
   title: string
   content_preview: string
   author_id: string
@@ -20,26 +19,11 @@ interface PostListItem {
   created_at: string
   updated_at: string
   pinned: boolean
-  status?: string | null
-  public?: boolean | null
-  team_only?: boolean | null
+  status: string
+  public: boolean
+  team_only: boolean
   reply_count: number
   detail_url: string
-}
-
-type TabKind = 'all' | 'announcement' | 'discussion' | 'suggestion'
-type CreateKind = 'discussion' | 'suggestion' | 'announcement' | null
-
-const KIND_LABEL: Record<string, string> = {
-  announcement: '公告',
-  discussion: '讨论',
-  suggestion: '建议',
-}
-
-const KIND_LEFT_COLOR: Record<string, string> = {
-  announcement: 'border-l-red-400',
-  discussion: 'border-l-blue-400',
-  suggestion: 'border-l-purple-400',
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -56,12 +40,6 @@ const STATUS_COLOR: Record<string, string> = {
   closed: 'text-gray-400 dark:text-gray-500',
 }
 
-const CREATE_OPTIONS: { kind: CreateKind; label: string; desc: string; color: string }[] = [
-  { kind: 'discussion', label: '发起讨论', desc: '公开讨论或团队内部讨论', color: 'border-blue-300 hover:bg-blue-50 dark:border-blue-800 dark:hover:bg-blue-900/20' },
-  { kind: 'suggestion', label: '提交建议', desc: '向团队提出建议或反馈', color: 'border-purple-300 hover:bg-purple-50 dark:border-purple-800 dark:hover:bg-purple-900/20' },
-  { kind: 'announcement', label: '发布公告', desc: '管理员发布公告', color: 'border-red-300 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20' },
-]
-
 // ============== Component ==============
 
 export default function CommunityPage() {
@@ -70,11 +48,10 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState<PostListItem[]>([])
   const [allTags, setAllTags] = useState<DiscussionTag[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabKind | string>('all')
+  const [activeTab, setActiveTab] = useState<string>('all')
 
   // ── Create post ──
-  const [showCreatePicker, setShowCreatePicker] = useState(false)
-  const [createKind, setCreateKind] = useState<CreateKind>(null)
+  const [showCreateForm, setShowCreateForm] = useState(false)
   const [createTitle, setCreateTitle] = useState('')
   const [createContent, setCreateContent] = useState('')
   const [createPinned, setCreatePinned] = useState(false)
@@ -95,66 +72,56 @@ export default function CommunityPage() {
   useEffect(() => { loadPosts() }, [])
 
   useEffect(() => {
-    apiFetch<DiscussionTag[]>('/discussions/tags')
+    apiFetch<DiscussionTag[]>('/posts/tags')
       .then(setAllTags)
       .catch(() => {})
   }, [])
 
   const filteredPosts = posts.filter(p => {
     if (activeTab === 'all') return true
-    if (activeTab === 'announcement') return p.kind === 'announcement'
-    if (activeTab === 'discussion') return p.kind === 'discussion'
-    if (activeTab === 'suggestion') return p.kind === 'suggestion'
-    return p.kind === 'discussion' && p.tags.includes(activeTab)
+    return p.tags.includes(activeTab)
   })
 
   const counts: Record<string, number> = {
     all: posts.length,
-    announcement: posts.filter(p => p.kind === 'announcement').length,
-    discussion: posts.filter(p => p.kind === 'discussion').length,
-    suggestion: posts.filter(p => p.kind === 'suggestion').length,
   }
   allTags.forEach(t => {
-    counts[t.id] = posts.filter(p => p.kind === 'discussion' && p.tags.includes(t.id)).length
+    // Only count tags that are visible to the user
+    if (t.admin_only && !isAdmin) return
+    counts[t.id] = posts.filter(p => p.tags.includes(t.id)).length
   })
 
+  const visibleTags = allTags.filter(t => !t.admin_only || isAdmin)
+
   const goToDetail = (p: PostListItem) => {
-    if (p.kind === 'discussion') navigate(`/discussions/${p.id}`)
-    else if (p.kind === 'suggestion') navigate(`/suggestions/${p.id}`)
-    else navigate(`/announcements/${p.id}`)
+    navigate(`/post/${p.id}`)
   }
 
   const resetCreateForm = () => {
-    setCreateKind(null)
     setCreateTitle('')
     setCreateContent('')
     setCreatePinned(false)
     setCreatePublic(true)
     setCreateTeamOnly(false)
     setCreateTags([])
-    setShowCreatePicker(false)
+    setShowCreateForm(false)
   }
 
   const handleCreate = async () => {
-    if (!createTitle.trim() || !createKind) return
+    if (!createTitle.trim()) return
     setSubmitting(true)
     try {
-      if (createKind === 'discussion') {
-        await apiFetch('/discussions', {
-          method: 'POST',
-          body: JSON.stringify({ title: createTitle.trim(), content: createContent, tags: createTags, pinned: createPinned, team_only: createTeamOnly }),
-        })
-      } else if (createKind === 'suggestion') {
-        await apiFetch('/suggestions', {
-          method: 'POST',
-          body: JSON.stringify({ title: createTitle.trim(), content: createContent }),
-        })
-      } else if (createKind === 'announcement') {
-        await apiFetch('/announcements', {
-          method: 'POST',
-          body: JSON.stringify({ title: createTitle.trim(), content: createContent, pinned: createPinned, public: createPublic }),
-        })
-      }
+      await apiFetch('/posts', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: createTitle.trim(),
+          content: createContent,
+          tags: createTags,
+          pinned: createPinned,
+          team_only: createTeamOnly,
+          public: createPublic,
+        }),
+      })
       resetCreateForm()
       loadPosts()
     } catch (err) { alert(`发布失败: ${err}`) }
@@ -170,80 +137,57 @@ export default function CommunityPage() {
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">社区</h1>
         <div className="flex items-center gap-3">
           {isAuthenticated && (
-            <div className="relative">
-              <button
-                onClick={() => setShowCreatePicker(!showCreatePicker)}
-                className="px-3 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
-              >
-                发帖
-              </button>
-              {showCreatePicker && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow-lg z-10">
-                  {CREATE_OPTIONS.filter(o => o.kind !== 'announcement' || isAdmin).map(opt => (
-                    <button
-                      key={opt.kind}
-                      onClick={() => { setCreateKind(opt.kind); setShowCreatePicker(false) }}
-                      className={`w-full text-left px-4 py-3 text-sm border-b border-gray-200 dark:border-gray-700 last:border-0 ${opt.color} dark:text-gray-200`}
-                    >
-                      <div className="font-medium">{opt.label}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{opt.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              className={`px-3 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 ${showCreateForm ? 'opacity-70' : ''}`}
+            >
+              {showCreateForm ? '取消' : '发帖'}
+            </button>
           )}
           <span className="text-xs text-gray-400 dark:text-gray-500">{posts.length} 条帖子</span>
         </div>
       </div>
 
       {/* ── Create form ── */}
-      {createKind && (
+      {showCreateForm && (
         <div className="mb-6 p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">发布{KIND_LABEL[createKind]}</h2>
-            <button onClick={resetCreateForm} className="text-xs text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300">取消</button>
+            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">发布帖子</h2>
           </div>
           <div className="mb-3">
-            <input type="text" placeholder={`${KIND_LABEL[createKind]}标题`} value={createTitle} onChange={e => setCreateTitle(e.target.value)}
+            <input type="text" placeholder="标题" value={createTitle} onChange={e => setCreateTitle(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 text-sm focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100" />
           </div>
           <div className="mb-3">
-            <MarkdownEditor value={createContent} onChange={setCreateContent} placeholder={`${KIND_LABEL[createKind]}内容（支持 Markdown）`} rows={12} />
+            <MarkdownEditor value={createContent} onChange={setCreateContent} placeholder="内容（支持 Markdown）" rows={12} />
           </div>
-          {createKind === 'discussion' && (
-            <div className="mb-3 flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
-                <input type="checkbox" checked={createTeamOnly} onChange={e => setCreateTeamOnly(e.target.checked)} className="w-4 h-4" />仅团队可见
-              </label>
-              {isAdmin && (
+          <div className="mb-3 flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+              <input type="checkbox" checked={createTeamOnly} onChange={e => setCreateTeamOnly(e.target.checked)} className="w-4 h-4" />仅团队可见
+            </label>
+            {isAdmin && (
+              <>
                 <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
                   <input type="checkbox" checked={createPinned} onChange={e => setCreatePinned(e.target.checked)} className="w-4 h-4" />置顶
                 </label>
-              )}
-              {allTags.length > 0 && (
-                <div className="flex items-center gap-1">
-                  <span className="text-xs text-gray-400 dark:text-gray-500">标签：</span>
-                  {allTags.map(tag => (
-                    <button key={tag.id} onClick={() => setCreateTags(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
-                      className={`text-xs px-2 py-0.5 inline-flex items-center gap-1 border ${createTags.includes(tag.id) ? 'border-gray-600 dark:border-gray-400 bg-gray-100 dark:bg-gray-700' : 'border-gray-300 dark:border-gray-700'}`}>
-                      <span className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: tag.color }} />{tag.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {createKind === 'announcement' && (
-            <div className="mb-3 flex flex-wrap gap-4">
-              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
-                <input type="checkbox" checked={createPinned} onChange={e => setCreatePinned(e.target.checked)} className="w-4 h-4" />置顶
-              </label>
-              <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
-                <input type="checkbox" checked={createPublic} onChange={e => setCreatePublic(e.target.checked)} className="w-4 h-4" />公开（所有人可见）
-              </label>
-            </div>
-          )}
+                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+                  <input type="checkbox" checked={createPublic} onChange={e => setCreatePublic(e.target.checked)} className="w-4 h-4" />公开（所有人可见）
+                </label>
+              </>
+            )}
+            {visibleTags.length > 0 && (
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-xs text-gray-400 dark:text-gray-500">标签：</span>
+                {visibleTags.map(tag => (
+                  <button key={tag.id} onClick={() => setCreateTags(prev => prev.includes(tag.id) ? prev.filter(t => t !== tag.id) : [...prev, tag.id])}
+                    className={`text-xs px-2 py-0.5 inline-flex items-center gap-1 border ${createTags.includes(tag.id) ? 'border-gray-600 dark:border-gray-400 bg-gray-100 dark:bg-gray-700' : 'border-gray-300 dark:border-gray-700'}`}>
+                    <span className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: tag.color }} />{tag.name}
+                    {tag.admin_only && <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-0.5">(管理)</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button onClick={handleCreate} disabled={submitting || !createTitle.trim()}
             className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50">
             {submitting ? '发布中...' : '发布'}
@@ -251,30 +195,19 @@ export default function CommunityPage() {
         </div>
       )}
 
-      {/* ── Tab bar ── */}
+      {/* ── Tag tab bar ── */}
       <div className="flex items-center gap-1 border-b border-gray-300 dark:border-gray-700 mb-6 overflow-x-auto">
-        {[
-          { id: 'all', label: '全部' },
-          { id: 'discussion', label: '讨论' },
-        ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${activeTab === tab.id ? 'border-gray-800 dark:border-gray-100 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100'}`}>
-            {tab.label}
-            <span className={`ml-1.5 px-1.5 py-0.5 text-xs ${activeTab === tab.id ? 'bg-gray-800 dark:bg-gray-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{counts[tab.id] || 0}</span>
-          </button>
-        ))}
-        <div className="w-px h-5 bg-gray-300 dark:bg-gray-700 mx-2" />
-        {/* Synthetic type tags + user tags */}
-        {[
-          { id: 'announcement', label: '公告', count: counts.announcement || 0 },
-          { id: 'suggestion', label: '建议', count: counts.suggestion || 0 },
-          ...allTags.map(t => ({ id: t.id, label: t.name, count: counts[t.id] || 0 })),
-        ].filter(t => t.count > 0 || t.id === activeTab).map(t => (
+        <button key="all" onClick={() => setActiveTab('all')}
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${activeTab === 'all' ? 'border-gray-800 dark:border-gray-100 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100'}`}>
+          全部
+          <span className={`ml-1.5 px-1.5 py-0.5 text-xs ${activeTab === 'all' ? 'bg-gray-800 dark:bg-gray-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{counts.all}</span>
+        </button>
+        {visibleTags.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${activeTab === t.id ? 'border-gray-800 dark:border-gray-100 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100'}`}>
-            {t.label}
-            {t.count > 0 && (
-              <span className={`ml-1.5 px-1.5 py-0.5 text-xs ${activeTab === t.id ? 'bg-gray-800 dark:bg-gray-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{t.count}</span>
+            {t.name}
+            {counts[t.id] > 0 && (
+              <span className={`ml-1.5 px-1.5 py-0.5 text-xs ${activeTab === t.id ? 'bg-gray-800 dark:bg-gray-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{counts[t.id]}</span>
             )}
           </button>
         ))}
@@ -287,8 +220,8 @@ export default function CommunityPage() {
         <div className="space-y-3">
           {filteredPosts.map(p => (
             <div
-              key={`${p.kind}-${p.id}`}
-              className={`bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 border-l-4 ${KIND_LEFT_COLOR[p.kind]} cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors ${p.pinned ? 'border-yellow-400 border-l-4' : ''}`}
+              key={p.id}
+              className={`bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 border-l-4 cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors ${p.pinned ? 'border-yellow-400 border-l-4' : 'border-l-gray-300 dark:border-l-gray-700'}`}
               onClick={() => goToDetail(p)}
             >
               <div className="p-4">
@@ -302,11 +235,11 @@ export default function CommunityPage() {
                       {p.pinned && (
                         <span className="text-xs px-1.5 py-0.5 border border-red-300 dark:border-red-800 text-red-500 dark:text-red-400 leading-none">置顶</span>
                       )}
-                      {p.public === false && (
+                      {!p.public && (
                         <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">内部</span>
                       )}
-                      {p.team_only === true && (
-                        <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">内部</span>
+                      {p.team_only && (
+                        <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">团队</span>
                       )}
                       {p.status && p.status !== 'open' && (
                         <span className={`text-xs leading-none ${STATUS_COLOR[p.status] || ''}`}>{STATUS_LABEL[p.status] || p.status}</span>
