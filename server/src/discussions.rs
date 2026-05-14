@@ -1,9 +1,10 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     Json,
 };
 use axum::http::HeaderMap;
 use chrono::Utc;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::notifications::create_notification;
@@ -17,54 +18,77 @@ const TITLE_MAX_LEN: usize = 30;
 const CONTENT_MAX_LEN: usize = 3000;
 const REPLY_MAX_LEN: usize = 300;
 
-/// Truncate all existing discussions/replies that exceed the character limits.
+/// Truncate all existing posts/replies that exceed the character limits.
 /// Called at server startup to clean up legacy data.
-pub async fn truncate_existing_discussions(state: &AppState) {
-    let mut discussions = state.discussions.write().await;
+pub async fn truncate_existing_posts(state: &AppState) {
+    let mut posts = state.posts.write().await;
     let mut changed = false;
-    for d in discussions.values_mut() {
-        if d.title.chars().count() > TITLE_MAX_LEN {
-            d.title = d.title.chars().take(TITLE_MAX_LEN).collect::<String>();
+    for p in posts.values_mut() {
+        if p.kind != "discussion" { continue; }
+        if p.title.chars().count() > TITLE_MAX_LEN {
+            p.title = p.title.chars().take(TITLE_MAX_LEN).collect::<String>();
             changed = true;
         }
-        if d.content.chars().count() > CONTENT_MAX_LEN {
-            d.content = d.content.chars().take(CONTENT_MAX_LEN).collect::<String>();
+        if p.content.chars().count() > CONTENT_MAX_LEN {
+            p.content = p.content.chars().take(CONTENT_MAX_LEN).collect::<String>();
             changed = true;
         }
-        for r in d.replies.iter_mut() {
+        for r in p.replies.iter_mut() {
             if r.content.chars().count() > REPLY_MAX_LEN {
                 r.content = r.content.chars().take(REPLY_MAX_LEN).collect::<String>();
                 changed = true;
             }
         }
     }
-    drop(discussions);
+    drop(posts);
     if changed {
-        tracing::info!("Truncated some existing discussions/replies to meet character limits");
+        tracing::info!("Truncated some existing posts/replies to meet character limits");
         state.save().await;
     }
 }
 
 // ============== List Discussions ==============
 
+#[derive(Debug, Deserialize)]
+pub struct ListDiscussionsQuery {
+    /// Single tag filter (backward compatible)
+    #[serde(default)]
+    pub tag: Option<String>,
+    /// Comma-separated multi-tag filter (overrides `tag` if both present)
+    #[serde(default)]
+    pub tags: Option<String>,
+}
+
 pub async fn get_discussions(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<ListDiscussionsQuery>,
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!([])),
     };
-    let is_team_member = is_team_member(&state, &user_id).await;
-    let discussions = state.discussions.read().await;
+    let is_team = is_team_member(&state, &user_id).await;
+    let posts = state.posts.read().await;
     let users = state.users.read().await;
     let all_tags = state.discussion_tags.read().await;
-    let mut result: Vec<&Discussion> = discussions.values().filter(|d| {
-        // Filter out team-only discussions for non-team-member users
-        if d.team_only && !is_team_member { return false; }
+    let mut result: Vec<&Post> = posts.values().filter(|p| {
+        if p.kind != "discussion" { return false; }
+        if p.team_only && !is_team { return false; }
+        if let Some(ref tag_ids) = query.tags {
+            if !tag_ids.is_empty() {
+                let ids: Vec<&str> = tag_ids.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+                if !ids.is_empty() && !ids.iter().any(|id| p.tags.iter().any(|t| t == id)) {
+                    return false;
+                }
+            }
+        } else if let Some(ref tag_id) = query.tag {
+            if !p.tags.iter().any(|t| t == tag_id) {
+                return false;
+            }
+        }
         true
     }).collect();
-    // Sort: pinned first, then by created_at desc
     result.sort_by(|a, b| {
         if a.pinned != b.pinned {
             if a.pinned { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
@@ -72,14 +96,13 @@ pub async fn get_discussions(
             b.created_at.cmp(&a.created_at)
         }
     });
-    // Return without replies in listing (replies are fetched in detail)
-    let list: Vec<serde_json::Value> = result.iter().map(|d| {
-        let user_info = users.get(&d.author_id);
+    let list: Vec<serde_json::Value> = result.iter().map(|p| {
+        let user_info = users.get(&p.author_id);
         let display_name = user_info.map(|u| u.display_name.as_str())
-            .unwrap_or(&d.author_name)
+            .unwrap_or(&p.author_name)
             .to_string();
         let avatar_url = user_info.and_then(|u| u.avatar_url.clone());
-        let enriched_tags: Vec<serde_json::Value> = d.tags.iter().filter_map(|tid| {
+        let enriched_tags: Vec<serde_json::Value> = p.tags.iter().filter_map(|tid| {
             all_tags.get(tid).map(|t| serde_json::json!({
                 "id": t.id,
                 "name": t.name,
@@ -87,20 +110,20 @@ pub async fn get_discussions(
             }))
         }).collect();
         serde_json::json!({
-            "id": d.id,
-            "title": d.title,
-            "content": d.content,
-            "author_id": d.author_id,
+            "id": p.id,
+            "title": p.title,
+            "content": p.content,
+            "author_id": p.author_id,
             "author_name": display_name,
             "author_avatar_url": avatar_url,
             "tags": enriched_tags,
-            "reactions": d.reactions,
-            "emoji": d.emoji,
-            "reply_count": d.replies.len(),
-            "created_at": d.created_at,
-            "updated_at": d.updated_at,
-            "pinned": d.pinned,
-            "team_only": d.team_only,
+            "reactions": p.reactions,
+            "emoji": p.emoji,
+            "reply_count": p.replies.len(),
+            "created_at": p.created_at,
+            "updated_at": p.updated_at,
+            "pinned": p.pinned,
+            "team_only": p.team_only,
         })
     }).collect();
     drop(all_tags);
@@ -134,23 +157,27 @@ pub async fn create_discussion(
     let now = Utc::now();
     let is_admin_user = is_admin(&state, &user_id).await;
     let display_name = user.display_name;
-    let discussion = Discussion {
+    let post = Post {
         id: Uuid::new_v4().to_string(),
+        kind: "discussion".to_string(),
         title: payload.title.trim().to_string(),
         content: payload.content,
         author_id: user_id.clone(),
         author_name: display_name.clone(),
         tags: payload.tags,
-        emoji: payload.emoji,
         pinned: payload.pinned.unwrap_or(false) && is_admin_user,
         team_only: payload.team_only.unwrap_or(false),
-        replies: vec![],
+        emoji: payload.emoji,
         reactions: std::collections::HashMap::new(),
+        replies: vec![],
+        mentioned_user_ids: payload.mentioned_user_ids.clone(),
+        status: String::new(),
+        public: true,
         created_at: now,
         updated_at: now,
     };
-    let discussion_id = discussion.id.clone();
-    state.discussions.write().await.insert(discussion_id.clone(), discussion);
+    let post_id = post.id.clone();
+    state.posts.write().await.insert(post_id.clone(), post);
     state.save().await;
 
     // Create notifications for @mentioned users
@@ -159,9 +186,9 @@ pub async fn create_discussion(
             create_notification(
                 &state,
                 uid,
-                &format!("在讨论中提到了你"),
+                "在讨论中提到了你",
                 &format!("{} 在讨论「{}」中提到了你", display_name, payload.title.trim()),
-                Some(&format!("/discussions/{}", discussion_id)),
+                Some(&format!("/discussions/{}", post_id)),
             ).await;
         }
     }
@@ -180,15 +207,16 @@ pub async fn get_discussion_detail(
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let discussions = state.discussions.read().await;
-    if let Some(d) = discussions.get(&id) {
-        // Check access for team-only discussions
-        if d.team_only && !is_team_member(&state, &user_id).await {
+    let posts = state.posts.read().await;
+    if let Some(p) = posts.get(&id) {
+        if p.kind != "discussion" {
+            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
+        }
+        if p.team_only && !is_team_member(&state, &user_id).await {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
-        // Enrich replies with updated author display names and avatars
         let users = state.users.read().await;
-        let enriched_replies: Vec<serde_json::Value> = d.replies.iter().map(|r| {
+        let enriched_replies: Vec<serde_json::Value> = p.replies.iter().map(|r| {
             let user_info = users.get(&r.author_id);
             let display_name = user_info.map(|u| u.display_name.clone())
                 .unwrap_or_else(|| r.author_name.clone());
@@ -205,12 +233,12 @@ pub async fn get_discussion_detail(
                 "created_at": r.created_at,
             })
         }).collect();
-        let author_info = users.get(&d.author_id);
+        let author_info = users.get(&p.author_id);
         let author_name = author_info.map(|u| u.display_name.clone())
-            .unwrap_or_else(|| d.author_name.clone());
+            .unwrap_or_else(|| p.author_name.clone());
         let author_avatar_url = author_info.and_then(|u| u.avatar_url.clone());
         let all_tags = state.discussion_tags.read().await;
-        let enriched_tags: Vec<serde_json::Value> = d.tags.iter().filter_map(|tid| {
+        let enriched_tags: Vec<serde_json::Value> = p.tags.iter().filter_map(|tid| {
             all_tags.get(tid).map(|t| serde_json::json!({
                 "id": t.id,
                 "name": t.name,
@@ -221,20 +249,20 @@ pub async fn get_discussion_detail(
         drop(users);
 
         return Json(serde_json::json!({
-            "id": d.id,
-            "title": d.title,
-            "content": d.content,
-            "author_id": d.author_id,
+            "id": p.id,
+            "title": p.title,
+            "content": p.content,
+            "author_id": p.author_id,
             "author_name": author_name,
             "author_avatar_url": author_avatar_url,
             "tags": enriched_tags,
-            "reactions": d.reactions,
-            "emoji": d.emoji,
+            "reactions": p.reactions,
+            "emoji": p.emoji,
             "replies": enriched_replies,
-            "created_at": d.created_at,
-            "updated_at": d.updated_at,
-            "pinned": d.pinned,
-            "team_only": d.team_only,
+            "created_at": p.created_at,
+            "updated_at": p.updated_at,
+            "pinned": p.pinned,
+            "team_only": p.team_only,
         }));
     }
     Json(serde_json::json!({"success": false, "message": "讨论不存在"}))
@@ -253,9 +281,12 @@ pub async fn update_discussion(
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
     let is_admin_user = is_admin(&state, &user_id).await;
-    let mut discussions = state.discussions.write().await;
-    if let Some(d) = discussions.get_mut(&id) {
-        if !is_admin_user && d.author_id != user_id {
+    let mut posts = state.posts.write().await;
+    if let Some(p) = posts.get_mut(&id) {
+        if p.kind != "discussion" {
+            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
+        }
+        if !is_admin_user && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权修改"}));
         }
         if let Some(ref title) = payload.title {
@@ -263,7 +294,7 @@ pub async fn update_discussion(
                 if title.chars().count() > TITLE_MAX_LEN {
                     return Json(serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}));
                 }
-                d.title = title.trim().to_string();
+                p.title = title.trim().to_string();
             }
         }
         if let Some(ref content) = payload.content {
@@ -271,29 +302,27 @@ pub async fn update_discussion(
                 if content.chars().count() > CONTENT_MAX_LEN {
                     return Json(serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}));
                 }
-                d.content = content.clone();
+                p.content = content.clone();
             }
         }
         if let Some(ref tags) = payload.tags {
-            d.tags = tags.clone();
+            p.tags = tags.clone();
         }
         if let Some(ref emoji) = payload.emoji {
-            d.emoji = emoji.clone();
+            p.emoji = emoji.clone();
         }
-        // pinned: only admin can change
         if let Some(pinned) = payload.pinned {
             if is_admin_user {
-                d.pinned = pinned;
+                p.pinned = pinned;
             }
         }
-        // team_only: admin or author can change
         if let Some(team_only) = payload.team_only {
-            if is_admin_user || d.author_id == user_id {
-                d.team_only = team_only;
+            if is_admin_user || p.author_id == user_id {
+                p.team_only = team_only;
             }
         }
-        d.updated_at = Utc::now();
-        drop(discussions);
+        p.updated_at = Utc::now();
+        drop(posts);
         state.save().await;
         return Json(serde_json::json!({"success": true, "message": "讨论已更新"}));
     }
@@ -312,13 +341,16 @@ pub async fn delete_discussion(
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
     let is_admin_user = is_admin(&state, &user_id).await;
-    let mut discussions = state.discussions.write().await;
-    if let Some(d) = discussions.get(&id) {
-        if !is_admin_user && d.author_id != user_id {
+    let mut posts = state.posts.write().await;
+    if let Some(p) = posts.get(&id) {
+        if p.kind != "discussion" {
+            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
+        }
+        if !is_admin_user && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权删除"}));
         }
-        discussions.remove(&id);
-        drop(discussions);
+        posts.remove(&id);
+        drop(posts);
         state.save().await;
         return Json(serde_json::json!({"success": true, "message": "讨论已删除"}));
     }
@@ -343,10 +375,13 @@ pub async fn reply_to_discussion(
     if payload.content.chars().count() > REPLY_MAX_LEN {
         return Json(serde_json::json!({"success": false, "message": format!("回复不能超过{} 字", REPLY_MAX_LEN)}));
     }
-    let mut discussions = state.discussions.write().await;
-    if let Some(d) = discussions.get_mut(&id) {
+    let mut posts = state.posts.write().await;
+    if let Some(p) = posts.get_mut(&id) {
+        if p.kind != "discussion" {
+            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
+        }
         let display_name = user.display_name;
-        let reply = DiscussionReply {
+        let reply = PostReply {
             id: Uuid::new_v4().to_string(),
             author_id: user_id.clone(),
             author_name: display_name.clone(),
@@ -356,14 +391,15 @@ pub async fn reply_to_discussion(
             reply_to: payload.reply_to,
             created_at: Utc::now(),
         };
-        d.replies.push(reply);
-        d.updated_at = Utc::now();
-        drop(discussions);
+        p.replies.push(reply);
+        p.updated_at = Utc::now();
+        let discussion_title = p.title.clone();
+        let mentioned = payload.mentioned_user_ids.clone();
+        drop(posts);
         state.save().await;
 
         // Create notifications for @mentioned users
-        let discussion_title = state.discussions.read().await.get(&id).map(|d| d.title.clone()).unwrap_or_default();
-        for uid in &payload.mentioned_user_ids {
+        for uid in &mentioned {
             if uid != &user_id {
                 create_notification(
                     &state,
@@ -392,20 +428,22 @@ pub async fn delete_discussion_reply(
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
     let is_admin_user = is_admin(&state, &user_id).await;
-    let mut discussions = state.discussions.write().await;
-    if let Some(d) = discussions.get_mut(&discussion_id) {
-        if let Some(reply) = d.replies.iter().find(|r| r.id == reply_id) {
+    let mut posts = state.posts.write().await;
+    if let Some(p) = posts.get_mut(&discussion_id) {
+        if p.kind != "discussion" {
+            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
+        }
+        if let Some(reply) = p.replies.iter().find(|r| r.id == reply_id) {
             if !is_admin_user && reply.author_id != user_id {
                 return Json(serde_json::json!({"success": false, "message": "无权删除"}));
             }
         } else {
             return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
         }
-        d.replies.retain(|r| r.id != reply_id);
-        // Also delete child replies (replies to this reply)
-        d.replies.retain(|r| r.parent_id.as_deref() != Some(&reply_id));
-        d.updated_at = Utc::now();
-        drop(discussions);
+        p.replies.retain(|r| r.id != reply_id);
+        p.replies.retain(|r| r.parent_id.as_deref() != Some(&reply_id));
+        p.updated_at = Utc::now();
+        drop(posts);
         state.save().await;
         return Json(serde_json::json!({"success": true, "message": "回复已删除"}));
     }
@@ -446,20 +484,23 @@ pub async fn react_to_discussion(
     if payload.emoji.trim().is_empty() {
         return Json(serde_json::json!({"success": false, "message": "表情不能为空"}));
     }
-    let mut discussions = state.discussions.write().await;
-    if let Some(d) = discussions.get_mut(&id) {
+    let mut posts = state.posts.write().await;
+    if let Some(p) = posts.get_mut(&id) {
+        if p.kind != "discussion" {
+            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
+        }
         let emoji = payload.emoji.trim().to_string();
-        let users = d.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
-        if let Some(pos) = users.iter().position(|u| u == &user_id) {
-            users.remove(pos);
-            if users.is_empty() {
-                d.reactions.remove(&emoji);
+        let users_set = p.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
+        if let Some(pos) = users_set.iter().position(|u| u == &user_id) {
+            users_set.remove(pos);
+            if users_set.is_empty() {
+                p.reactions.remove(&emoji);
             }
         } else {
-            users.push(user_id.clone());
+            users_set.push(user_id.clone());
         }
-        d.updated_at = Utc::now();
-        drop(discussions);
+        p.updated_at = Utc::now();
+        drop(posts);
         state.save().await;
         return Json(serde_json::json!({"success": true}));
     }
@@ -480,21 +521,24 @@ pub async fn react_to_reply(
     if payload.emoji.trim().is_empty() {
         return Json(serde_json::json!({"success": false, "message": "表情不能为空"}));
     }
-    let mut discussions = state.discussions.write().await;
-    if let Some(d) = discussions.get_mut(&discussion_id) {
-        if let Some(reply) = d.replies.iter_mut().find(|r| r.id == reply_id) {
+    let mut posts = state.posts.write().await;
+    if let Some(p) = posts.get_mut(&discussion_id) {
+        if p.kind != "discussion" {
+            return Json(serde_json::json!({"success": false, "message": "讨论不存在"}));
+        }
+        if let Some(reply) = p.replies.iter_mut().find(|r| r.id == reply_id) {
             let emoji = payload.emoji.trim().to_string();
-            let users = reply.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
-            if let Some(pos) = users.iter().position(|u| u == &user_id) {
-                users.remove(pos);
-                if users.is_empty() {
+            let users_set = reply.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
+            if let Some(pos) = users_set.iter().position(|u| u == &user_id) {
+                users_set.remove(pos);
+                if users_set.is_empty() {
                     reply.reactions.remove(&emoji);
                 }
             } else {
-                users.push(user_id.clone());
+                users_set.push(user_id.clone());
             }
-            d.updated_at = Utc::now();
-            drop(discussions);
+            p.updated_at = Utc::now();
+            drop(posts);
             state.save().await;
             return Json(serde_json::json!({"success": true}));
         } else {
@@ -512,19 +556,17 @@ pub async fn cleanup_orphan_reactions(state: &AppState) {
         emojis.values().map(|e| e.char.clone()).collect()
     };
 
-    let mut discussions = state.discussions.write().await;
+    let mut posts = state.posts.write().await;
     let mut changed = false;
 
-    for d in discussions.values_mut() {
-        // Clean discussion-level reactions
-        let before = d.reactions.len();
-        d.reactions.retain(|emoji, _| valid_emojis.contains(emoji));
-        if d.reactions.len() != before {
+    for p in posts.values_mut() {
+        if p.kind != "discussion" { continue; }
+        let before = p.reactions.len();
+        p.reactions.retain(|emoji, _| valid_emojis.contains(emoji));
+        if p.reactions.len() != before {
             changed = true;
         }
-
-        // Clean reply-level reactions
-        for r in d.replies.iter_mut() {
+        for r in p.replies.iter_mut() {
             let before_reply = r.reactions.len();
             r.reactions.retain(|emoji, _| valid_emojis.contains(emoji));
             if r.reactions.len() != before_reply {
@@ -532,7 +574,7 @@ pub async fn cleanup_orphan_reactions(state: &AppState) {
             }
         }
     }
-    drop(discussions);
+    drop(posts);
 
     if changed {
         tracing::info!("Cleaned up orphaned discussion reactions");

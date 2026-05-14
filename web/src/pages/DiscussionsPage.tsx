@@ -29,6 +29,9 @@ export default function DiscussionsPage() {
   const [teamOnly, setTeamOnly] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  // Filter state
+  const [activeTags, setActiveTags] = useState<string[]>([])
+
   // Fetch options
   const [emojis, setEmojis] = useState<DiscussionEmoji[]>([])
   const [tags, setTags] = useState<DiscussionTag[]>([])
@@ -40,8 +43,9 @@ export default function DiscussionsPage() {
   const titleCharsLeft = TITLE_MAX_LEN - title.length
   const contentCharsLeft = CONTENT_MAX_LEN - content.length
 
-  const loadDiscussions = () => {
-    apiFetch<Discussion[]>('/discussions')
+  const loadDiscussions = (tags?: string[]) => {
+    const query = tags && tags.length > 0 ? `?tags=${encodeURIComponent(tags.join(','))}` : ''
+    apiFetch<Discussion[]>(`/discussions${query}`)
       .then(data => {
         setDiscussions(data)
         setPage(1)
@@ -118,6 +122,51 @@ export default function DiscussionsPage() {
         >
           {showForm ? '取消' : '发起讨论'}
         </button>
+      </div>
+
+      {/* Tag filter pills */}
+      <div className="flex flex-wrap gap-1.5 items-center mb-4">
+        <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">筛选:</span>
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTags([])
+            loadDiscussions()
+          }}
+          className={`text-xs px-2 py-0.5 border transition-colors ${
+            activeTags.length === 0
+              ? 'border-gray-600 dark:border-gray-400 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100'
+              : 'border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          全部
+        </button>
+        {tags.map(tag => (
+          <button
+            key={tag.id}
+            type="button"
+            onClick={() => {
+              const next = activeTags.includes(tag.id)
+                ? activeTags.filter(t => t !== tag.id)
+                : [...activeTags, tag.id]
+              setActiveTags(next)
+              loadDiscussions(next)
+            }}
+            className={`text-xs px-2 py-0.5 inline-flex items-center gap-1 border transition-colors ${
+              activeTags.includes(tag.id)
+                ? 'border-gray-600 dark:border-gray-400 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-100'
+                : 'border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 inline-block" style={{ backgroundColor: tag.color }} />
+            {tag.name}
+          </button>
+        ))}
+        {activeTags.length > 1 && (
+          <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">
+            已选 {activeTags.length} 个标签
+          </span>
+        )}
       </div>
 
       {/* Create form */}

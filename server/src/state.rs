@@ -1,4 +1,4 @@
-use crate::types::{Announcement, Contest, Discussion, DiscussionEmoji, DiscussionTag, JoinRequest, Notification, Problem, SessionEntry, Suggestion, TeamMember, User, AppConfig};
+use crate::types::{Announcement, Contest, Discussion, DiscussionEmoji, DiscussionTag, JoinRequest, Notification, Post, Problem, SessionEntry, Suggestion, TeamMember, User, AppConfig};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
@@ -29,17 +29,53 @@ struct SavedData {
     #[serde(default)]
     site_description: String,
     #[serde(default)]
-    suggestions: HashMap<String, Suggestion>,
-    #[serde(default)]
-    announcements: HashMap<String, Announcement>,
-    #[serde(default)]
     notifications: HashMap<String, Notification>,
     #[serde(default)]
     showcase_problem_ids: Vec<String>,
     #[serde(default)]
     showcase_contest_ids: Vec<String>,
+
+    // ── Unified posts (primary storage) ──
+    #[serde(default)]
+    posts: HashMap<String, Post>,
+
+    // ── Legacy fields (kept for backward-compat deserialization ──
+    // These are read on load IF posts is empty, then migrated.
+    #[serde(default)]
+    suggestions: HashMap<String, Suggestion>,
+    #[serde(default)]
+    announcements: HashMap<String, Announcement>,
     #[serde(default)]
     discussions: HashMap<String, Discussion>,
+}
+
+/// Migrate legacy suggestion/announcement/discussion data into unified posts.
+fn migrate_legacy_data(
+    posts: &mut HashMap<String, Post>,
+    suggestions: &HashMap<String, Suggestion>,
+    announcements: &HashMap<String, Announcement>,
+    discussions: &HashMap<String, Discussion>,
+) -> bool {
+    let mut migrated = false;
+    for (id, s) in suggestions {
+        if !posts.contains_key(id) {
+            posts.insert(id.clone(), Post::from_suggestion(s));
+            migrated = true;
+        }
+    }
+    for (id, a) in announcements {
+        if !posts.contains_key(id) {
+            posts.insert(id.clone(), Post::from_announcement(a));
+            migrated = true;
+        }
+    }
+    for (id, d) in discussions {
+        if !posts.contains_key(id) {
+            posts.insert(id.clone(), Post::from_discussion(d));
+            migrated = true;
+        }
+    }
+    migrated
 }
 
 /// Custom deserializer for sessions that handles both old format
@@ -110,10 +146,8 @@ pub struct AppState {
     pub data_file: String,
     /// Customizable difficulty levels
     pub difficulty: Arc<RwLock<crate::types::DifficultyConfig>>,
-    /// Suggestions (tickets/feedback)
-    pub suggestions: Arc<RwLock<HashMap<String, Suggestion>>>,
-    /// Announcements
-    pub announcements: Arc<RwLock<HashMap<String, Announcement>>>,
+    /// Unified posts (replaces suggestions, announcements, discussions)
+    pub posts: Arc<RwLock<HashMap<String, Post>>>,
     /// Notifications
     pub notifications: Arc<RwLock<HashMap<String, Notification>>>,
     /// Showcase selections
@@ -121,8 +155,6 @@ pub struct AppState {
     pub showcase_contest_ids: Arc<RwLock<Vec<String>>>,
     /// Difficulty display order
     pub difficulty_order: Arc<RwLock<Vec<String>>>,
-    /// Discussions
-    pub discussions: Arc<RwLock<HashMap<String, Discussion>>>,
     /// Discussion tags
     pub discussion_tags: Arc<RwLock<HashMap<String, DiscussionTag>>>,
     /// Discussion emojis
@@ -147,13 +179,21 @@ impl AppState {
         let discussion_tags = load_discussion_tags(&config);
         let discussion_emojis = load_discussion_emojis(&config);
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, suggestions, announcements, notifications, showcase_problem_ids, showcase_contest_ids, discussions) =
+        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, notifications, showcase_problem_ids, showcase_contest_ids, posts) =
             if let Some(data) = saved {
                 tracing::info!("Loaded state from {}", data_file);
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.suggestions, data.announcements, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids, data.discussions)
+
+                // Migrate legacy data if needed
+                let mut p = data.posts;
+                let migrated = migrate_legacy_data(&mut p, &data.suggestions, &data.announcements, &data.discussions);
+                if migrated {
+                    tracing::info!("Migrated legacy data to unified posts model");
+                }
+
+                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids, p)
             } else {
                 tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), HashMap::new(), HashMap::new(), Vec::new(), Vec::new(), HashMap::new())
+                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), Vec::new(), Vec::new(), HashMap::new())
             };
 
         // Always ensure superadmin user exists AND has correct role
@@ -208,8 +248,7 @@ impl AppState {
             site_url: config.server.site_url,
             data_file: config.server.data_file,
             difficulty: Arc::new(RwLock::new(difficulty_config.clone())),
-            suggestions: Arc::new(RwLock::new(suggestions)),
-            announcements: Arc::new(RwLock::new(announcements)),
+            posts: Arc::new(RwLock::new(posts)),
             notifications: Arc::new(RwLock::new(notifications)),
             showcase_problem_ids: Arc::new(RwLock::new(showcase_problem_ids)),
             showcase_contest_ids: Arc::new(RwLock::new(showcase_contest_ids)),
@@ -220,11 +259,9 @@ impl AppState {
                     keys
                 })
             )),
-            discussions: Arc::new(RwLock::new(discussions)),
             discussion_tags: Arc::new(RwLock::new(discussion_tags)),
             discussion_emojis: Arc::new(RwLock::new(discussion_emojis)),
         };
-
 
         app_state
     }
@@ -240,12 +277,13 @@ impl AppState {
             join_requests: self.join_requests.read().await.clone(),
             contests: self.contests.read().await.clone(),
             site_description: self.site_description.read().await.clone(),
-            suggestions: self.suggestions.read().await.clone(),
-            announcements: self.announcements.read().await.clone(),
             notifications: self.notifications.read().await.clone(),
             showcase_problem_ids: self.showcase_problem_ids.read().await.clone(),
             showcase_contest_ids: self.showcase_contest_ids.read().await.clone(),
-            discussions: self.discussions.read().await.clone(),
+            posts: self.posts.read().await.clone(),
+            suggestions: HashMap::new(),
+            announcements: HashMap::new(),
+            discussions: HashMap::new(),
         };
         if let Ok(json) = serde_json::to_string_pretty(&data) {
             let tmp_path = format!("{}.tmp", self.data_file);
@@ -299,12 +337,14 @@ impl AppState {
                 *self.join_requests.write().await = data.join_requests;
                 *self.contests.write().await = data.contests;
                 *self.site_description.write().await = data.site_description;
-                *self.suggestions.write().await = data.suggestions;
-                *self.announcements.write().await = data.announcements;
                 *self.notifications.write().await = data.notifications;
                 *self.showcase_problem_ids.write().await = data.showcase_problem_ids;
                 *self.showcase_contest_ids.write().await = data.showcase_contest_ids;
-                *self.discussions.write().await = data.discussions;
+
+                let mut p = data.posts;
+                migrate_legacy_data(&mut p, &data.suggestions, &data.announcements, &data.discussions);
+                *self.posts.write().await = p;
+
                 // discussion_tags and discussion_emojis stay from config.toml
                 tracing::info!("State reloaded from {}", self.data_file);
             }
@@ -516,7 +556,7 @@ mod tests {
             discussion_emojis: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
+        assert_eq!(dc.levels.len(), 1);
         assert_eq!(dc.levels.get("CustomDiff").unwrap().label, "CustomDiff");
-        assert_eq!(dc.levels.get("CustomDiff").unwrap().color, "#ff0000");
     }
 }

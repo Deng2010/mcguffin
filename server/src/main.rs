@@ -15,7 +15,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let state = AppState::new();
-    crate::discussions::truncate_existing_discussions(&state).await;
+    crate::discussions::truncate_existing_posts(&state).await;
     crate::discussions::cleanup_orphan_reactions(&state).await;
 
     let frontend_origin: axum::http::HeaderValue = state.site_url
@@ -121,7 +121,9 @@ async fn main() {
         .route("/api/suggestions/{id}/reply/{reply_id}", delete(delete_suggestion_reply))
         // Announcement routes
         .route("/api/announcements", get(get_announcements).post(create_announcement))
-        .route("/api/announcements/{id}", put(update_announcement).delete(delete_announcement))
+        .route("/api/announcements/{id}", get(get_announcement_detail).put(update_announcement).delete(delete_announcement))
+        // Community (unified) routes
+        .route("/api/community/posts", get(get_community_posts))
         // Notification routes
         .route("/api/notifications", get(get_notifications))
         .route("/api/notifications/read/{id}", post(mark_notification_read))

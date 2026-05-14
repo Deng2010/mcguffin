@@ -47,6 +47,7 @@ export default function Navbar() {
   const showTeam = hasPermission('view_team')
   const showManageContests = hasPermission('view_problems')
   const showSuggestions = hasPermission('view_suggestions')
+  const canUseCommunity = showSuggestions || true // discussions is public
   const showApply = isAuthenticated && user?.team_status !== 'joined'
   const showAdminConfig = user?.role === 'superadmin'
 
@@ -59,9 +60,7 @@ export default function Navbar() {
             {showProblems && navLink('/problems', '题目')}
             {showManageContests && navLink('/contests', '比赛')}
             {showTeam && navLink('/team', '成员')}
-            {showSuggestions && navLink('/suggestions', '建议')}
-            {navLink('/discussions', '讨论')}
-            {navLink('/announcements', '公告')}
+            {canUseCommunity && navLink('/community', '社区')}
             {showAdminConfig && navLink('/admin/config', '配置')}
             {showApply && navLink('/apply', '申请加入')}
           </div>

@@ -18,7 +18,10 @@ import AdminConfigPage from './pages/AdminConfigPage'
 import SuggestionsPage from './pages/SuggestionsPage'
 import DiscussionsPage from './pages/DiscussionsPage'
 import DiscussionDetailPage from './pages/DiscussionDetailPage'
+import SuggestionDetailPage from './pages/SuggestionDetailPage'
+import AnnouncementDetailPage from './pages/AnnouncementDetailPage'
 import AnnouncementsPage from './pages/AnnouncementsPage'
+import CommunityPage from './pages/CommunityPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 function Footer() {
@@ -68,6 +71,10 @@ function AppContent() {
               element={<ProtectedRoute requiredPermission="view_suggestions"><SuggestionsPage /></ProtectedRoute>}
             />
             <Route
+              path="/suggestions/:id"
+              element={<ProtectedRoute requiredPermission="view_suggestions"><SuggestionDetailPage /></ProtectedRoute>}
+            />
+            <Route
               path="/discussions"
               element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionsPage /></ProtectedRoute>}
             />
@@ -78,6 +85,14 @@ function AppContent() {
             <Route
               path="/announcements"
               element={<AnnouncementsPage />}
+            />
+            <Route
+              path="/announcements/:id"
+              element={<AnnouncementDetailPage />}
+            />
+            <Route
+              path="/community"
+              element={<CommunityPage />}
             />
             <Route
               path="/profile"
