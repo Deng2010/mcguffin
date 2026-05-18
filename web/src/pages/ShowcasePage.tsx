@@ -440,7 +440,7 @@ export default function ShowcasePage() {
         <section>
           <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
             公告
-            <Link to="/announcements" className="text-xs font-normal text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ml-2">查看全部</Link>
+            <Link to="/community?tag=公告" className="text-xs font-normal text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ml-2">查看全部</Link>
           </h2>
           <div className="space-y-2">
             {(() => {
@@ -469,7 +469,7 @@ export default function ShowcasePage() {
           </div>
           {announcements.length > Math.max(announcements.filter(a => a.pinned).length, 3) && (
             <div className="text-center mt-4">
-              <Link to="/announcements" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
+              <Link to="/community?tag=公告" className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800">
                 查看全部公告
               </Link>
             </div>

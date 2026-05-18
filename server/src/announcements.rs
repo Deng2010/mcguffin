@@ -31,7 +31,7 @@ pub async fn get_announcements(
     let mut result: Vec<serde_json::Value> = Vec::new();
     for p in posts.values() {
         if !p.tags.contains(&"公告".to_string()) { continue; }
-        if !can_see_all && !p.public { continue; }
+        if !can_see_all && p.team_only { continue; }
         let author_name = users.get(&p.author_id)
             .map(|u| u.display_name.clone())
             .unwrap_or_else(|| p.author_name.clone());
@@ -42,7 +42,7 @@ pub async fn get_announcements(
             "author_id": p.author_id,
             "author_name": author_name,
             "pinned": p.pinned,
-            "public": p.public,
+            "public": !p.team_only,
             "created_at": p.created_at,
             "updated_at": p.updated_at,
         }));
@@ -90,8 +90,7 @@ pub async fn create_announcement(
         author_name: user.display_name,
         tags: vec!["公告".to_string()],
         pinned,
-        team_only: false,
-        public: is_public,
+        team_only: !is_public,
         emoji: None,
         reactions: std::collections::HashMap::new(),
         replies: vec![],
@@ -118,7 +117,7 @@ pub async fn get_announcement_detail(
     let is_team = if let Some((ref uid, _)) = auth_info { is_team_member(&state, uid).await } else { false };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
-        if !is_admin_user && !is_team && !p.public {
+        if !is_admin_user && !is_team && p.team_only {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
         let users = state.users.read().await;
@@ -133,7 +132,7 @@ pub async fn get_announcement_detail(
             "author_id": p.author_id,
             "author_name": author_name,
             "pinned": p.pinned,
-            "public": p.public,
+            "public": !p.team_only,
             "created_at": p.created_at,
             "updated_at": p.updated_at,
         }));
@@ -171,7 +170,7 @@ pub async fn update_announcement(
             p.pinned = pinned;
         }
         if let Some(is_public) = payload.get("public").and_then(|v| v.as_bool()) {
-            p.public = is_public;
+            p.team_only = !is_public;
         }
         p.updated_at = Utc::now();
         drop(posts);

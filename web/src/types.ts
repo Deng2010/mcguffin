@@ -289,6 +289,5 @@ export interface PostDetail {
   updated_at: string
   pinned: boolean
   team_only: boolean
-  public: boolean
   status: string
 }

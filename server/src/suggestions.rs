@@ -85,7 +85,6 @@ pub async fn create_suggestion(
         tags: vec!["建议".to_string()],
         pinned: false,
         team_only: false,
-        public: true,
         emoji: None,
         reactions: std::collections::HashMap::new(),
         replies: vec![],

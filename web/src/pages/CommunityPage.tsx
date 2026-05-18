@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import MarkdownEditor from '../components/MarkdownEditor'
@@ -20,7 +20,6 @@ interface PostListItem {
   updated_at: string
   pinned: boolean
   status: string
-  public: boolean
   team_only: boolean
   reply_count: number
   detail_url: string
@@ -44,18 +43,18 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function CommunityPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { user, hasPermission, isAuthenticated } = useAuth()
   const [posts, setPosts] = useState<PostListItem[]>([])
   const [allTags, setAllTags] = useState<DiscussionTag[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<string>('all')
+  const [activeTab, setActiveTab] = useState<string>(searchParams.get('tag') || 'all')
 
   // ── Create post ──
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [createTitle, setCreateTitle] = useState('')
   const [createContent, setCreateContent] = useState('')
   const [createPinned, setCreatePinned] = useState(false)
-  const [createPublic, setCreatePublic] = useState(true)
   const [createTeamOnly, setCreateTeamOnly] = useState(false)
   const [createTags, setCreateTags] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -86,12 +85,10 @@ export default function CommunityPage() {
     all: posts.length,
   }
   allTags.forEach(t => {
-    // Only count tags that are visible to the user
-    if (t.admin_only && !isAdmin) return
     counts[t.id] = posts.filter(p => p.tags.includes(t.id)).length
   })
 
-  const visibleTags = allTags.filter(t => !t.admin_only || isAdmin)
+  const visibleTags = allTags
 
   const goToDetail = (p: PostListItem) => {
     navigate(`/post/${p.id}`)
@@ -101,7 +98,6 @@ export default function CommunityPage() {
     setCreateTitle('')
     setCreateContent('')
     setCreatePinned(false)
-    setCreatePublic(true)
     setCreateTeamOnly(false)
     setCreateTags([])
     setShowCreateForm(false)
@@ -119,7 +115,6 @@ export default function CommunityPage() {
           tags: createTags,
           pinned: createPinned,
           team_only: createTeamOnly,
-          public: createPublic,
         }),
       })
       resetCreateForm()
@@ -163,15 +158,12 @@ export default function CommunityPage() {
           </div>
           <div className="mb-3 flex flex-wrap gap-4">
             <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
-              <input type="checkbox" checked={createTeamOnly} onChange={e => setCreateTeamOnly(e.target.checked)} className="w-4 h-4" />仅团队可见
+              <input type="checkbox" checked={createTeamOnly} onChange={e => setCreateTeamOnly(e.target.checked)} className="w-4 h-4" />仅内部可见
             </label>
             {isAdmin && (
               <>
                 <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
                   <input type="checkbox" checked={createPinned} onChange={e => setCreatePinned(e.target.checked)} className="w-4 h-4" />置顶
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
-                  <input type="checkbox" checked={createPublic} onChange={e => setCreatePublic(e.target.checked)} className="w-4 h-4" />公开（所有人可见）
                 </label>
               </>
             )}
@@ -235,14 +227,8 @@ export default function CommunityPage() {
                       {p.pinned && (
                         <span className="text-xs px-1.5 py-0.5 border border-red-300 dark:border-red-800 text-red-500 dark:text-red-400 leading-none">置顶</span>
                       )}
-                      {!p.public && (
-                        <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">内部</span>
-                      )}
                       {p.team_only && (
-                        <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">团队</span>
-                      )}
-                      {p.status && p.status !== 'open' && (
-                        <span className={`text-xs leading-none ${STATUS_COLOR[p.status] || ''}`}>{STATUS_LABEL[p.status] || p.status}</span>
+                        <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">内部</span>
                       )}
                     </div>
                   </div>

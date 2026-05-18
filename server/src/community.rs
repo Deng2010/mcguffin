@@ -64,7 +64,6 @@ pub async fn get_community_posts(
             updated_at: p.updated_at,
             pinned: p.pinned,
             status: p.status.clone(),
-            public: p.public,
             team_only: p.team_only,
             reply_count: p.replies.len(),
             detail_url: format!("/post/{}", p.id),

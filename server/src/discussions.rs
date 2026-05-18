@@ -62,11 +62,8 @@ pub async fn get_posts(
     headers: HeaderMap,
     Query(query): Query<ListPostsQuery>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!([])),
-    };
-    let is_team = is_team_member(&state, &user_id).await;
+    let auth_info = resolve_user(&state, &headers).await;
+    let is_team = if let Some((ref uid, _)) = auth_info { is_team_member(&state, uid).await } else { false };
     let posts = state.posts.read().await;
     let users = state.users.read().await;
     let all_tags = state.discussion_tags.read().await;
@@ -121,7 +118,6 @@ pub async fn get_posts(
             "updated_at": p.updated_at,
             "pinned": p.pinned,
             "team_only": p.team_only,
-            "public": p.public,
             "status": p.status,
         })
     }).collect();
@@ -178,7 +174,6 @@ pub async fn create_post(
         tags: payload.tags.clone(),
         pinned: payload.pinned.unwrap_or(false) && is_admin_user,
         team_only: payload.team_only.unwrap_or(false),
-        public: payload.public.unwrap_or(true),
         emoji: payload.emoji,
         reactions: std::collections::HashMap::new(),
         replies: vec![],
@@ -214,13 +209,11 @@ pub async fn get_post_detail(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
-    };
+    let auth_info = resolve_user(&state, &headers).await;
+    let is_team = if let Some((ref uid, _)) = auth_info { is_team_member(&state, uid).await } else { false };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
-        if p.team_only && !is_team_member(&state, &user_id).await {
+        if p.team_only && !is_team {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
         let users = state.users.read().await;
@@ -272,7 +265,6 @@ pub async fn get_post_detail(
             "updated_at": p.updated_at,
             "pinned": p.pinned,
             "team_only": p.team_only,
-            "public": p.public,
             "status": p.status,
         }));
     }
@@ -336,11 +328,6 @@ pub async fn update_post(
         if let Some(team_only) = payload.team_only {
             if is_admin_user || p.author_id == user_id {
                 p.team_only = team_only;
-            }
-        }
-        if let Some(is_public) = payload.public {
-            if is_admin_user {
-                p.public = is_public;
             }
         }
         if let Some(ref status) = payload.status {

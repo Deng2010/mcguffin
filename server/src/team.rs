@@ -16,12 +16,9 @@ pub async fn get_team_members(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
-    };
-    let is_admin_user = is_admin(&state, &user_id).await;
-    let is_superadmin_user = is_superadmin(&state, &user_id).await;
+    let auth_info = resolve_user(&state, &headers).await;
+    let is_admin_user = if let Some((ref uid, _)) = auth_info { is_admin(&state, uid).await } else { false };
+    let is_superadmin_user = if let Some((ref uid, _)) = auth_info { is_superadmin(&state, uid).await } else { false };
     let members = state.team_members.read().await;
     let users = state.users.read().await;
     let result: Vec<serde_json::Value> = members

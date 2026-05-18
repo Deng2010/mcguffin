@@ -458,8 +458,6 @@ pub struct LoginResponse {
     pub token: Option<String>,
 }
 
-fn default_public() -> bool { true }
-
 // ============== Notification ==============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -525,8 +523,6 @@ pub struct Post {
     pub pinned: bool,
     #[serde(default)]
     pub team_only: bool,
-    #[serde(default = "default_public")]
-    pub public: bool,
 
     // ── Discussion features ──
     #[serde(default)]
@@ -573,8 +569,6 @@ pub struct CreatePostPayload {
     pub pinned: Option<bool>,
     #[serde(default)]
     pub team_only: Option<bool>,
-    #[serde(default)]
-    pub public: Option<bool>,
     /// User IDs of team members @mentioned in the content
     #[serde(default)]
     pub mentioned_user_ids: Vec<String>,
@@ -594,8 +588,6 @@ pub struct UpdatePostPayload {
     pub pinned: Option<bool>,
     #[serde(default)]
     pub team_only: Option<bool>,
-    #[serde(default)]
-    pub public: Option<bool>,
     #[serde(default)]
     pub status: Option<String>,
 }
@@ -667,8 +659,6 @@ pub struct PostListItem {
     pub pinned: bool,
     #[serde(default)]
     pub status: String,
-    #[serde(default = "default_public")]
-    pub public: bool,
     #[serde(default)]
     pub team_only: bool,
     #[serde(default)]

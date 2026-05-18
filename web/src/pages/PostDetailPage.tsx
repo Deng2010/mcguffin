@@ -37,7 +37,7 @@ const STATUS_BG_COLOR: Record<string, string> = {
 export default function PostDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, isAuthenticated } = useAuth()
   const [post, setPost] = useState<PostDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [replyContent, setReplyContent] = useState('')
@@ -199,16 +199,6 @@ export default function PostDetailPage() {
     } catch (err) { alert(`操作失败: ${err}`) }
   }
 
-  const handleTogglePublic = async () => {
-    if (!id || !post) return
-    try {
-      await apiFetch(`/posts/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ public: !post.public }),
-      })
-      loadPost()
-    } catch (err) { alert(`操作失败: ${err}`) }
-  }
 
   const handleStatusChange = async (status: string) => {
     if (!id) return
@@ -262,11 +252,8 @@ export default function PostDetailPage() {
               {post.pinned && (
                 <span className="text-xs px-1.5 py-0.5 border border-red-300 dark:border-red-800 text-red-500 dark:text-red-400 leading-none">置顶</span>
               )}
-              {!post.public && (
-                <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">内部</span>
-              )}
               {post.team_only && (
-                <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">团队</span>
+                <span className="text-xs px-1.5 py-0.5 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 leading-none">内部</span>
               )}
               {hasStatus && (
                 <span className={`text-xs leading-none ${STATUS_BG_COLOR[post.status] || ''}`}>
@@ -400,16 +387,6 @@ export default function PostDetailPage() {
               }`}
             >
               {post.team_only ? '设为公开' : '设为内部'}
-            </button>
-            <button
-              onClick={handleTogglePublic}
-              className={`text-xs px-2 py-0.5 border ${
-                !post.public
-                  ? 'border-gray-600 dark:border-gray-400 text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800'
-                  : 'border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
-            >
-              {post.public ? '设为内部' : '设为公开'}
             </button>
           </div>
         )}
@@ -561,6 +538,7 @@ export default function PostDetailPage() {
       </div>
 
       {/* Top-level reply form */}
+      {isAuthenticated ? (
       <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4 relative">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">回复</h3>
         <div className="relative">
@@ -593,6 +571,11 @@ export default function PostDetailPage() {
           </button>
         </div>
       </div>
+      ) : (
+        <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-6 text-center text-gray-400 dark:text-gray-500">
+          <p className="text-sm">请<a href="/login" className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 underline">登录</a>后参与回复</p>
+        </div>
+      )}
     </div>
   )
 }
