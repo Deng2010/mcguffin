@@ -1,7 +1,7 @@
-use crate::types::{Contest, DiscussionEmoji, DiscussionTag, JoinRequest, Notification, Post, Problem, SessionEntry, TeamMember, User, AppConfig};
+use crate::types::{AuditEntry, Contest, DiscussionEmoji, DiscussionTag, JoinRequest, Notification, Post, Problem, SessionEntry, TeamMember, User, AppConfig};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -291,6 +291,10 @@ pub struct AppState {
     pub discussion_tags: Arc<RwLock<HashMap<String, DiscussionTag>>>,
     /// Discussion emojis
     pub discussion_emojis: Arc<RwLock<HashMap<String, DiscussionEmoji>>>,
+    /// Role→permissions mapping (loaded from config or defaults)
+    pub role_permissions: Arc<RwLock<HashMap<String, Vec<String>>>>,
+    /// Permission audit log (in-memory, max 500 entries)
+    pub audit_log: Arc<RwLock<VecDeque<AuditEntry>>>,
 }
 
 impl AppState {
@@ -341,6 +345,7 @@ impl AppState {
             created_at: Utc::now(),
             bio: String::new(),
             password_hash: None,
+            effective_role: "superadmin".to_string(),
         });
         // Force update role to superadmin (in case loaded from old data)
         if let Some(u) = users.get_mut(ADMIN_USER_ID) {
@@ -360,6 +365,21 @@ impl AppState {
         });
 
         let redirect_uri = format!("{}/api/oauth/callback", config.server.site_url);
+
+        // Load role→permissions from config or use defaults
+        let role_permissions: HashMap<String, Vec<String>> = if !config.permissions.is_empty() {
+            // Validate permission names in config
+            for (role, perms) in &config.permissions {
+                for p in perms {
+                    if p != crate::types::PERM_WILDCARD && !crate::types::perms::ALL.contains(&p.as_str()) {
+                        tracing::warn!("配置中的权限名「{}」（角色: {}）不在已知权限列表中，将被忽略", p, role);
+                    }
+                }
+            }
+            config.permissions.clone()
+        } else {
+            crate::types::default_role_permissions()
+        };
 
         let app_state = Self {
             users: Arc::new(RwLock::new(users)),
@@ -393,6 +413,8 @@ impl AppState {
             )),
             discussion_tags: Arc::new(RwLock::new(discussion_tags)),
             discussion_emojis: Arc::new(RwLock::new(discussion_emojis)),
+            role_permissions: Arc::new(RwLock::new(role_permissions)),
+            audit_log: Arc::new(RwLock::new(VecDeque::with_capacity(500))),
         };
 
         app_state
@@ -417,17 +439,28 @@ impl AppState {
             announcements: HashMap::new(),
             discussions: HashMap::new(),
         };
-        if let Ok(json) = serde_json::to_string_pretty(&data) {
-            let tmp_path = format!("{}.tmp", self.data_file);
-            // Write to temp file first, then atomically rename
-            // This prevents data corruption if the process crashes mid-write
-            if std::fs::write(&tmp_path, &json).is_ok() {
-                let _ = std::fs::rename(&tmp_path, &self.data_file);
-            }
+        let json = serde_json::to_string_pretty(&data).unwrap();
+        let tmp_path = format!("{}.tmp", self.data_file);
+        // Write to temp file first, then atomically rename
+        // This prevents data corruption if the process crashes mid-write
+        if std::fs::write(&tmp_path, &json).is_ok() {
+            let _ = std::fs::rename(&tmp_path, &self.data_file);
         }
     }
 
     const MAX_SESSIONS_PER_USER: usize = 3;
+
+    /// Maximum entries to keep in the audit log.
+    const MAX_AUDIT_ENTRIES: usize = 500;
+
+    /// Log a permission audit entry.
+    pub async fn log_audit(&self, entry: AuditEntry) {
+        let mut log = self.audit_log.write().await;
+        if log.len() >= Self::MAX_AUDIT_ENTRIES {
+            log.pop_front();
+        }
+        log.push_back(entry);
+    }
 
     /// Create a session for the given user, automatically evicting the oldest
     /// session if they already have MAX_SESSIONS_PER_USER sessions.
@@ -592,6 +625,7 @@ fn load_config() -> AppConfig {
         difficulty: std::collections::HashMap::new(),
         discussion_tags: std::collections::HashMap::new(),
         discussion_emojis: std::collections::HashMap::new(),
+        permissions: std::collections::HashMap::new(),
     }
 }
 
@@ -623,6 +657,7 @@ mod tests {
             difficulty: HashMap::new(),
             discussion_tags: HashMap::new(),
             discussion_emojis: HashMap::new(),
+            permissions: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 3); // falls back to Default
@@ -655,6 +690,7 @@ mod tests {
             difficulty: diff,
             discussion_tags: HashMap::new(),
             discussion_emojis: HashMap::new(),
+            permissions: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 1);
@@ -687,6 +723,7 @@ mod tests {
             difficulty: diff,
             discussion_tags: HashMap::new(),
             discussion_emojis: HashMap::new(),
+            permissions: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 1);

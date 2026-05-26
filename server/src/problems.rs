@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{resolve_user, is_admin, is_team_member};
+use crate::utils::{resolve_user, check_permission, require_permission_json};
 use crate::notifications::create_notification;
 
 // ============== List Problems ==============
@@ -23,13 +23,13 @@ pub async fn get_problems(
     Query(params): Query<HashMap<String, String>>,
 ) -> Json<Vec<ProblemListItem>> {
     let current_user = resolve_user(&state, &headers).await;
-    let is_admin_user = if let Some((id, _)) = &current_user {
-        is_admin(&state, id).await
+    let is_admin_user = if let Some((_, ref user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::APPROVE_PROBLEM).await
     } else {
         false
     };
-    let is_member = if let Some((id, _)) = &current_user {
-        is_team_member(&state, id).await
+    let is_member = if let Some((_, ref user)) = &current_user {
+        user.team_status == "joined"
     } else {
         false
     };
@@ -46,6 +46,7 @@ pub async fn get_problems(
     let author_filter = params.get("author").map(|v| v.to_lowercase()).filter(|v| !v.is_empty());
 
     let contests = state.contests.read().await;
+    let difficulty_order = state.difficulty_order.read().await.clone();
 
     let problems: Vec<ProblemListItem> = all_problems
         .values()
@@ -130,7 +131,15 @@ pub async fn get_problems(
                 },
             }
         })
-        .collect();
+        .collect::<Vec<_>>();
+
+    // Sort by difficulty_order so configured order is reflected in the list
+    let mut problems = problems;
+    problems.sort_by(|a, b| {
+        let ai = difficulty_order.iter().position(|d| d == &a.difficulty);
+        let bi = difficulty_order.iter().position(|d| d == &b.difficulty);
+        ai.unwrap_or(999).cmp(&bi.unwrap_or(999))
+    });
 
     Json(problems)
 }
@@ -154,13 +163,13 @@ pub async fn get_problem_detail(
     drop(problems);
 
     // Check admin status properly
-    let is_admin_user = if let Some((id, _)) = &current_user {
-        is_admin(&state, id).await
+    let is_admin_user = if let Some((_, ref user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::APPROVE_PROBLEM).await
     } else {
         false
     };
-    let is_member_user = if let Some((id, _)) = &current_user {
-        is_team_member(&state, id).await
+    let is_member_user = if let Some((_, ref user)) = &current_user {
+        user.team_status == "joined"
     } else {
         false
     };
@@ -316,11 +325,11 @@ pub async fn review_problem(
     headers: HeaderMap,
     Path((problem_id, action)): Path<(String, String)>,
 ) -> Json<ReviewResponse> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (_user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(ReviewResponse { success: false, message: "未登录".to_string() }),
     };
-    if !is_admin(&state, &user_id).await {
+    if !check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await {
         return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
     }
 
@@ -439,11 +448,11 @@ pub async fn claim_problem(
     headers: HeaderMap,
     Path(problem_id): Path<String>,
 ) -> Json<ClaimResponse> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(ClaimResponse { success: false, message: "未登录".to_string() }),
     };
-    if !is_team_member(&state, &user_id).await {
+    if user.team_status != "joined" {
         return Json(ClaimResponse { success: false, message: "只有团队成员才能认领题目".to_string() });
     }
     // Author cannot claim their own problem
@@ -541,11 +550,11 @@ pub async fn set_problem_visibility(
     Path(problem_id): Path<String>,
     Json(payload): Json<VisibilityPayload>,
 ) -> Json<ClaimResponse> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (_user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(ClaimResponse { success: false, message: "未登录".to_string() }),
     };
-    if !is_admin(&state, &user_id).await {
+    if !check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await {
         return Json(ClaimResponse { success: false, message: "权限不足".to_string() });
     }
 
@@ -584,11 +593,11 @@ pub async fn get_pending_problems_admin(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<Vec<serde_json::Value>> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (_user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(vec![]),
     };
-    if !is_admin(&state, &user_id).await {
+    if !check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await {
         return Json(vec![]);
     }
 
@@ -632,12 +641,12 @@ pub async fn get_team_members_for_visibility(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<Vec<serde_json::Value>> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (_user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(vec![]),
     };
     // Admin only — for visibility settings
-    if !is_admin(&state, &user_id).await {
+    if !check_permission(&state, &user, crate::types::perms::MANAGE_TEAM).await {
         return Json(vec![]);
     }
 
@@ -669,11 +678,11 @@ pub async fn update_problem(
     Path(problem_id): Path<String>,
     Json(payload): Json<EditProblemPayload>,
 ) -> Json<ReviewResponse> {
-    let (user_id, _user) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(ReviewResponse { success: false, message: "未登录".to_string() }),
     };
-    let is_admin_user = is_admin(&state, &user_id).await;
+    let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await;
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
@@ -752,23 +761,33 @@ pub async fn update_problem(
 // ============== Delete Problem (Admin only) ==============
 
 /// DELETE /api/problems/:id
+/// Admin can delete any problem; author can delete their own pending problem.
 pub async fn delete_problem(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(problem_id): Path<String>,
 ) -> Json<ReviewResponse> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(ReviewResponse { success: false, message: "未登录".to_string() }),
     };
-    if !is_admin(&state, &user_id).await {
-        return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
-    }
+    let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await;
 
     let mut problems = state.problems.write().await;
-    if problems.remove(&problem_id).is_none() {
-        return Json(ReviewResponse { success: false, message: "题目不存在".to_string() });
+    let problem = match problems.get(&problem_id) {
+        Some(p) => p.clone(),
+        None => return Json(ReviewResponse { success: false, message: "题目不存在".to_string() }),
+    };
+
+    // Author can delete their own pending problem; admin can delete anything
+    if problem.author_id != user_id && !is_admin_user {
+        return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
     }
+    if !is_admin_user && problem.status != "pending" {
+        return Json(ReviewResponse { success: false, message: "只能删除自己的待审核题目".to_string() });
+    }
+
+    problems.remove(&problem_id);
     drop(problems);
     state.save().await;
 
@@ -785,13 +804,10 @@ pub async fn set_problem_contest(
     Path(problem_id): Path<String>,
     Json(payload): Json<SetProblemContestPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::APPROVE_PROBLEM).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {

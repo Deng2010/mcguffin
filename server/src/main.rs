@@ -75,6 +75,7 @@ async fn main() {
         .route("/api/oauth/callback", get(oauth_callback))
         .route("/api/oauth/token", post(refresh_token))
         .route("/api/auth/login", post(login))
+        .route("/api/auth/permissions", get(get_permissions))
         // User routes
         .route("/api/user/me", get(get_current_user))
         .route("/api/user/profile/{username}", get(get_public_profile))
@@ -159,6 +160,12 @@ async fn main() {
         // Admin export
         .route("/api/admin/export/data", get(export_data))
         .route("/api/admin/export/config", get(export_config))
+        // Admin audit log
+        .route("/api/admin/audit-log", get(get_audit_log))
+        // Admin user management
+        .route("/api/admin/users", get(admin_list_users))
+        .route("/api/admin/users/{user_id}/role", post(admin_change_user_role))
+        .route("/api/admin/users/{user_id}/remove", post(admin_remove_user))
         .layer(cors)
         .layer(CompressionLayer::new())
         .with_state(state);

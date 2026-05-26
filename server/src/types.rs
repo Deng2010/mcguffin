@@ -1,5 +1,132 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+// ============== Permission System ==============
+
+/// All permission identifiers used in the system.
+/// These are the canonical names — both backend and frontend use them.
+pub mod perms {
+    // ── Public / Guest ──
+    pub const VIEW_SHOWCASE: &str = "view_showcase";
+    pub const APPLY_JOIN: &str = "apply_join";
+
+    // ── Team ──
+    pub const VIEW_TEAM: &str = "view_team";
+    /// Approve/reject join requests
+    pub const MANAGE_TEAM: &str = "manage_team";
+    /// Kick members, change roles
+    pub const MANAGE_MEMBERS: &str = "manage_members";
+
+    // ── Problems ──
+    pub const SUBMIT_PROBLEM: &str = "submit_problem";
+    pub const VIEW_PROBLEMS: &str = "view_problems";
+    pub const APPROVE_PROBLEM: &str = "approve_problem";
+
+    // ── Contests ──
+    pub const MANAGE_CONTESTS: &str = "manage_contests";
+
+    // ── Site ──
+    pub const MANAGE_SITE: &str = "manage_site";
+
+    // ── Suggestions ──
+    pub const VIEW_SUGGESTIONS: &str = "view_suggestions";
+    pub const MANAGE_SUGGESTIONS: &str = "manage_suggestions";
+
+    // ── Announcements ──
+    pub const MANAGE_ANNOUNCEMENTS: &str = "manage_announcements";
+
+    // ── Discussions / Community ──
+    pub const VIEW_DISCUSSIONS: &str = "view_discussions";
+    /// @deprecated — use MANAGE_POSTS instead. Kept in ALL for config validation backward compat.
+    pub const MANAGE_DISCUSSIONS: &str = "manage_discussions";
+    pub const MANAGE_TAGS: &str = "manage_tags";
+
+    // ── System ──
+    pub const MANAGE_NOTIFICATIONS: &str = "manage_notifications";
+    pub const MANAGE_BACKUPS: &str = "manage_backups";
+    pub const VIEW_STATS: &str = "view_stats";
+    /// Manage unified posts (discussions, suggestions, announcements).
+    /// Replaces the deprecated manage_discussions.
+    pub const MANAGE_POSTS: &str = "manage_posts";
+
+    /// All defined permissions (used for config validation)
+    pub const ALL: &[&str] = &[
+        VIEW_SHOWCASE, APPLY_JOIN,
+        VIEW_TEAM, MANAGE_TEAM, MANAGE_MEMBERS,
+        SUBMIT_PROBLEM, VIEW_PROBLEMS, APPROVE_PROBLEM,
+        MANAGE_CONTESTS,
+        MANAGE_SITE,
+        VIEW_SUGGESTIONS, MANAGE_SUGGESTIONS,
+        MANAGE_ANNOUNCEMENTS,
+        VIEW_DISCUSSIONS, MANAGE_DISCUSSIONS, MANAGE_TAGS,
+        MANAGE_NOTIFICATIONS, MANAGE_BACKUPS, VIEW_STATS, MANAGE_POSTS,
+    ];
+}
+
+/// The special wildcard permission meaning "all permissions" (superadmin only).
+pub const PERM_WILDCARD: &str = "*";
+
+// ============== Audit Log ==============
+
+/// An entry in the permission audit log.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEntry {
+    pub timestamp: DateTime<Utc>,
+    pub user_id: String,
+    pub user_name: String,
+    pub action: String,
+    pub resource: String,
+    pub result: String, // "allow" | "deny"
+    pub reason: String,
+}
+
+/// Return the default role→permissions mapping.
+pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
+    let mut m = HashMap::new();
+    // superadmin gets wildcard + all explicit permissions (frontend doesn't understand wildcards)
+    let all_perms: Vec<String> = perms::ALL.iter().map(|p| p.to_string()).collect();
+    let mut superadmin_perms = vec![PERM_WILDCARD.to_string()];
+    superadmin_perms.extend(all_perms);
+    m.insert("superadmin".to_string(), superadmin_perms);
+    m.insert("admin".to_string(), vec![
+        perms::VIEW_TEAM.to_string(),
+        perms::MANAGE_TEAM.to_string(),
+        perms::MANAGE_MEMBERS.to_string(),
+        perms::SUBMIT_PROBLEM.to_string(),
+        perms::VIEW_PROBLEMS.to_string(),
+        perms::APPROVE_PROBLEM.to_string(),
+        perms::MANAGE_CONTESTS.to_string(),
+        perms::MANAGE_SITE.to_string(),
+        perms::VIEW_SUGGESTIONS.to_string(),
+        perms::MANAGE_SUGGESTIONS.to_string(),
+        perms::MANAGE_ANNOUNCEMENTS.to_string(),
+        perms::VIEW_DISCUSSIONS.to_string(),
+        perms::MANAGE_POSTS.to_string(),
+        perms::MANAGE_TAGS.to_string(),
+        perms::MANAGE_NOTIFICATIONS.to_string(),
+        perms::VIEW_STATS.to_string(),
+    ]);
+    m.insert("member".to_string(), vec![
+        perms::VIEW_SHOWCASE.to_string(),
+        perms::VIEW_TEAM.to_string(),
+        perms::SUBMIT_PROBLEM.to_string(),
+        perms::VIEW_PROBLEMS.to_string(),
+        perms::VIEW_SUGGESTIONS.to_string(),
+        perms::VIEW_DISCUSSIONS.to_string(),
+    ]);
+    m.insert("guest".to_string(), vec![
+        perms::VIEW_SHOWCASE.to_string(),
+        perms::APPLY_JOIN.to_string(),
+        perms::VIEW_DISCUSSIONS.to_string(),
+    ]);
+    m.insert("pending".to_string(), vec![
+        perms::VIEW_SHOWCASE.to_string(),
+        perms::APPLY_JOIN.to_string(),
+        perms::VIEW_DISCUSSIONS.to_string(),
+    ]);
+    m
+}
 
 // ============== Session ==============
 
@@ -26,6 +153,34 @@ pub struct User {
     pub bio: String,
     #[serde(default)]
     pub password_hash: Option<String>,
+    /// Computed effective role for permission lookup — depends on role + team_status.
+    /// Set at response time; deserialized from storage as empty / fallback.
+    #[serde(default)]
+    pub effective_role: String,
+}
+
+impl User {
+    /// Compute the effective role used for permission checks.
+    ///
+    /// Maps (role, team_status) → effective_role:
+    ///   - superadmin → superadmin
+    ///   - admin → admin
+    ///   - team_status == "pending" → pending
+    ///   - role == "guest" && team_status != "joined" → guest
+    ///   - role == "member" && team_status == "joined" → member
+    ///   - fallback → role as-is
+    pub fn compute_effective_role(&self) -> &str {
+        match self.team_status.as_str() {
+            "pending" => "pending",
+            _ => match self.role.as_str() {
+                "superadmin" => "superadmin",
+                "admin" => "admin",
+                "guest" if self.team_status != "joined" => "guest",
+                "member" if self.team_status == "joined" => "member",
+                r => r,
+            },
+        }
+    }
 }
 
 // ============== Team ==============
@@ -369,6 +524,11 @@ pub struct AppConfig {
     /// Discussion emojis: name → { char }
     #[serde(default)]
     pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    /// Role→permissions mapping. Overrides the hardcoded defaults.
+    /// superadmin = ["*"] means all permissions.
+    /// Example: [permissions.admin] = ["view_team", "manage_team", ...]
+    #[serde(default)]
+    pub permissions: std::collections::HashMap<String, Vec<String>>,
 }
 
 #[derive(Deserialize)]
@@ -844,5 +1004,27 @@ color = "#ef4444"
         assert!(json.contains("\"version\":\"1.0.0\""));
         assert!(json.contains("\"description\":\"A site\""));
         assert!(json.contains("\"title\":\"My Site\""));
+    }
+
+    /// Verify all permissions in default_role_permissions() are in perms::ALL.
+    /// This catches drift when adding new permissions — prevents the frontend
+    /// from being out of sync with the backend's known permission set.
+    #[test]
+    fn test_all_role_permissions_are_in_known_set() {
+        let role_perms = default_role_permissions();
+        let known: std::collections::HashSet<&str> = perms::ALL.iter().cloned().collect();
+        for (role, perms) in &role_perms {
+            for p in perms {
+                if p == PERM_WILDCARD {
+                    continue; // wildcard is not in perms::ALL
+                }
+                assert!(
+                    known.contains(p.as_str()),
+                    "权限「{}」（角色: {}）不在 perms::ALL 中，请先在 perms 模块中定义",
+                    p,
+                    role,
+                );
+            }
+        }
     }
 }

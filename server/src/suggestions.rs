@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{is_admin, is_team_member, resolve_user};
+use crate::utils::{check_permission, require_permission_json, resolve_user};
 use crate::notifications::create_notification;
 
 // ============== List Suggestions (backward compat) ==============
@@ -22,18 +22,18 @@ pub async fn get_suggestions(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!([])),
     };
-    let is_admin_user = is_admin(&state, &user_id).await;
-    let is_team = is_team_member(&state, &user_id).await;
+    let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_SUGGESTIONS).await
+        || user.team_status == "joined";
     let posts = state.posts.read().await;
     let users = state.users.read().await;
     let mut result: Vec<serde_json::Value> = Vec::new();
     for p in posts.values() {
         if !p.tags.contains(&"建议".to_string()) && p.status.is_empty() { continue; }
-        if !is_admin_user && !is_team && p.author_id != user_id { continue; }
+        if !can_view_all && p.author_id != user_id { continue; }
         let author_name = users.get(&p.author_id)
             .map(|u| u.display_name.clone())
             .unwrap_or_else(|| p.author_name.clone());
@@ -106,15 +106,15 @@ pub async fn get_suggestion_detail(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
-        let is_admin_user = is_admin(&state, &user_id).await;
-        let is_team = is_team_member(&state, &user_id).await;
-        if !is_admin_user && !is_team && p.author_id != user_id {
+        let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_SUGGESTIONS).await
+            || user.team_status == "joined";
+        if !can_view_all && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
         let users = state.users.read().await;
@@ -145,13 +145,10 @@ pub async fn update_suggestion(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SUGGESTIONS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
         let author_id = p.author_id.clone();
@@ -195,13 +192,10 @@ pub async fn reply_to_suggestion(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-    let (user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (user_id, user) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SUGGESTIONS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_admin(&state, &user_id).await && !is_team_member(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
     let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
     if content.trim().is_empty() {
         return Json(serde_json::json!({"success": false, "message": "回复不能为空"}));
@@ -243,15 +237,15 @@ pub async fn delete_suggestion_reply(
     headers: HeaderMap,
     Path((suggestion_id, reply_id)): Path<(String, String)>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let is_admin_user = is_admin(&state, &user_id).await;
+    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_SUGGESTIONS).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&suggestion_id) {
         if let Some(reply) = p.replies.iter().find(|r| r.id == reply_id) {
-            if !is_admin_user && reply.author_id != user_id {
+            if !can_manage && reply.author_id != user_id {
                 return Json(serde_json::json!({"success": false, "message": "无权删除"}));
             }
         } else {
@@ -272,14 +266,14 @@ pub async fn delete_suggestion(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let is_admin_user = is_admin(&state, &user_id).await;
+    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_SUGGESTIONS).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get(&id) {
-        if !is_admin_user && p.author_id != user_id {
+        if !can_manage && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权删除"}));
         }
         posts.remove(&id);

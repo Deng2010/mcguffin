@@ -59,7 +59,7 @@ export default function CommunityPage() {
   const [createTags, setCreateTags] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
 
-  const isAdmin = hasPermission('manage_team')
+  const isAdmin = hasPermission('manage_posts')
 
   const loadPosts = () => {
     apiFetch<PostListItem[]>('/community/posts')

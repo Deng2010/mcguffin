@@ -1,5 +1,8 @@
 use crate::state::{AppState, ADMIN_USER_ID};
-use crate::types::User;
+use crate::types::{self, AuditEntry, User};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
+use axum::Json;
 use chrono::Utc;
 
 const SESSION_MAX_AGE_SECS: i64 = 24 * 60 * 60; // 24 hours
@@ -63,9 +66,11 @@ pub async fn resolve_user(state: &AppState, headers: &axum::http::HeaderMap) -> 
 
         let user_id = sessions.get(&token)?.user_id.clone();
         let users = state.users.read().await;
-        let user = users.get(&user_id)?.clone();
+        let mut user = users.get(&user_id)?.clone();
         drop(users);
         drop(sessions);
+        // Set computed effective_role on the response
+        user.effective_role = user.compute_effective_role().to_string();
         Some((user_id, user))
     }
 }
@@ -87,6 +92,110 @@ pub async fn is_superadmin(_state: &AppState, user_id: &str) -> bool {
 pub async fn is_team_member(state: &AppState, user_id: &str) -> bool {
     let members = state.team_members.read().await;
     members.values().any(|m| m.user_id == user_id)
+}
+
+// ============== Unified Permission Check ==============
+
+/// Resolve user from headers, check session validity, and verify the user has the
+/// given permission. Returns the (user_id, User) pair on success.
+///
+/// On failure returns an appropriate HTTP error response (401 Unauthorized or
+/// 403 Forbidden) that can be `?`-returned from the handler.
+pub async fn require_permission(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    permission: &str,
+) -> Result<(String, User), impl IntoResponse> {
+    let (user_id, user) = resolve_user(state, headers)
+        .await
+        .ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "未登录或会话已过期"
+                })),
+            )
+        })?;
+
+    if !check_permission(state, &user, permission).await {
+        state.log_audit(AuditEntry {
+            timestamp: Utc::now(),
+            user_id: user_id.clone(),
+            user_name: user.display_name.clone(),
+            action: permission.to_string(),
+            resource: String::new(),
+            result: "deny".to_string(),
+            reason: "权限检查未通过".to_string(),
+        }).await;
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("没有「{}」权限", permission)
+            })),
+        ));
+    }
+
+    Ok((user_id, user))
+}
+
+/// Check whether a user has a given permission, based on their role.
+/// Supports the wildcard "*" (superadmin sees all).
+pub async fn check_permission(state: &AppState, user: &User, permission: &str) -> bool {
+    let perms_map = state.role_permissions.read().await;
+    if let Some(user_perms) = perms_map.get(&user.role) {
+        // Wildcard check
+        if user_perms.iter().any(|p| p == types::PERM_WILDCARD) {
+            return true;
+        }
+        user_perms.iter().any(|p| p == permission)
+    } else {
+        // Fallback: look up in default set (in case role isn't configured)
+        let defaults = types::default_role_permissions();
+        defaults
+            .get(&user.role)
+            .map(|p| p.iter().any(|p| p == permission))
+            .unwrap_or(false)
+    }
+}
+
+/// Like require_permission but returns a Json error response (for handlers
+/// that return `Json<serde_json::Value>` instead of `Result<..., impl IntoResponse>`).
+pub async fn require_permission_json(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    permission: &str,
+) -> Result<(String, User), Json<serde_json::Value>> {
+    let (uid, user) = match resolve_user(state, headers).await {
+        Some(u) => u,
+        None => return Err(Json(serde_json::json!({
+            "success": false,
+            "message": "未登录或会话已过期"
+        }))),
+    };
+    let perms = state.role_permissions.read().await;
+    let has_perm = perms
+        .get(&user.role)
+        .map(|p| p.iter().any(|p| p == types::PERM_WILDCARD || p == permission))
+        .unwrap_or(false);
+    if has_perm {
+        Ok((uid, user))
+    } else {
+        state.log_audit(AuditEntry {
+            timestamp: Utc::now(),
+            user_id: uid.clone(),
+            user_name: user.display_name.clone(),
+            action: permission.to_string(),
+            resource: String::new(),
+            result: "deny".to_string(),
+            reason: "权限检查未通过".to_string(),
+        }).await;
+        Err(Json(serde_json::json!({
+            "success": false,
+            "message": "权限不足"
+        })))
+    }
 }
 
 // ============== Tests ==============

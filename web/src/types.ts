@@ -10,6 +10,8 @@ export interface User {
   team_status: 'none' | 'pending' | 'joined'
   created_at: string
   bio?: string
+  /** Effective role for permission lookup (computed by backend) */
+  effective_role?: string
 }
 
 export type Permission =
@@ -19,8 +21,10 @@ export type Permission =
   | 'apply_join'
   /** View team member list */
   | 'view_team'
-  /** Manage team (approve/reject applications, change roles) */
+  /** Manage team (approve/reject applications) */
   | 'manage_team'
+  /** Kick members, change roles */
+  | 'manage_members'
   /** Submit problems */
   | 'submit_problem'
   /** View problem list and details (filtered by permissions) */
@@ -28,19 +32,34 @@ export type Permission =
   /** Review/approve problems */
   | 'approve_problem'
   /** Manage contests (create/edit/delete/toggle visibility) */
-  | 'edit_contests'
+  | 'manage_contests'
   /** Edit site info (team showcase description) */
   | 'manage_site'
   /** View and submit suggestions */
   | 'view_suggestions'
+  /** Manage suggestions (change status, delete) */
+  | 'manage_suggestions'
   /** Manage announcements */
   | 'manage_announcements'
   /** View and participate in discussions */
   | 'view_discussions'
+  /** @deprecated Use manage_posts instead — kept for backward compat */
+  | 'manage_discussions'
+  /** Manage discussion tags and emojis */
+  | 'manage_tags'
+  /** Send global notifications */
+  | 'manage_notifications'
+  /** Backup/restore data */
+  | 'manage_backups'
+  /** View statistics */
+  | 'view_stats'
+  /** Manage community posts */
+  | 'manage_posts'
 
-export const rolePermissions: Record<User['role'], Permission[]> = {
-  superadmin: ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site', 'view_suggestions', 'manage_announcements', 'view_discussions'],
-  admin:   ['view_showcase', 'view_team', 'manage_team', 'submit_problem', 'view_problems', 'approve_problem', 'edit_contests', 'manage_site', 'view_suggestions', 'manage_announcements', 'view_discussions'],
+/** Default role→permissions mapping (fallback when backend unavailable). */
+export const defaultRolePermissions: Record<string, Permission[]> = {
+  superadmin: ['view_showcase', 'view_team', 'manage_team', 'manage_members', 'submit_problem', 'view_problems', 'approve_problem', 'manage_contests', 'manage_site', 'view_suggestions', 'manage_suggestions', 'manage_announcements', 'view_discussions', 'manage_discussions', 'manage_tags', 'manage_notifications', 'manage_backups', 'view_stats', 'manage_posts'],
+  admin:   ['view_showcase', 'view_team', 'manage_team', 'manage_members', 'submit_problem', 'view_problems', 'approve_problem', 'manage_contests', 'manage_site', 'view_suggestions', 'manage_suggestions', 'manage_announcements', 'view_discussions', 'manage_posts', 'manage_tags', 'manage_notifications', 'view_stats'],
   member:  ['view_showcase', 'view_team', 'submit_problem', 'view_problems', 'view_suggestions', 'view_discussions'],
   guest:   ['view_showcase', 'apply_join', 'view_discussions'],
   pending: ['view_showcase', 'apply_join', 'view_discussions'],

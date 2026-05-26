@@ -9,8 +9,8 @@ use toml_edit::{DocumentMut, Item, Value as TomlValue};
 use chrono::Local;
 
 use crate::state::AppState;
-use crate::types::{DifficultyLevel, ShowcaseConfigPayload};
-use crate::utils::{is_superadmin, resolve_user};
+use crate::types::{AuditEntry, ChangeRolePayload, DifficultyLevel, ShowcaseConfigPayload, PERM_WILDCARD};
+use crate::utils::require_permission_json;
 
 const CONFIG_PATH: &str = "/usr/share/mcguffin/config.toml";
 
@@ -28,6 +28,8 @@ pub struct ConfigResponse {
     pub discussion_tags: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub permissions: std::collections::HashMap<String, Vec<String>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -70,6 +72,8 @@ pub struct UpdateConfigPayload {
     pub discussion_tags: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    pub permissions: std::collections::HashMap<String, Vec<String>>,
 }
 
 fn read_config_raw() -> Result<String, String> {
@@ -184,6 +188,24 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         }
     }
 
+    // Parse permissions (role_name → [permissions])
+    let mut permissions = std::collections::HashMap::new();
+    if let Some(t) = doc.get("permissions").and_then(|s| s.as_table()) {
+        for (role, item) in t.iter() {
+            let perms: Vec<String> = if let Some(arr) = item.as_array() {
+                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+            } else if let Some(v) = item.as_value() {
+                // Single string value (e.g., "*")
+                v.as_str().map(|s| vec![s.to_string()]).unwrap_or_default()
+            } else {
+                continue;
+            };
+            if !perms.is_empty() {
+                permissions.insert(role.to_string(), perms);
+            }
+        }
+    }
+
     Ok(ConfigResponse {
         server: ServerSection {
             site_url: get_str("server", "site_url"),
@@ -209,6 +231,7 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         difficulty,
         discussion_tags,
         discussion_emojis,
+        permissions,
     })
 }
 
@@ -293,6 +316,20 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         }
     }
 
+    // Write permissions — remove old, add new
+    if let Some(t) = doc.get_mut("permissions").and_then(|s| s.as_table_mut()) {
+        let keys: Vec<String> = t.iter().map(|(k, _)| k.to_string()).collect();
+        for k in keys { t.remove(&k); }
+    }
+    for (role, perms) in &payload.permissions {
+        if !perms.is_empty() {
+            let arr = toml_edit::Array::from_iter(perms.iter().map(|p| toml_edit::Value::from(p.as_str())));
+            if let Some(t) = doc.get_mut("permissions").and_then(|s| s.as_table_mut()) {
+                t[role] = toml_edit::Item::Value(toml_edit::Value::Array(arr));
+            }
+        }
+    }
+
     Ok(doc.to_string())
 }
 
@@ -304,13 +341,10 @@ pub async fn get_config(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     let raw = match read_config_raw() {
         Ok(s) => s,
@@ -326,19 +360,16 @@ pub async fn get_config(
 }
 
 /// PUT /api/admin/config
-/// Superadmin only — updates config.toml
+/// manage_site permission required — updates config.toml
 pub async fn update_config(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<UpdateConfigPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     // Validate
     if payload.server.site_url.trim().is_empty() {
@@ -399,6 +430,10 @@ pub async fn update_config(
                     }
                 }
             }
+            // Reload role→permissions in-memory
+            if !payload.permissions.is_empty() {
+                *state.role_permissions.write().await = payload.permissions.clone();
+            }
             Json(serde_json::json!({"success": true, "message": "配置已保存，立即生效"}))
         }
         Err(e) => Json(serde_json::json!({"success": false, "message": e})),
@@ -406,18 +441,15 @@ pub async fn update_config(
 }
 
 /// POST /api/admin/restart
-/// Superadmin only — restarts the mcguffin service
+/// manage_site permission required — restarts the mcguffin service
 pub async fn restart_service(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     // Spawn restart in background — this will restart the service after we respond
     tokio::spawn(async {
@@ -471,18 +503,15 @@ fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
 }
 
 /// POST /api/admin/backup
-/// Superadmin only — creates a timestamped backup of the current data file
+/// manage_backups permission required — creates a timestamped backup of the current data file
 pub async fn create_backup(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_BACKUPS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     // Save current state to disk first so we back up the latest data
     state.save().await;
@@ -511,18 +540,15 @@ pub async fn create_backup(
 }
 
 /// GET /api/admin/backups
-/// Superadmin only — lists all available backups with size and date
+/// manage_backups permission required — lists all available backups with size and date
 pub async fn list_backups(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_BACKUPS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     let dir = backup_dir(&state);
     let backups = list_backup_files(&dir);
@@ -531,19 +557,16 @@ pub async fn list_backups(
 }
 
 /// POST /api/admin/backup/restore/:name
-/// Superadmin only — restores data from a named backup
+/// manage_backups permission required — restores data from a named backup
 pub async fn restore_backup(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_BACKUPS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     // Validate filename — prevent path traversal
     let name_clean = name.trim();
@@ -584,19 +607,16 @@ pub async fn restore_backup(
 }
 
 /// DELETE /api/admin/backup/:name
-/// Superadmin only — deletes a named backup
+/// manage_backups permission required — deletes a named backup
 pub async fn delete_backup(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_BACKUPS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     // Validate filename
     let name_clean = name.trim();
@@ -626,18 +646,15 @@ pub async fn delete_backup(
 // ============== Data / Config Export ==============
 
 /// GET /api/admin/export/data
-/// Superadmin only — exports the data file (JSON) as download
+/// manage_site permission required — exports the data file (JSON) as download
 pub async fn export_data(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     let data_path = PathBuf::from(&state.data_file);
     match std::fs::read_to_string(&data_path) {
@@ -655,18 +672,15 @@ pub async fn export_data(
 }
 
 /// GET /api/admin/export/config
-/// Superadmin only — exports the config file (TOML) as download
+/// manage_site permission required — exports the config file (TOML) as download
 pub async fn export_config(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     match std::fs::read_to_string(CONFIG_PATH) {
         Ok(content) => {
@@ -685,18 +699,15 @@ pub async fn export_config(
 // ============== Showcase Configuration ==============
 
 /// GET /api/admin/showcase
-/// Admin+superadmin — returns current showcase selections
+/// manage_site permission required — returns current showcase selections
 pub async fn get_showcase_config(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await && !crate::utils::is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     Json(serde_json::json!({
         "success": true,
@@ -706,23 +717,121 @@ pub async fn get_showcase_config(
 }
 
 /// PUT /api/admin/showcase
-/// Admin+superadmin — updates which problems/contests appear on the showcase
+/// manage_site permission required — updates which problems/contests appear on the showcase
 pub async fn update_showcase_config(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(payload): Json<ShowcaseConfigPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_superadmin(&state, &user_id).await && !crate::utils::is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     *state.showcase_problem_ids.write().await = payload.problem_ids;
     *state.showcase_contest_ids.write().await = payload.contest_ids;
     state.save().await;
 
     Json(serde_json::json!({"success": true, "message": "展板配置已保存"}))
+}
+
+// ============== Audit Log ==============
+
+/// GET /api/admin/audit-log
+/// view_stats permission required — returns recent permission audit entries
+pub async fn get_audit_log(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<serde_json::Value> {
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::VIEW_STATS).await {
+        Ok(u) => u,
+        Err(e) => return e,
+    };
+
+    let log = state.audit_log.read().await;
+    let entries: Vec<&AuditEntry> = log.iter().rev().take(200).collect();
+    Json(serde_json::json!(entries))
+}
+
+// ============== User Management ==============
+
+use crate::state::ADMIN_USER_ID;
+/// GET /api/admin/users
+/// List all users (superadmin only)
+pub async fn admin_list_users(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Json<serde_json::Value> {
+    let (_user_id, _) = match require_permission_json(&state, &headers, PERM_WILDCARD).await {
+        Ok(u) => u,
+        Err(e) => return e,
+    };
+    let users = state.users.read().await;
+    let members = state.team_members.read().await;
+    let result: Vec<serde_json::Value> = users.values().map(|u| {
+        let is_team_member = members.values().any(|m| m.user_id == u.id);
+        serde_json::json!({
+            "id": u.id,
+            "username": u.username,
+            "display_name": u.display_name,
+            "email": u.email,
+            "role": u.role,
+            "team_status": u.team_status,
+            "is_team_member": is_team_member,
+            "created_at": u.created_at,
+        })
+    }).collect();
+    Json(serde_json::json!(result))
+}
+
+/// POST /api/admin/users/{user_id}/role
+/// Change a user's role (superadmin only)
+pub async fn admin_change_user_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+    Json(payload): Json<ChangeRolePayload>,
+) -> Json<serde_json::Value> {
+    let (_admin_id, _) = match require_permission_json(&state, &headers, PERM_WILDCARD).await {
+        Ok(u) => u,
+        Err(e) => return e,
+    };
+    if user_id == ADMIN_USER_ID {
+        return Json(serde_json::json!({"success": false, "message": "不能修改系统管理员的角色"}));
+    }
+    if payload.role != "admin" && payload.role != "member" && payload.role != "guest" {
+        return Json(serde_json::json!({"success": false, "message": "无效角色"}));
+    }
+    let mut users = state.users.write().await;
+    if let Some(u) = users.get_mut(&user_id) {
+        u.role = payload.role.clone();
+        drop(users);
+        state.save().await;
+        Json(serde_json::json!({"success": true, "message": "角色已更新"}))
+    } else {
+        Json(serde_json::json!({"success": false, "message": "用户不存在"}))
+    }
+}
+
+/// POST /api/admin/users/{user_id}/remove
+/// Remove (delete) a user (superadmin only)
+pub async fn admin_remove_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(user_id): Path<String>,
+) -> Json<serde_json::Value> {
+    let (_admin_id, _) = match require_permission_json(&state, &headers, PERM_WILDCARD).await {
+        Ok(u) => u,
+        Err(e) => return e,
+    };
+    if user_id == ADMIN_USER_ID {
+        return Json(serde_json::json!({"success": false, "message": "不能删除系统管理员"}));
+    }
+    if user_id == _admin_id {
+        return Json(serde_json::json!({"success": false, "message": "不能删除自己"}));
+    }
+    state.users.write().await.remove(&user_id);
+    state.team_members.write().await.retain(|_, m| m.user_id != user_id);
+    state.save().await;
+    Json(serde_json::json!({"success": true, "message": "用户已删除"}))
 }

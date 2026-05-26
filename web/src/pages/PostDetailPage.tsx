@@ -37,7 +37,7 @@ const STATUS_BG_COLOR: Record<string, string> = {
 export default function PostDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { user, isAuthenticated } = useAuth()
+  const { user, hasPermission, isAuthenticated } = useAuth()
   const [post, setPost] = useState<PostDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [replyContent, setReplyContent] = useState('')
@@ -47,16 +47,13 @@ export default function PostDetailPage() {
   const [editingTags, setEditingTags] = useState(false)
   const [editTagIds, setEditTagIds] = useState<string[]>([])
   const [savingTags, setSavingTags] = useState(false)
-  // Sub-reply state
   const [replyTo, setReplyTo] = useState<DiscussionReply | null>(null)
   const [replyPage, setReplyPage] = useState(1)
-
-  // Team members for @mention
   const [teamMembers, setTeamMembers] = useState<MentionMember[]>([])
   const mainMention = useMention(teamMembers)
   const inlineMention = useMention(teamMembers)
 
-  const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
+  const isAdmin = hasPermission('manage_posts')
   const canDelete = post && (isAdmin || post.author_id === user?.id)
   const replyCharsLeft = REPLY_MAX_LEN - replyContent.length
 

@@ -23,7 +23,7 @@ const REPLY_PAGE_SIZE = 10
 export default function DiscussionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const [discussion, setDiscussion] = useState<DiscussionDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [replyContent, setReplyContent] = useState('')
@@ -42,7 +42,7 @@ export default function DiscussionDetailPage() {
   const mainMention = useMention(teamMembers)
   const inlineMention = useMention(teamMembers)
 
-  const isAdmin = user?.role === 'superadmin' || user?.role === 'admin'
+  const isAdmin = hasPermission('manage_posts')
   const canDeleteDiscussion = discussion && (isAdmin || discussion.author_id === user?.id)
   const replyCharsLeft = REPLY_MAX_LEN - replyContent.length
 

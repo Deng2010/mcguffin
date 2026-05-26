@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext, createContext, useCallback, type ReactNode } from 'react'
 import { getToken, setToken, clearToken, apiFetch } from './api'
 import type { User, Permission } from './types'
-import { rolePermissions } from './types'
+import { defaultRolePermissions } from './types'
 
 // ============== Context Type ==============
 
@@ -31,6 +31,15 @@ export function useAuth(): AuthContextType {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [permMap, setPermMap] = useState<Record<string, string[]> | null>(null)
+  const [permMapLoading, setPermMapLoading] = useState(true)
+
+  // Fetch role→permissions mapping from backend (no auth needed)
+  useEffect(() => {
+    apiFetch<Record<string, string[]>>('/auth/permissions')
+      .then((map) => { setPermMap(map); setPermMapLoading(false) })
+      .catch(() => { setPermMapLoading(false) /* fallback to defaults */ })
+  }, [])
 
   const refreshUser = useCallback(async () => {
     const token = getToken()
@@ -58,19 +67,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Not logged in: only view_showcase is allowed
         return permission === 'view_showcase'
       }
-      // Map user state to role for permission lookup
-      let effectiveRole = user.role
-      if (user.team_status === 'pending') {
-        effectiveRole = 'pending' as any
-      } else if (user.team_status === 'none' && user.role === 'guest') {
-        effectiveRole = 'guest'
-      } else if (user.role === 'member' && user.team_status === 'joined') {
-        effectiveRole = 'member'
+      // While permMap is loading, be conservative: only public permissions
+      if (permMapLoading) {
+        return permission === 'view_showcase'
       }
-      // 'superadmin' / 'admin' role gets all admin permissions regardless of team_status
-      return rolePermissions[effectiveRole as User['role']]?.includes(permission) ?? false
+      // Use backend-computed effective_role, or compute locally as fallback
+      const effectiveRole = user.effective_role
+        ?? (user.team_status === 'pending' ? 'pending' as any
+          : user.team_status === 'none' && user.role === 'guest' ? 'guest'
+          : user.role === 'member' && user.team_status === 'joined' ? 'member'
+          : user.role)
+      // Use backend-provided mapping, fall back to defaults
+      const map = permMap ?? defaultRolePermissions as unknown as Record<string, Permission[]>
+      const userPerms = map[effectiveRole]
+      if (!userPerms) return false
+      // Wildcard '*' means all permissions (superadmin)
+      if (userPerms.includes('*' as any)) return true
+      return userPerms.includes(permission)
     },
-    [user],
+    [user, permMap, permMapLoading],
   )
 
   const login = () => {

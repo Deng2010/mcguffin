@@ -6,7 +6,7 @@ use axum::http::HeaderMap;
 
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{is_team_member, resolve_user};
+use crate::utils::resolve_user;
 
 // ============== Unified Community Feed ==============
 
@@ -16,7 +16,7 @@ pub async fn get_community_posts(
     Query(query): Query<CommunityQuery>,
 ) -> Json<serde_json::Value> {
     let auth_info = resolve_user(&state, &headers).await;
-    let is_team = if let Some((ref uid, _)) = auth_info { is_team_member(&state, uid).await } else { false };
+    let is_team = auth_info.as_ref().map(|(_, user)| user.team_status == "joined").unwrap_or(false);
 
     // Parse tag filter
     let filter_tags: Vec<String> = if let Some(ref tags_str) = query.tags {

@@ -11,6 +11,16 @@ use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::*;
 use crate::utils::url_encode;
 
+// ============== Permissions (GET) ==============
+
+/// GET /api/auth/permissions
+/// Returns the current role→permissions mapping (no auth required — public info for frontend rendering).
+pub async fn get_permissions(
+    State(state): State<AppState>,
+) -> Json<std::collections::HashMap<String, Vec<String>>> {
+    Json(state.role_permissions.read().await.clone())
+}
+
 // ============== Merged Login (admin + account) ==============
 
 pub async fn login(
@@ -250,6 +260,17 @@ pub async fn oauth_callback(
                                 dn.clone()
                             }
                         };
+                        // Compute effective_role for the new user
+                        let effective_role: String = match team_status.as_str() {
+                            "pending" => "pending".into(),
+                            _ => match role.as_str() {
+                                "superadmin" => "superadmin".into(),
+                                "admin" => "admin".into(),
+                                "guest" if team_status != "joined" => "guest".into(),
+                                "member" if team_status == "joined" => "member".into(),
+                                r => r.to_string(),
+                            },
+                        };
                         let user = User {
                             id: user_id.clone(),
                             username,
@@ -261,6 +282,7 @@ pub async fn oauth_callback(
                             created_at: Utc::now(),
                             bio: String::new(),
                             password_hash: None,
+                            effective_role,
                         };
                         users.insert(user.id.clone(), user);
                     }

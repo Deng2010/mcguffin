@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::get_token_from_headers;
+use crate::utils::{check_permission, get_token_from_headers, require_permission_json};
 
 /// Resolve user from token; returns (user_id, user)
 async fn resolve_user<'a>(state: &'a AppState, headers: &HeaderMap) -> Option<(String, User)> {
@@ -17,18 +17,6 @@ async fn resolve_user<'a>(state: &'a AppState, headers: &HeaderMap) -> Option<(S
     let user_id = entry.user_id;
     let user = state.users.read().await.get(&user_id)?.clone();
     Some((user_id, user))
-}
-
-/// Check if user has admin role (includes superadmin)
-async fn is_admin(state: &AppState, user_id: &str) -> bool {
-    let users = state.users.read().await;
-    users.get(user_id).map(|u| u.role == "admin" || u.role == "superadmin").unwrap_or(false)
-}
-
-/// Check if user is a team member
-async fn is_team_member(state: &AppState, user_id: &str) -> bool {
-    let members = state.team_members.read().await;
-    members.values().any(|m| m.user_id == user_id)
 }
 
 fn to_list_item(c: &Contest) -> ContestListItem {
@@ -57,13 +45,13 @@ pub async fn get_contests(
     headers: HeaderMap,
 ) -> Json<Vec<ContestListItem>> {
     let current_user = resolve_user(&state, &headers).await;
-    let is_admin_user = if let Some((user_id, _)) = &current_user {
-        is_admin(&state, user_id).await
+    let is_admin_user = if let Some((_user_id, user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::MANAGE_CONTESTS).await
     } else {
         false
     };
-    let is_member_user = if let Some((user_id, _)) = &current_user {
-        is_team_member(&state, user_id).await
+    let is_member_user = if let Some((_, user)) = &current_user {
+        user.team_status == "joined"
     } else {
         false
     };
@@ -95,13 +83,10 @@ pub async fn create_contest(
     headers: HeaderMap,
     Json(payload): Json<CreateContestPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     let contest = Contest {
         id: Uuid::new_v4().to_string(),
@@ -132,13 +117,10 @@ pub async fn delete_contest(
     headers: HeaderMap,
     Path(contest_id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     let mut contests = state.contests.write().await;
     if contests.remove(&contest_id).is_some() {
@@ -168,13 +150,10 @@ pub async fn update_contest(
     Path(contest_id): Path<String>,
     Json(payload): Json<UpdateContestPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
@@ -205,13 +184,10 @@ pub async fn set_contest_status(
     Path(contest_id): Path<String>,
     Json(payload): Json<SetContestStatusPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     if payload.status != "draft" && payload.status != "public" {
         return Json(serde_json::json!({"success": false, "message": "状态值无效，仅支持 draft 或 public"}));
@@ -249,13 +225,10 @@ pub async fn set_problem_order(
     Path(contest_id): Path<String>,
     Json(payload): Json<ContestProblemOrderPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
+        Ok(u) => u,
+        Err(e) => return e,
     };
-    if !is_admin(&state, &user_id).await {
-        return Json(serde_json::json!({"success": false, "message": "权限不足"}));
-    }
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
@@ -296,13 +269,13 @@ pub async fn get_contest_problems(
 ) -> Json<Vec<serde_json::Value>> {
     let current_user = resolve_user(&state, &headers).await;
     // Check admin status for later filtering
-    let _is_admin_user = if let Some((user_id, _)) = &current_user {
-        is_admin(&state, user_id).await
+    let _is_admin_user = if let Some((_user_id, user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::MANAGE_CONTESTS).await
     } else {
         false
     };
-    let _is_member_user = if let Some((user_id, _)) = &current_user {
-        is_team_member(&state, user_id).await
+    let _is_member_user = if let Some((_, user)) = &current_user {
+        user.team_status == "joined"
     } else {
         false
     };

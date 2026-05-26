@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::notifications::create_notification;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{is_admin, is_team_member, resolve_user};
+use crate::utils::{check_permission, resolve_user};
 
 // ============== Character Limits ==============
 
@@ -62,8 +62,7 @@ pub async fn get_posts(
     headers: HeaderMap,
     Query(query): Query<ListPostsQuery>,
 ) -> Json<serde_json::Value> {
-    let auth_info = resolve_user(&state, &headers).await;
-    let is_team = if let Some((ref uid, _)) = auth_info { is_team_member(&state, uid).await } else { false };
+    let is_team = if let Some((_, ref user)) = resolve_user(&state, &headers).await { user.team_status == "joined" } else { false };
     let posts = state.posts.read().await;
     let users = state.users.read().await;
     let all_tags = state.discussion_tags.read().await;
@@ -151,7 +150,7 @@ pub async fn create_post(
     }
 
     let now = Utc::now();
-    let is_admin_user = is_admin(&state, &user_id).await;
+    let is_admin_user = check_permission(&state, &user, perms::MANAGE_POSTS).await;
     let display_name = user.display_name;
 
     // Validate admin-only tags
@@ -209,8 +208,7 @@ pub async fn get_post_detail(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let auth_info = resolve_user(&state, &headers).await;
-    let is_team = if let Some((ref uid, _)) = auth_info { is_team_member(&state, uid).await } else { false };
+    let is_team = if let Some((_, ref user)) = resolve_user(&state, &headers).await { user.team_status == "joined" } else { false };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
         if p.team_only && !is_team {
@@ -279,11 +277,11 @@ pub async fn update_post(
     Path(id): Path<String>,
     Json(payload): Json<UpdatePostPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let is_admin_user = is_admin(&state, &user_id).await;
+    let is_admin_user = check_permission(&state, &user, perms::MANAGE_POSTS).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
         if !is_admin_user && p.author_id != user_id {
@@ -377,11 +375,11 @@ pub async fn delete_post(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let is_admin_user = is_admin(&state, &user_id).await;
+    let is_admin_user = check_permission(&state, &user, perms::MANAGE_POSTS).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get(&id) {
         if !is_admin_user && p.author_id != user_id {
@@ -470,11 +468,11 @@ pub async fn delete_post_reply(
     headers: HeaderMap,
     Path((post_id, reply_id)): Path<(String, String)>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let is_admin_user = is_admin(&state, &user_id).await;
+    let is_admin_user = check_permission(&state, &user, perms::MANAGE_POSTS).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&post_id) {
         if let Some(reply) = p.replies.iter().find(|r| r.id == reply_id) {

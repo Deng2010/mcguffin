@@ -39,7 +39,7 @@ interface DiscussionEmoji {
   name: string
 }
 
-type TabId = 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'backup' | 'discussions'
+type TabId = 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'backup' | 'discussions' | 'permissions' | 'users'
 
 // ============== Component ==============
 
@@ -59,6 +59,8 @@ export default function AdminConfigPage() {
     { id: 'oauth', label: 'OAuth' },
     { id: 'difficulty', label: '难度' },
     { id: 'discussions', label: '讨论管理' },
+    { id: 'permissions', label: '权限' },
+    { id: 'users', label: '用户管理' },
     { id: 'backup', label: '备份' },
   ]
 
@@ -83,11 +85,13 @@ export default function AdminConfigPage() {
         ))}
       </div>
 
-      {/* Config tabs (server/admin/site/oauth/difficulty/discussions) share the config provider */}
-      {['server', 'admin', 'site', 'oauth', 'difficulty', 'discussions'].includes(activeTab) ? (
-        <ConfigWrapper tab={activeTab as 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'discussions'} />
+      {/* Config tabs (server/admin/site/oauth/difficulty/discussions/permissions) share the config provider */}
+      {['server', 'admin', 'site', 'oauth', 'difficulty', 'discussions', 'permissions'].includes(activeTab) ? (
+        <ConfigWrapper tab={activeTab as 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'discussions' | 'permissions'} />
       ) : activeTab === 'backup' ? (
         <BackupPanel />
+      ) : activeTab === 'users' ? (
+        <UsersPanel />
       ) : null}
     </div>
   )
@@ -129,11 +133,14 @@ interface ConfigCtx {
   setDiscussionEmojis: (v: Record<string, { char: string }>) => void
   newEmojiName: string; setNewEmojiName: (v: string) => void
   newEmojiChar: string; setNewEmojiChar: (v: string) => void
+  // Permissions
+  permissions: Record<string, string[]>
+  setPermissions: (v: Record<string, string[]>) => void
 }
 
 const ConfigCtx = createContext<ConfigCtx>(null!)
 
-function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'discussions' }) {
+function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'discussions' | 'permissions' }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [restarting, setRestarting] = useState(false)
@@ -159,6 +166,7 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
   const [newTagColor, setNewTagColor] = useState('#6366f1')
   const [newTagDesc, setNewTagDesc] = useState('')
   const [discussionEmojis, setDiscussionEmojis] = useState<Record<string, { char: string }>>({})
+  const [permissions, setPermissions] = useState<Record<string, string[]>>({})
   const [newEmojiName, setNewEmojiName] = useState('')
   const [newEmojiChar, setNewEmojiChar] = useState('')
 
@@ -176,18 +184,34 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
       setSiteTitle(res.config.site.title ?? '')
       setCpClientId(res.config.oauth.cp_client_id)
       setCpClientSecret(res.config.oauth.cp_client_secret)
-      setDifficulties(Object.entries(res.config.difficulty).map(([name, fields]) => ({ name, label: fields.label, color: fields.color })))
-      setDifficultyOrder(res.config.site.difficulty_order ?? [])
+      const allDiffs = Object.entries(res.config.difficulty).map(([name, fields]) => ({ name, label: fields.label, color: fields.color }))
+      const order = res.config.site.difficulty_order ?? []
+      // Sort difficulties by difficulty_order so that difficulties[i].name === difficultyOrder[i]
+      allDiffs.sort((a, b) => {
+        const ai = order.indexOf(a.name)
+        const bi = order.indexOf(b.name)
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+      })
+      setDifficulties(allDiffs)
+      setDifficultyOrder(allDiffs.length > 0 && order.length === 0
+        ? allDiffs.map(d => d.name)
+        : order
+      )
       setDiscussionTags(res.config.discussion_tags ?? {})
       setDiscussionEmojis(res.config.discussion_emojis ?? {})
+      setPermissions((res.config as any).permissions ?? {})
     } catch (err) { setMsg(`加载配置失败: ${err}`) }
     finally { setLoading(false) }
   }
 
   useEffect(() => { loadConfig() }, [])
 
-  const updateDiff = (idx: number, field: keyof DifficultyEntry, value: string) =>
+  const updateDiff = (idx: number, field: keyof DifficultyEntry, value: string) => {
     setDifficulties(p => { const n = [...p]; n[idx] = { ...n[idx], [field]: value }; return n })
+    if (field === 'name') {
+      setDifficultyOrder(p => { const n = [...p]; n[idx] = value; return n })
+    }
+  }
 
   const moveDiff = (idx: number, dir: -1 | 1) => {
     const t = idx + dir
@@ -226,6 +250,7 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
           difficulty: diffObj,
           discussion_tags: discussionTags,
           discussion_emojis: discussionEmojis,
+          permissions,
         }),
       })
       if (!res.success) { setMsg(`保存失败: ${res.message}`); return }
@@ -258,6 +283,7 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
     newTagName, setNewTagName, newTagColor, setNewTagColor, newTagDesc, setNewTagDesc,
     discussionEmojis, setDiscussionEmojis,
     newEmojiName, setNewEmojiName, newEmojiChar, setNewEmojiChar,
+    permissions, setPermissions,
   }
 
   if (loading) return (
@@ -276,6 +302,7 @@ function ConfigWrapper({ tab }: { tab: 'server' | 'admin' | 'site' | 'oauth' | '
       case 'oauth': return <OAuthForm />
       case 'difficulty': return <DifficultyForm />
       case 'discussions': return <DiscussionForm />
+      case 'permissions': return <PermissionsForm />
     }
   }
 
@@ -516,6 +543,112 @@ function DiscussionForm() {
   )
 }
 
+// ============== Permissions Form (roles × permissions matrix) ==============
+
+const ALL_PERMISSIONS: string[] = [
+  'view_showcase', 'apply_join', 'view_team', 'manage_team', 'manage_members',
+  'submit_problem', 'view_problems', 'approve_problem',
+  'manage_contests', 'manage_site',
+  'view_suggestions', 'manage_suggestions',
+  'manage_announcements',
+  'view_discussions', 'manage_discussions', 'manage_tags',
+  'manage_notifications', 'manage_backups', 'view_stats', 'manage_posts',
+]
+
+const PERM_LABELS: Record<string, string> = {
+  view_showcase: '浏览展示',
+  apply_join: '申请加入',
+  view_team: '查看团队',
+  manage_team: '审批入队',
+  manage_members: '管理成员',
+  submit_problem: '投稿题目',
+  view_problems: '浏览题目',
+  approve_problem: '审核题目',
+  manage_contests: '管理赛事',
+  manage_site: '管理站点',
+  view_suggestions: '浏览建议',
+  manage_suggestions: '管理建议',
+  manage_announcements: '管理公告',
+  view_discussions: '浏览讨论',
+  manage_discussions: '管理讨论',
+  manage_tags: '管理标签',
+  manage_notifications: '发送通知',
+  manage_backups: '备份恢复',
+  view_stats: '查看统计',
+  manage_posts: '管理帖子',
+}
+
+function PermissionsForm() {
+  const c = useContext(ConfigCtx)
+
+  const togglePerm = (role: string, perm: string) => {
+    const current = c.permissions[role] ?? []
+    const next = current.includes(perm)
+      ? current.filter(p => p !== perm)
+      : [...current, perm]
+    c.setPermissions({ ...c.permissions, [role]: next })
+  }
+
+  const roles = Object.keys(c.permissions).length > 0
+    ? Object.keys(c.permissions)
+    : ['superadmin', 'admin', 'member', 'guest', 'pending']
+
+  const roleLabels: Record<string, string> = {
+    superadmin: '超级管理员',
+    admin: '管理员',
+    member: '成员',
+    guest: '游客',
+    pending: '待审核',
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+        勾选每个角色拥有的权限。超级管理员拥有「*」全部权限（不受勾选限制）。
+        保存配置后立即生效。
+      </p>
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b border-gray-300 dark:border-gray-700">
+            <th className="text-left py-2 pr-4 text-gray-600 dark:text-gray-400 font-medium whitespace-nowrap">权限</th>
+            {roles.map(role => (
+              <th key={role} className="text-center py-2 px-2 text-gray-600 dark:text-gray-400 font-medium whitespace-nowrap">
+                {roleLabels[role] ?? role}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {ALL_PERMISSIONS.map(perm => (
+            <tr key={perm} className="border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30">
+              <td className="py-1.5 pr-4 text-gray-800 dark:text-gray-200 whitespace-nowrap">
+                <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">({perm})</span>
+                <br />
+                <span className="text-sm">{PERM_LABELS[perm] ?? perm}</span>
+              </td>
+              {roles.map(role => {
+                const isSuper = role === 'superadmin'
+                const checked = isSuper || (c.permissions[role] ?? []).includes(perm)
+                return (
+                  <td key={role} className="text-center py-1.5 px-2">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={isSuper}
+                      onChange={() => togglePerm(role, perm)}
+                      className="cursor-pointer accent-gray-800 dark:accent-gray-300"
+                    />
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 // ====================================================================
 //  Backup Panel
 // ====================================================================
@@ -649,4 +782,148 @@ function BackupPanel() {
   )
 }
 
+// ============== Users Panel (superadmin) ==============
 
+interface AdminUser {
+  id: string
+  username: string
+  display_name: string
+  email: string | null
+  role: string
+  team_status: string
+  is_team_member: boolean
+  created_at: string
+}
+
+function UsersPanel() {
+  const [users, setUsers] = useState<AdminUser[]>([])
+  const [loading, setLoading] = useState(true)
+  const [msg, setMsg] = useState('')
+  const [changingRole, setChangingRole] = useState<string | null>(null)
+
+  const loadUsers = async () => {
+    setLoading(true)
+    try {
+      const res = await apiFetch<AdminUser[]>('/admin/users')
+      setUsers(Array.isArray(res) ? res : [])
+    } catch (err) { setMsg(`加载用户失败: ${err}`) }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { loadUsers() }, [])
+
+  const handleChangeRole = async (userId: string, role: string) => {
+    setChangingRole(userId)
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>(`/admin/users/${userId}/role`, {
+        method: 'POST',
+        body: JSON.stringify({ role }),
+      })
+      if (res.success) {
+        setMsg('角色已更新')
+        loadUsers()
+      } else {
+        setMsg(res.message)
+      }
+    } catch (err) { setMsg(`操作失败: ${err}`) }
+    finally { setChangingRole(null) }
+  }
+
+  const handleRemoveUser = async (userId: string, displayName: string) => {
+    if (!confirm(`确定要删除用户「${displayName}」吗？此操作不可撤销。`)) return
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>(`/admin/users/${userId}/remove`, {
+        method: 'POST',
+      })
+      if (res.success) {
+        setMsg('用户已删除')
+        loadUsers()
+      } else {
+        setMsg(res.message)
+      }
+    } catch (err) { setMsg(`操作失败: ${err}`) }
+  }
+
+  if (loading) {
+    return <div className="text-center py-8 text-gray-400 dark:text-gray-500">加载用户列表...</div>
+  }
+
+  return (
+    <div>
+      {msg && (
+        <div className={`mb-4 p-3 text-sm border ${
+          msg.includes('失败') || msg.includes('不能') || msg.includes('不存在') || msg.includes('无效')
+            ? 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300'
+            : 'bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300'
+        }`}>
+          {msg}
+          <button onClick={() => setMsg('')} className="ml-3 text-xs underline">关闭</button>
+        </div>
+      )}
+      <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+        管理系统中的所有用户。超级管理员账号不可删除或修改。共 {users.length} 个用户。
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b border-gray-300 dark:border-gray-700">
+              <th className="text-left py-2 px-3 font-medium text-gray-600 dark:text-gray-400">用户名</th>
+              <th className="text-left py-2 px-3 font-medium text-gray-600 dark:text-gray-400">显示名</th>
+              <th className="text-left py-2 px-3 font-medium text-gray-600 dark:text-gray-400">角色</th>
+              <th className="text-left py-2 px-3 font-medium text-gray-600 dark:text-gray-400">团队状态</th>
+              <th className="text-right py-2 px-3 font-medium text-gray-600 dark:text-gray-400">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id} className="border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900/50">
+                <td className="py-3 px-3">
+                  <div className="text-gray-800 dark:text-gray-100">{u.username}</div>
+                  {u.email && <div className="text-xs text-gray-400">{u.email}</div>}
+                </td>
+                <td className="py-3 px-3 text-gray-800 dark:text-gray-100">{u.display_name}</td>
+                <td className="py-3 px-3">
+                  {u.id === 'admin' ? (
+                    <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-800">superadmin</span>
+                  ) : (
+                    <select
+                      value={u.role}
+                      onChange={e => handleChangeRole(u.id, e.target.value)}
+                      disabled={changingRole === u.id}
+                      className="text-xs border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1 text-gray-800 dark:text-gray-100"
+                    >
+                      <option value="admin">admin</option>
+                      <option value="member">member</option>
+                      <option value="guest">guest</option>
+                    </select>
+                  )}
+                </td>
+                <td className="py-3 px-3">
+                  <span className={`text-xs px-2 py-0.5 border ${
+                    u.team_status === 'joined'
+                      ? 'border-green-300 text-green-600 dark:border-green-800 dark:text-green-400'
+                      : u.team_status === 'pending'
+                      ? 'border-yellow-300 text-yellow-600 dark:border-yellow-800 dark:text-yellow-400'
+                      : 'border-gray-300 text-gray-500 dark:border-gray-700 dark:text-gray-400'
+                  }`}>
+                    {u.team_status === 'joined' ? '已加入' : u.team_status === 'pending' ? '待审核' : '未加入'}
+                  </span>
+                </td>
+                <td className="py-3 px-3 text-right">
+                  {u.id !== 'admin' && (
+                    <button
+                      onClick={() => handleRemoveUser(u.id, u.display_name)}
+                      className="text-xs px-2 py-1 text-red-500 border border-red-300 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      删除
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}

@@ -1,12 +1,11 @@
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode},
     Json,
 };
 
 use crate::state::AppState;
 use crate::types::{SiteInfo, UpdateSiteDescriptionPayload};
-use crate::utils::get_token_from_headers;
+use crate::utils::require_permission;
 
 /// GET /api/site/info
 /// Returns site info (no auth required)
@@ -26,21 +25,15 @@ pub async fn get_site_info(
 }
 
 /// PUT /api/site/description
-/// Admin/superadmin only — updates team description
+/// manage_site permission required
 pub async fn update_site_description(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    headers: axum::http::HeaderMap,
     Json(payload): Json<UpdateSiteDescriptionPayload>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
-    // Check admin auth
-    let token = get_token_from_headers(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let user_id = state.sessions.read().await.get(&token).map(|e| e.user_id.clone()).ok_or(StatusCode::UNAUTHORIZED)?;
-    let users = state.users.read().await;
-    let user = users.get(&user_id).ok_or(StatusCode::UNAUTHORIZED)?;
-    if user.role != "admin" && user.role != "superadmin" {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    drop(users);
+) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
+    // Check manage_site permission
+    require_permission(&state, &headers, crate::types::perms::MANAGE_SITE).await
+        .map_err(|_| axum::http::StatusCode::FORBIDDEN)?;
 
     *state.site_description.write().await = payload.description.clone();
     state.save().await;
