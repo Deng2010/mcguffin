@@ -198,6 +198,36 @@ pub async fn require_permission_json(
     }
 }
 
+// ============== Convenience Macros ==============
+
+/// require_permission_json + early return. Usage: `let (uid, user) = req_perm!(&state, &headers, perms::MANAGE_SITE);`
+#[macro_export]
+macro_rules! req_perm {
+    ($state:expr, $headers:expr, $perm:expr) => {
+        match $crate::utils::require_permission_json(&$state, &$headers, $perm).await {
+            Ok(u) => u,
+            Err(e) => return e,
+        }
+    };
+}
+
+/// resolve_user + early return with "未登录" JSON error. Usage: `let (uid, user) = req_user!(&state, &headers);`
+#[macro_export]
+macro_rules! req_user {
+    ($state:expr, $headers:expr) => {
+        match $crate::utils::resolve_user(&$state, &$headers).await {
+            Some(u) => u,
+            None => return ::axum::Json(::serde_json::json!({"success": false, "message": "未登录"})),
+        }
+    };
+    ($state:expr, $headers:expr, $err:expr) => {
+        match $crate::utils::resolve_user(&$state, &$headers).await {
+            Some(u) => u,
+            None => return $err,
+        }
+    };
+}
+
 // ============== Tests ==============
 
 #[cfg(test)]

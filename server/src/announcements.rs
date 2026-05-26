@@ -11,9 +11,10 @@ use axum::http::HeaderMap;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::req_perm;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{require_permission_json, check_permission, resolve_user};
+use crate::utils::{check_permission, resolve_user};
 
 // ============== List Announcements (backward compat) ==============
 
@@ -67,10 +68,7 @@ pub async fn create_announcement(
     headers: HeaderMap,
     Json(payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-    let (user_id, user) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (user_id, user) = req_perm!(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS);
     let title = payload.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let pinned = payload.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -145,10 +143,7 @@ pub async fn update_announcement(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS);
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
         if let Some(title) = payload.get("title").and_then(|v| v.as_str()) {
@@ -181,10 +176,7 @@ pub async fn delete_announcement(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS);
     let mut posts = state.posts.write().await;
     if posts.contains_key(&id) {
         posts.remove(&id);

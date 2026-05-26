@@ -6,9 +6,10 @@ use axum::{
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::req_perm;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{check_permission, get_token_from_headers, require_permission_json};
+use crate::utils::{check_permission, get_token_from_headers};
 
 /// Resolve user from token; returns (user_id, user)
 async fn resolve_user<'a>(state: &'a AppState, headers: &HeaderMap) -> Option<(String, User)> {
@@ -83,10 +84,7 @@ pub async fn create_contest(
     headers: HeaderMap,
     Json(payload): Json<CreateContestPayload>,
 ) -> Json<serde_json::Value> {
-    let (user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
 
     let contest = Contest {
         id: Uuid::new_v4().to_string(),
@@ -117,10 +115,7 @@ pub async fn delete_contest(
     headers: HeaderMap,
     Path(contest_id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
 
     let mut contests = state.contests.write().await;
     if contests.remove(&contest_id).is_some() {
@@ -150,10 +145,7 @@ pub async fn update_contest(
     Path(contest_id): Path<String>,
     Json(payload): Json<UpdateContestPayload>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
@@ -184,10 +176,7 @@ pub async fn set_contest_status(
     Path(contest_id): Path<String>,
     Json(payload): Json<SetContestStatusPayload>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
 
     if payload.status != "draft" && payload.status != "public" {
         return Json(serde_json::json!({"success": false, "message": "状态值无效，仅支持 draft 或 public"}));
@@ -225,10 +214,7 @@ pub async fn set_problem_order(
     Path(contest_id): Path<String>,
     Json(payload): Json<ContestProblemOrderPayload>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_CONTESTS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {

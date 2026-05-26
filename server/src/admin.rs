@@ -8,9 +8,9 @@ use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 use chrono::Local;
 
+use crate::req_perm;
 use crate::state::AppState;
 use crate::types::{AuditEntry, ChangeRolePayload, DifficultyLevel, ShowcaseConfigPayload, PERM_WILDCARD};
-use crate::utils::require_permission_json;
 
 const CONFIG_PATH: &str = "/usr/share/mcguffin/config.toml";
 
@@ -341,10 +341,7 @@ pub async fn get_config(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
 
     let raw = match read_config_raw() {
         Ok(s) => s,
@@ -366,10 +363,7 @@ pub async fn update_config(
     headers: HeaderMap,
     Json(payload): Json<UpdateConfigPayload>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
 
     // Validate
     if payload.server.site_url.trim().is_empty() {
@@ -446,10 +440,7 @@ pub async fn restart_service(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
 
     // Spawn restart in background — this will restart the service after we respond
     tokio::spawn(async {
@@ -508,10 +499,7 @@ pub async fn create_backup(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_BACKUPS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_BACKUPS);
 
     // Save current state to disk first so we back up the latest data
     state.save().await;
@@ -545,10 +533,7 @@ pub async fn list_backups(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_BACKUPS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_BACKUPS);
 
     let dir = backup_dir(&state);
     let backups = list_backup_files(&dir);
@@ -563,10 +548,7 @@ pub async fn restore_backup(
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_BACKUPS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_BACKUPS);
 
     // Validate filename — prevent path traversal
     let name_clean = name.trim();
@@ -613,10 +595,7 @@ pub async fn delete_backup(
     headers: HeaderMap,
     Path(name): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_BACKUPS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_BACKUPS);
 
     // Validate filename
     let name_clean = name.trim();
@@ -651,10 +630,7 @@ pub async fn export_data(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
 
     let data_path = PathBuf::from(&state.data_file);
     match std::fs::read_to_string(&data_path) {
@@ -677,10 +653,7 @@ pub async fn export_config(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
 
     match std::fs::read_to_string(CONFIG_PATH) {
         Ok(content) => {
@@ -704,10 +677,7 @@ pub async fn get_showcase_config(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
 
     Json(serde_json::json!({
         "success": true,
@@ -723,10 +693,7 @@ pub async fn update_showcase_config(
     headers: HeaderMap,
     Json(payload): Json<ShowcaseConfigPayload>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_SITE).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
 
     *state.showcase_problem_ids.write().await = payload.problem_ids;
     *state.showcase_contest_ids.write().await = payload.contest_ids;
@@ -743,10 +710,7 @@ pub async fn get_audit_log(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::VIEW_STATS).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::VIEW_STATS);
 
     let log = state.audit_log.read().await;
     let entries: Vec<&AuditEntry> = log.iter().rev().take(200).collect();
@@ -762,10 +726,7 @@ pub async fn admin_list_users(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, PERM_WILDCARD).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, PERM_WILDCARD);
     let users = state.users.read().await;
     let members = state.team_members.read().await;
     let result: Vec<serde_json::Value> = users.values().map(|u| {
@@ -792,10 +753,7 @@ pub async fn admin_change_user_role(
     Path(user_id): Path<String>,
     Json(payload): Json<ChangeRolePayload>,
 ) -> Json<serde_json::Value> {
-    let (_admin_id, _) = match require_permission_json(&state, &headers, PERM_WILDCARD).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_admin_id, _) = req_perm!(&state, &headers, PERM_WILDCARD);
     if user_id == ADMIN_USER_ID {
         return Json(serde_json::json!({"success": false, "message": "不能修改系统管理员的角色"}));
     }
@@ -820,10 +778,7 @@ pub async fn admin_remove_user(
     headers: HeaderMap,
     Path(user_id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let (_admin_id, _) = match require_permission_json(&state, &headers, PERM_WILDCARD).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_admin_id, _) = req_perm!(&state, &headers, PERM_WILDCARD);
     if user_id == ADMIN_USER_ID {
         return Json(serde_json::json!({"success": false, "message": "不能删除系统管理员"}));
     }

@@ -14,28 +14,18 @@ export default function ApplyPage() {
     return <Navigate to="/team" replace />
   }
 
-  if (user?.team_status === 'pending') {
-    return (
-      <div className="p-6">
-        <div className="max-w-md mx-auto">
-          <div className="bg-yellow-50 border border-yellow-300 p-6 text-center dark:bg-yellow-900/30 dark:border-yellow-800">
-            <h2 className="text-lg font-semibold text-yellow-800 mb-2 dark:text-yellow-300">申请已提交</h2>
-            <p className="text-yellow-700 mb-4 dark:text-yellow-300">您的入队申请正在审核中，请耐心等待</p>
-            <Link to="/" className="text-yellow-800 underline dark:text-yellow-300">返回</Link>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await apiFetch('/team/apply', {
+      const res = await apiFetch<{ success: boolean; message: string }>('/team/apply', {
         method: 'POST',
         body: JSON.stringify({ reason }),
       })
-      setSubmitted(true)
+      if (res.success) {
+        setSubmitted(true)
+      } else {
+        setError(res.message)
+      }
     } catch (err) {
       setError(`${err}`)
     }

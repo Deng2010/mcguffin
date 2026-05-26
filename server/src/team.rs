@@ -6,6 +6,7 @@ use axum::http::HeaderMap;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::req_perm;
 use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::*;
 use crate::utils::{check_permission, get_token_from_headers, require_permission_json};
@@ -16,10 +17,7 @@ pub async fn get_team_members(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, user) = match require_permission_json(&state, &headers, crate::types::perms::VIEW_TEAM).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, user) = req_perm!(&state, &headers, crate::types::perms::VIEW_TEAM);
     let is_admin_user = check_permission(&state, &user, crate::types::perms::MANAGE_TEAM).await;
     let is_superadmin_user = check_permission(&state, &user, PERM_WILDCARD).await;
     let members = state.team_members.read().await;
@@ -68,10 +66,7 @@ pub async fn get_pending_requests(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_TEAM).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_TEAM);
     let requests = state.join_requests.read().await;
     Json(serde_json::json!(requests.values().filter(|r| r.status == "pending").cloned().collect::<Vec<JoinRequest>>()))
 }
@@ -89,13 +84,17 @@ pub async fn apply_to_join(
             if entry.user_id == ADMIN_USER_ID {
                 return Json(ApplyResponse { success: false, message: "管理员无需申请".to_string() });
             }
+            let user_id = entry.user_id.clone();
             let users = state.users.read().await;
-            if let Some(user) = users.get(&entry.user_id) {
+            if let Some(user) = users.get(&user_id) {
                 if user.team_status == "joined" {
                     return Json(ApplyResponse { success: false, message: "您已是团队成员".to_string() });
                 }
-                if user.team_status == "pending" {
-                    return Json(ApplyResponse { success: false, message: "您已提交过申请".to_string() });
+                // Check for existing pending join request instead of using team_status
+                let has_pending = state.join_requests.read().await
+                    .values().any(|r| r.user_id == user_id && r.status == "pending");
+                if has_pending {
+                    return Json(ApplyResponse { success: false, message: "您已提交过申请，请等待审核".to_string() });
                 }
                 
                 let request = JoinRequest {
@@ -110,12 +109,7 @@ pub async fn apply_to_join(
                 
                 state.join_requests.write().await.insert(request.id.clone(), request);
                 
-                drop(users);
-                if let Some(u) = state.users.write().await.get_mut(&entry.user_id) {
-                    u.team_status = "pending".to_string();
-                    u.role = "pending".to_string();
-                }
-                
+                // Don't change team_status — user stays as "guest"
                 state.save().await;
                 
                 return Json(ApplyResponse { success: true, message: "申请已提交".to_string() });

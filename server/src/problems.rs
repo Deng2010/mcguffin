@@ -7,9 +7,10 @@ use chrono::Utc;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::req_perm;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{resolve_user, check_permission, require_permission_json};
+use crate::utils::{resolve_user, check_permission};
 use crate::notifications::create_notification;
 
 // ============== List Problems ==============
@@ -804,10 +805,7 @@ pub async fn set_problem_contest(
     Path(problem_id): Path<String>,
     Json(payload): Json<SetProblemContestPayload>,
 ) -> Json<serde_json::Value> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::APPROVE_PROBLEM).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
+    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::APPROVE_PROBLEM);
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
