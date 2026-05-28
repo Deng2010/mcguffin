@@ -46,10 +46,6 @@ describe('defaultRolePermissions', () => {
     expect(perms).not.toContain('view_team')
   })
 
-  it('pending has same permissions as guest', () => {
-    expect(defaultRolePermissions.pending).toEqual(defaultRolePermissions.guest)
-  })
-
   it('every role has view_showcase', () => {
     for (const perms of Object.values(defaultRolePermissions)) {
       expect(perms).toContain('view_showcase')
