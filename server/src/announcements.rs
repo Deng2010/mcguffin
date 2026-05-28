@@ -5,16 +5,16 @@
 
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     Json,
 };
 use axum::http::HeaderMap;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::req_perm;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{check_permission, resolve_user};
+use crate::utils::{check_permission, resolve_user, AuthUser};
 
 // ============== List Announcements (backward compat) ==============
 
@@ -23,7 +23,7 @@ pub async fn get_announcements(
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
     let can_see_all = if let Some((_user_id, user)) = resolve_user(&state, &headers).await {
-        check_permission(&state, &user, crate::types::perms::MANAGE_ANNOUNCEMENTS).await || user.team_status == "joined"
+        check_permission(&state, &user, crate::types::perms::MANAGE_DISCUSSIONS).await || user.team_status == "joined"
     } else {
         false
     };
@@ -65,24 +65,24 @@ pub async fn get_announcements(
 
 pub async fn create_announcement(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Json(payload): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
-    let (user_id, user) = req_perm!(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS).await?;
     let title = payload.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let pinned = payload.get("pinned").and_then(|v| v.as_bool()).unwrap_or(false);
     let is_public = payload.get("public").and_then(|v| v.as_bool()).unwrap_or(true);
     if title.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "标题不能为空"})));
     }
     let now = Utc::now();
     let post = Post {
         id: Uuid::new_v4().to_string(),
         title: title.trim().to_string(),
         content,
-        author_id: user_id,
-        author_name: user.display_name,
+        author_id: auth.user_id,
+        author_name: auth.user.display_name,
         tags: vec!["公告".to_string()],
         pinned,
         team_only: !is_public,
@@ -93,11 +93,13 @@ pub async fn create_announcement(
         status: String::new(),
         created_at: now,
         updated_at: now,
+        visible_to: vec![],
+        editable_by: vec![],
     };
     let post_id = post.id.clone();
     state.posts.write().await.insert(post_id, post);
     state.save().await;
-    Json(serde_json::json!({"success": true, "message": "公告已发布"}))
+    Ok(Json(serde_json::json!({"success": true, "message": "公告已发布"})))
 }
 
 // ============== Get Announcement Detail (backward compat) ==============
@@ -108,7 +110,7 @@ pub async fn get_announcement_detail(
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
     let auth_info = resolve_user(&state, &headers).await;
-    let is_admin_user = if let Some((_, ref user)) = auth_info { check_permission(&state, user, crate::types::perms::MANAGE_ANNOUNCEMENTS).await } else { false };
+    let is_admin_user = if let Some((_, ref user)) = auth_info { check_permission(&state, user, crate::types::perms::MANAGE_DISCUSSIONS).await } else { false };
     let is_team = if let Some((_, ref user)) = auth_info { user.team_status == "joined" } else { false };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
@@ -139,16 +141,16 @@ pub async fn get_announcement_detail(
 
 pub async fn update_announcement(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS).await?;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
         if let Some(title) = payload.get("title").and_then(|v| v.as_str()) {
             if title.trim().is_empty() {
-                return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
+                return Ok(Json(serde_json::json!({"success": false, "message": "标题不能为空"})));
             }
             p.title = title.trim().to_string();
         }
@@ -164,25 +166,25 @@ pub async fn update_announcement(
         p.updated_at = Utc::now();
         drop(posts);
         state.save().await;
-        return Json(serde_json::json!({"success": true, "message": "公告已更新"}));
+        return Ok(Json(serde_json::json!({"success": true, "message": "公告已更新"})));
     }
-    Json(serde_json::json!({"success": false, "message": "公告不存在"}))
+    Ok(Json(serde_json::json!({"success": false, "message": "公告不存在"})))
 }
 
 // ============== Delete Announcement ==============
 
 pub async fn delete_announcement(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(id): Path<String>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_ANNOUNCEMENTS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS).await?;
     let mut posts = state.posts.write().await;
     if posts.contains_key(&id) {
         posts.remove(&id);
         drop(posts);
         state.save().await;
-        return Json(serde_json::json!({"success": true, "message": "公告已删除"}));
+        return Ok(Json(serde_json::json!({"success": true, "message": "公告已删除"})));
     }
-    Json(serde_json::json!({"success": false, "message": "公告不存在"}))
+    Ok(Json(serde_json::json!({"success": false, "message": "公告不存在"})))
 }

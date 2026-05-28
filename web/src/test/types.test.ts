@@ -9,7 +9,6 @@ describe('defaultRolePermissions', () => {
     const required: Permission[] = [
       'view_showcase', 'view_team', 'manage_team', 'manage_members', 'submit_problem',
       'view_problems', 'approve_problem', 'manage_contests', 'manage_site',
-      'view_suggestions', 'manage_suggestions', 'manage_announcements',
       'view_discussions', 'manage_discussions', 'manage_tags',
       'manage_notifications', 'manage_backups', 'view_stats', 'manage_posts',
     ]

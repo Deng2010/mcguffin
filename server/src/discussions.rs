@@ -180,6 +180,8 @@ pub async fn create_post(
         status: String::new(),
         created_at: now,
         updated_at: now,
+        visible_to: vec![],
+        editable_by: vec![],
     };
     let post_id = post.id.clone();
     state.posts.write().await.insert(post_id.clone(), post);

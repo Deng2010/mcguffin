@@ -25,14 +25,14 @@ pub async fn get_site_info(
 }
 
 /// PUT /api/site/description
-/// manage_site permission required
+/// edit_showcase permission required
 pub async fn update_site_description(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
     Json(payload): Json<UpdateSiteDescriptionPayload>,
 ) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
-    // Check manage_site permission
-    require_permission(&state, &headers, crate::types::perms::MANAGE_SITE).await
+    // Check edit_showcase permission
+    require_permission(&state, &headers, crate::types::perms::EDIT_SHOWCASE).await
         .map_err(|_| axum::http::StatusCode::FORBIDDEN)?;
 
     *state.site_description.write().await = payload.description.clone();

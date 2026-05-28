@@ -1,9 +1,10 @@
-import { HashRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
 import { SiteProvider, useSite } from './SiteContext'
 import { DarkModeProvider } from './DarkModeContext'
 import { NotificationProvider } from './NotificationContext'
 import Navbar from './components/Navbar'
+import AdminLayout from './components/AdminLayout'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import AuthCallbackPage from './pages/AuthCallbackPage'
@@ -15,6 +16,11 @@ import ApplyPage from './pages/ApplyPage'
 import ContestManagePage from './pages/ContestManagePage'
 import ProfilePage from './pages/ProfilePage'
 import AdminConfigPage from './pages/AdminConfigPage'
+import AdminDiscussionsPage from './pages/AdminDiscussionsPage'
+import AdminUsersPage from './pages/AdminUsersPage'
+import AdminGroupsPage from './pages/AdminGroupsPage'
+import AdminRolesPage from './pages/AdminRolesPage'
+import AdminBackupsPage from './pages/AdminBackupsPage'
 import SuggestionsPage from './pages/SuggestionsPage'
 import DiscussionsPage from './pages/DiscussionsPage'
 import DiscussionDetailPage from './pages/DiscussionDetailPage'
@@ -37,85 +43,90 @@ function Footer() {
   )
 }
 
+/** Main site layout: Navbar + content + Footer */
+function MainLayout() {
+  return (
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-950 flex flex-col">
+      <Navbar />
+      <div className="flex-1">
+        <Outlet />
+      </div>
+      <Footer />
+    </div>
+  )
+}
+
+/** Admin guard layout */
+function AdminGuardLayout() {
+  return (
+    <ProtectedRoute requiredPermission="manage_site">
+      <AdminLayout />
+    </ProtectedRoute>
+  )
+}
+
 function AppContent() {
   return (
     <HashRouter>
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-950 flex flex-col">
-        <Navbar />
-        <div className="flex-1">
-          <Routes>
-            <Route path="/" element={<ShowcasePage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/auth/callback" element={<AuthCallbackPage />} />
-            <Route
-              path="/problems"
-              element={<ProblemsPage />}
-            />
-            <Route
-              path="/problems/:id"
-              element={<ProtectedRoute requiredPermission="view_problems"><ProblemDetailPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/team"
-              element={<ProtectedRoute requiredPermission="view_team"><TeamPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/apply"
-              element={<ProtectedRoute requiredPermission="apply_join"><ApplyPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/contests"
-              element={<ContestManagePage />}
-            />
-            <Route
-              path="/suggestions"
-              element={<ProtectedRoute requiredPermission="view_suggestions"><SuggestionsPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/suggestions/:id"
-              element={<ProtectedRoute requiredPermission="view_suggestions"><SuggestionDetailPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/discussions"
-              element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionsPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/discussions/:id"
-              element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionDetailPage /></ProtectedRoute>}
-            />
-            <Route
-              path="/announcements"
-              element={<AnnouncementsPage />}
-            />
-            <Route
-              path="/announcements/:id"
-              element={<AnnouncementDetailPage />}
-            />
-            <Route
-              path="/community"
-              element={<CommunityPage />}
-            />
-            <Route
-              path="/post/:id"
-              element={<PostDetailPage />}
-            />
-            <Route
-              path="/profile"
-              element={<ProtectedRoute requiredPermission="view_showcase"><ProfilePage /></ProtectedRoute>}
-            />
-            <Route
-              path="/profile/:username"
-              element={<ProfilePage />}
-            />
-            <Route
-              path="/admin/config"
-              element={<ProtectedRoute requiredPermission="manage_site"><AdminConfigPage /></ProtectedRoute>}
-            />
-            <Route path="*" element={<NotFoundPage />} />
-          </Routes>
-        </div>
-        <Footer />
-      </div>
+      <Routes>
+        {/* Main site routes */}
+        <Route element={<MainLayout />}>
+          <Route path="/" element={<ShowcasePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route path="/problems" element={<ProblemsPage />} />
+          <Route
+            path="/problems/:id"
+            element={<ProtectedRoute requiredPermission="view_problems"><ProblemDetailPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/team"
+            element={<ProtectedRoute requiredPermission="view_team"><TeamPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/apply"
+            element={<ProtectedRoute requiredPermission="apply_join"><ApplyPage /></ProtectedRoute>}
+          />
+          <Route path="/contests" element={<ContestManagePage />} />
+          <Route
+            path="/suggestions"
+            element={<ProtectedRoute requiredPermission="view_discussions"><SuggestionsPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/suggestions/:id"
+            element={<ProtectedRoute requiredPermission="view_discussions"><SuggestionDetailPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/discussions"
+            element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionsPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/discussions/:id"
+            element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionDetailPage /></ProtectedRoute>}
+          />
+          <Route path="/announcements" element={<AnnouncementsPage />} />
+          <Route path="/announcements/:id" element={<AnnouncementDetailPage />} />
+          <Route path="/community" element={<CommunityPage />} />
+          <Route path="/post/:id" element={<PostDetailPage />} />
+          <Route
+            path="/profile"
+            element={<ProtectedRoute requiredPermission="view_showcase"><ProfilePage /></ProtectedRoute>}
+          />
+          <Route path="/profile/:username" element={<ProfilePage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+
+        {/* Admin routes */}
+        <Route path="/admin" element={<AdminGuardLayout />}>
+          <Route index element={<Navigate to="/admin/config" replace />} />
+          <Route path="config" element={<AdminConfigPage />} />
+          <Route path="discussions" element={<AdminDiscussionsPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="groups" element={<AdminGroupsPage />} />
+          <Route path="roles" element={<AdminRolesPage />} />
+          <Route path="backups" element={<AdminBackupsPage />} />
+        </Route>
+      </Routes>
     </HashRouter>
   )
 }

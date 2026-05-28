@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       // Use backend-computed effective_role, or compute locally as fallback
       const effectiveRole = user.effective_role
-        ?? (user.team_status === 'pending' ? 'pending' as any
+        ?? (user.team_status === 'pending' ? 'guest' as any
           : user.team_status === 'none' && user.role === 'guest' ? 'guest'
           : user.role === 'member' && user.team_status === 'joined' ? 'member'
           : user.role)

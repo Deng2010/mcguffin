@@ -29,20 +29,13 @@ pub mod perms {
     // ── Site ──
     pub const MANAGE_SITE: &str = "manage_site";
 
-    // ── Suggestions ──
-    pub const VIEW_SUGGESTIONS: &str = "view_suggestions";
-    pub const MANAGE_SUGGESTIONS: &str = "manage_suggestions";
-
-    // ── Announcements ──
-    pub const MANAGE_ANNOUNCEMENTS: &str = "manage_announcements";
-
     // ── Discussions / Community ──
     pub const VIEW_DISCUSSIONS: &str = "view_discussions";
-    /// @deprecated — use MANAGE_POSTS instead. Kept in ALL for config validation backward compat.
     pub const MANAGE_DISCUSSIONS: &str = "manage_discussions";
     pub const MANAGE_TAGS: &str = "manage_tags";
 
     // ── System ──
+    pub const EDIT_SHOWCASE: &str = "edit_showcase";
     pub const MANAGE_NOTIFICATIONS: &str = "manage_notifications";
     pub const MANAGE_BACKUPS: &str = "manage_backups";
     pub const VIEW_STATS: &str = "view_stats";
@@ -57,8 +50,7 @@ pub mod perms {
         SUBMIT_PROBLEM, VIEW_PROBLEMS, APPROVE_PROBLEM,
         MANAGE_CONTESTS,
         MANAGE_SITE,
-        VIEW_SUGGESTIONS, MANAGE_SUGGESTIONS,
-        MANAGE_ANNOUNCEMENTS,
+        EDIT_SHOWCASE,
         VIEW_DISCUSSIONS, MANAGE_DISCUSSIONS, MANAGE_TAGS,
         MANAGE_NOTIFICATIONS, MANAGE_BACKUPS, VIEW_STATS, MANAGE_POSTS,
     ];
@@ -66,6 +58,19 @@ pub mod perms {
 
 /// The special wildcard permission meaning "all permissions" (superadmin only).
 pub const PERM_WILDCARD: &str = "*";
+
+// ============== Member Groups ==============
+
+/// A named group of members that can be assigned permissions collectively.
+/// A user can belong to multiple groups; group permissions are OR'd with
+/// the user's role-based and individual permissions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberGroup {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+}
 
 // ============== Audit Log ==============
 
@@ -98,9 +103,7 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
         perms::APPROVE_PROBLEM.to_string(),
         perms::MANAGE_CONTESTS.to_string(),
         perms::MANAGE_SITE.to_string(),
-        perms::VIEW_SUGGESTIONS.to_string(),
-        perms::MANAGE_SUGGESTIONS.to_string(),
-        perms::MANAGE_ANNOUNCEMENTS.to_string(),
+        perms::EDIT_SHOWCASE.to_string(),
         perms::VIEW_DISCUSSIONS.to_string(),
         perms::MANAGE_POSTS.to_string(),
         perms::MANAGE_TAGS.to_string(),
@@ -112,15 +115,9 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
         perms::VIEW_TEAM.to_string(),
         perms::SUBMIT_PROBLEM.to_string(),
         perms::VIEW_PROBLEMS.to_string(),
-        perms::VIEW_SUGGESTIONS.to_string(),
         perms::VIEW_DISCUSSIONS.to_string(),
     ]);
     m.insert("guest".to_string(), vec![
-        perms::VIEW_SHOWCASE.to_string(),
-        perms::APPLY_JOIN.to_string(),
-        perms::VIEW_DISCUSSIONS.to_string(),
-    ]);
-    m.insert("pending".to_string(), vec![
         perms::VIEW_SHOWCASE.to_string(),
         perms::APPLY_JOIN.to_string(),
         perms::VIEW_DISCUSSIONS.to_string(),
@@ -157,6 +154,12 @@ pub struct User {
     /// Set at response time; deserialized from storage as empty / fallback.
     #[serde(default)]
     pub effective_role: String,
+    /// IDs of member groups this user belongs to.
+    #[serde(default)]
+    pub group_ids: Vec<String>,
+    /// Individual permissions granted directly to this user (not via role or group).
+    #[serde(default)]
+    pub user_permissions: Vec<String>,
 }
 
 impl User {
@@ -165,13 +168,13 @@ impl User {
     /// Maps (role, team_status) → effective_role:
     ///   - superadmin → superadmin
     ///   - admin → admin
-    ///   - team_status == "pending" → pending
+    ///   - team_status == "pending" → guest
     ///   - role == "guest" && team_status != "joined" → guest
     ///   - role == "member" && team_status == "joined" → member
     ///   - fallback → role as-is
     pub fn compute_effective_role(&self) -> &str {
         match self.team_status.as_str() {
-            "pending" => "pending",
+            "pending" => "guest",
             _ => match self.role.as_str() {
                 "superadmin" => "superadmin",
                 "admin" => "admin",
@@ -259,6 +262,10 @@ pub struct Contest {
     pub link: Option<String>,
     #[serde(default)]
     pub problem_order: Vec<String>,
+    #[serde(default)]
+    pub visible_to: Vec<String>,
+    #[serde(default)]
+    pub editable_by: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -302,6 +309,10 @@ pub struct ContestListItem {
     pub link: Option<String>,
     #[serde(default)]
     pub problem_order: Vec<String>,
+    #[serde(default)]
+    pub visible_to: Vec<String>,
+    #[serde(default)]
+    pub editable_by: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -341,6 +352,10 @@ pub struct Problem {
     #[serde(default)]
     /// Internal remark for reviewers (hidden after approval)
     pub remark: Option<String>,
+    /// User IDs and/or group IDs (prefixed "group:xxx") who can edit this problem.
+    /// If empty, falls back to default permission check.
+    #[serde(default)]
+    pub editable_by: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -506,6 +521,48 @@ pub struct ShowcaseConfigPayload {
     pub contest_ids: Vec<String>,
 }
 
+// ============== Member Groups API ==============
+
+#[derive(Deserialize)]
+pub struct CreateGroupPayload {
+    pub name: String,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateGroupPayload {
+    pub name: String,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SetUserGroupsPayload {
+    pub group_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SetUserPermissionsPayload {
+    pub permissions: Vec<String>,
+}
+
+// ============== Resource ACL ==============
+
+#[derive(Deserialize)]
+pub struct SetProblemAclPayload {
+    #[serde(default)]
+    pub editable_by: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct SetAclPayload {
+    #[serde(default)]
+    pub visible_to: Vec<String>,
+    #[serde(default)]
+    pub editable_by: Vec<String>,
+}
+
 // ============== Application Configuration ==============
 
 /// Top-level app config, read from /usr/share/mcguffin/config.toml
@@ -526,9 +583,43 @@ pub struct AppConfig {
     pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     /// Role→permissions mapping. Overrides the hardcoded defaults.
     /// superadmin = ["*"] means all permissions.
-    /// Example: [permissions.admin] = ["view_team", "manage_team", ...]
-    #[serde(default)]
+    /// Example: [permissions.roles.admin] = ["view_team", "manage_team", ...]
+    #[serde(default, deserialize_with = "deserialize_role_permissions")]
     pub permissions: std::collections::HashMap<String, Vec<String>>,
+    /// Group permissions: uuid → { name, permissions }
+    /// Example: [permissions.groups."uuid"] = { name = "出题组", permissions = ["submit_problem"] }
+    #[serde(default, deserialize_with = "deserialize_permission_groups")]
+    pub permission_groups: std::collections::HashMap<
+        String,
+        std::collections::HashMap<String, serde_json::Value>,
+    >,
+}
+
+/// Custom deserializer for role permissions that gracefully handles nested [permissions.roles] format
+fn deserialize_role_permissions<'de, D>(
+    deserializer: D,
+) -> Result<std::collections::HashMap<String, Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use std::collections::HashMap;
+    <HashMap<String, Vec<String>>>::deserialize(deserializer)
+        .or_else(|_| Ok(HashMap::new()))
+}
+
+/// Custom deserializer for permission_groups that gracefully handles TOML inline tables
+fn deserialize_permission_groups<'de, D>(
+    deserializer: D,
+) -> Result<
+    std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>>,
+    D::Error,
+>
+where
+    D: serde::Deserializer<'de>,
+{
+    use std::collections::HashMap;
+    <HashMap<String, HashMap<String, serde_json::Value>>>::deserialize(deserializer)
+        .or_else(|_| Ok(HashMap::new()))
 }
 
 #[derive(Deserialize)]
@@ -697,6 +788,10 @@ pub struct Post {
     // ── Review status (suggestion-style, applicable to any post) ──
     #[serde(default)]
     pub status: String,
+    #[serde(default)]
+    pub visible_to: Vec<String>,
+    #[serde(default)]
+    pub editable_by: Vec<String>,
 }
 
 /// Unified reply type

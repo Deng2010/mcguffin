@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    http::HeaderMap,
+    http::StatusCode,
     Json,
 };
 use std::path::PathBuf;
@@ -8,9 +8,13 @@ use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 use chrono::Local;
 
-use crate::req_perm;
 use crate::state::AppState;
-use crate::types::{AuditEntry, ChangeRolePayload, DifficultyLevel, ShowcaseConfigPayload, PERM_WILDCARD};
+use crate::types::{
+    AuditEntry, ChangeRolePayload, CreateGroupPayload, DifficultyLevel,
+    SetAclPayload, SetProblemAclPayload, SetUserGroupsPayload, SetUserPermissionsPayload,
+    ShowcaseConfigPayload, UpdateGroupPayload, PERM_WILDCARD,
+};
+use crate::utils::AuthUser;
 
 const CONFIG_PATH: &str = "/usr/share/mcguffin/config.toml";
 
@@ -30,6 +34,8 @@ pub struct ConfigResponse {
     pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub permissions: std::collections::HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub groups: Vec<serde_json::Value>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -74,6 +80,8 @@ pub struct UpdateConfigPayload {
     pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub permissions: std::collections::HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub groups: Vec<serde_json::Value>,
 }
 
 fn read_config_raw() -> Result<String, String> {
@@ -86,6 +94,68 @@ fn write_config_raw(content: &str) -> Result<(), String> {
     std::fs::write(&tmp, content).map_err(|e| format!("无法写入配置文件: {}", e))?;
     std::fs::rename(&tmp, CONFIG_PATH).map_err(|e| format!("无法更新配置文件: {}", e))?;
     Ok(())
+}
+
+/// Sync in-memory member_groups to [permissions.groups] in config.toml
+async fn sync_groups_to_config(state: &AppState) {
+    let groups = {
+        let mg = state.member_groups.read().await;
+        mg.values().map(|g| serde_json::json!({
+            "id": g.id,
+            "name": g.name,
+            "permissions": g.permissions,
+        })).collect::<Vec<_>>()
+    };
+    if let Ok(raw) = read_config_raw() {
+        let mut doc = match DocumentMut::from_str(&raw) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        // Build a minimal payload with only groups
+        let payload = UpdateConfigPayload {
+            server: ServerSection { site_url: String::new(), port: 0, data_file: String::new() },
+            admin: AdminSection { password: String::new(), display_name: String::new() },
+            site: SiteSection { name: String::new(), title: None, difficulty_order: vec![] },
+            oauth: OAuthSection { cp_client_id: String::new(), cp_client_secret: String::new() },
+            difficulty: std::collections::HashMap::new(),
+            discussion_tags: std::collections::HashMap::new(),
+            discussion_emojis: std::collections::HashMap::new(),
+            permissions: std::collections::HashMap::new(),
+            groups,
+        };
+        // Use existing permissions writing (preserves existing roles)
+        if let Some(perms_root) = doc.get_mut("permissions").and_then(|s| s.as_table_mut()) {
+            // Clear old groups
+            if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
+                let keys: Vec<String> = groups_t.iter().map(|(k, _)| k.to_string()).collect();
+                for k in keys { groups_t.remove(&k); }
+            }
+            // Write new groups
+            if !payload.groups.is_empty() {
+                if perms_root.get("groups").is_none() {
+                    perms_root["groups"] = Item::Table(toml_edit::Table::new());
+                }
+                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
+                    for g in &payload.groups {
+                        let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let perms = g.get("permissions").and_then(|v| v.as_array());
+                        if id.is_empty() || name.is_empty() { continue; }
+                        let mut it = toml_edit::InlineTable::new();
+                        it.insert("name", toml_edit::Value::from(name));
+                        if let Some(arr) = perms {
+                            let t_arr = toml_edit::Array::from_iter(arr.iter().filter_map(|v| v.as_str().map(toml_edit::Value::from)));
+                            it.insert("permissions", toml_edit::Value::Array(t_arr));
+                        } else {
+                            it.insert("permissions", toml_edit::Value::Array(toml_edit::Array::new()));
+                        }
+                        groups_t[id] = Item::Value(toml_edit::Value::InlineTable(it));
+                    }
+                }
+            }
+        }
+        let _ = write_config_raw(&doc.to_string());
+    }
 }
 
 fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
@@ -188,20 +258,72 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         }
     }
 
-    // Parse permissions (role_name → [permissions])
+    // Parse permissions (nested format: [permissions.roles], [permissions.groups])
+    // with fallback to flat [permissions] for backward compat
     let mut permissions = std::collections::HashMap::new();
-    if let Some(t) = doc.get("permissions").and_then(|s| s.as_table()) {
-        for (role, item) in t.iter() {
-            let perms: Vec<String> = if let Some(arr) = item.as_array() {
-                arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
-            } else if let Some(v) = item.as_value() {
-                // Single string value (e.g., "*")
-                v.as_str().map(|s| vec![s.to_string()]).unwrap_or_default()
-            } else {
-                continue;
-            };
-            if !perms.is_empty() {
-                permissions.insert(role.to_string(), perms);
+    let mut groups: Vec<serde_json::Value> = Vec::new();
+
+    if let Some(perms_table) = doc.get("permissions").and_then(|s| s.as_table()) {
+        // Check if we have nested [permissions.roles] format
+        if let Some(roles_table) = perms_table.get("roles").and_then(|s| s.as_table()) {
+            for (role, item) in roles_table.iter() {
+                let perms: Vec<String> = if let Some(arr) = item.as_array() {
+                    arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                } else if let Some(v) = item.as_value() {
+                    v.as_str().map(|s| vec![s.to_string()]).unwrap_or_default()
+                } else {
+                    continue;
+                };
+                if !perms.is_empty() {
+                    permissions.insert(role.to_string(), perms);
+                }
+            }
+        } else {
+            // Fallback: flat [permissions] format (old)
+            for (role, item) in perms_table.iter() {
+                if role == "roles" || role == "groups" { continue; }
+                let perms: Vec<String> = if let Some(arr) = item.as_array() {
+                    arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                } else if let Some(v) = item.as_value() {
+                    v.as_str().map(|s| vec![s.to_string()]).unwrap_or_default()
+                } else {
+                    continue;
+                };
+                if !perms.is_empty() {
+                    permissions.insert(role.to_string(), perms);
+                }
+            }
+        }
+
+        // Parse groups
+        if let Some(groups_table) = perms_table.get("groups").and_then(|s| s.as_table()) {
+            for (uuid, item) in groups_table.iter() {
+                let mut name = String::new();
+                let mut group_perms: Vec<String> = Vec::new();
+                if let Some(tbl) = item.as_table() {
+                    if let Some(n) = tbl.get("name").and_then(|v| v.as_str()) {
+                        name = n.to_string();
+                    }
+                    if let Some(arr) = tbl.get("permissions").and_then(|v| v.as_array()) {
+                        group_perms = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                    }
+                } else if let Some(v) = item.as_value() {
+                    if let Some(inline) = v.as_inline_table() {
+                        if let Some(n) = inline.get("name").and_then(|v| v.as_str()) {
+                            name = n.to_string();
+                        }
+                        if let Some(arr) = inline.get("permissions").and_then(|v| v.as_array()) {
+                            group_perms = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                        }
+                    }
+                }
+                if !name.is_empty() {
+                    groups.push(serde_json::json!({
+                        "id": uuid,
+                        "name": name,
+                        "permissions": group_perms,
+                    }));
+                }
             }
         }
     }
@@ -232,6 +354,7 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         discussion_tags,
         discussion_emojis,
         permissions,
+        groups,
     })
 }
 
@@ -316,18 +439,62 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         }
     }
 
-    // Write permissions — remove old, add new
-    if let Some(t) = doc.get_mut("permissions").and_then(|s| s.as_table_mut()) {
-        let keys: Vec<String> = t.iter().map(|(k, _)| k.to_string()).collect();
-        for k in keys { t.remove(&k); }
+    // Write permissions — remove old, add new in nested [permissions.roles] format
+    // Ensure [permissions] table exists
+    if doc.get("permissions").is_none() {
+        doc["permissions"] = Item::Table(toml_edit::Table::new());
     }
-    for (role, perms) in &payload.permissions {
-        if !perms.is_empty() {
-            let arr = toml_edit::Array::from_iter(perms.iter().map(|p| toml_edit::Value::from(p.as_str())));
-            if let Some(t) = doc.get_mut("permissions").and_then(|s| s.as_table_mut()) {
-                t[role] = toml_edit::Item::Value(toml_edit::Value::Array(arr));
-            }
+    let perms_root = doc["permissions"].as_table_mut().unwrap();
+    {
+        // Clear old roles
+        if let Some(roles_t) = perms_root.get_mut("roles").and_then(|s| s.as_table_mut()) {
+            let keys: Vec<String> = roles_t.iter().map(|(k, _)| k.to_string()).collect();
+            for k in keys { roles_t.remove(&k); }
         }
+        // Write roles
+        if !payload.permissions.is_empty() {
+            // Ensure "roles" sub-table exists
+            if perms_root.get("roles").is_none() {
+                perms_root["roles"] = Item::Table(toml_edit::Table::new());
+            }
+            if let Some(roles_t) = perms_root.get_mut("roles").and_then(|s| s.as_table_mut()) {
+                    for (role, perms) in &payload.permissions {
+                        if !perms.is_empty() {
+                            let arr = toml_edit::Array::from_iter(perms.iter().map(|p| toml_edit::Value::from(p.as_str())));
+                            roles_t[role] = Item::Value(toml_edit::Value::Array(arr));
+                        }
+                    }
+                }
+            }
+
+            // Clear old groups
+            if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
+                let keys: Vec<String> = groups_t.iter().map(|(k, _)| k.to_string()).collect();
+                for k in keys { groups_t.remove(&k); }
+            }
+            // Write groups
+            if !payload.groups.is_empty() {
+                if perms_root.get("groups").is_none() {
+                    perms_root["groups"] = Item::Table(toml_edit::Table::new());
+                }
+                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
+                    for g in &payload.groups {
+                        let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                        let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                        let perms = g.get("permissions").and_then(|v| v.as_array());
+                        if id.is_empty() || name.is_empty() { continue; }
+                        let mut it = toml_edit::InlineTable::new();
+                        it.insert("name", toml_edit::Value::from(name));
+                        if let Some(arr) = perms {
+                            let t_arr = toml_edit::Array::from_iter(arr.iter().filter_map(|v| v.as_str().map(toml_edit::Value::from)));
+                            it.insert("permissions", toml_edit::Value::Array(t_arr));
+                        } else {
+                            it.insert("permissions", toml_edit::Value::Array(toml_edit::Array::new()));
+                        }
+                        groups_t[id] = Item::Value(toml_edit::Value::InlineTable(it));
+                    }
+                }
+            }
     }
 
     Ok(doc.to_string())
@@ -339,45 +506,62 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
 /// Superadmin only — returns current config as JSON
 pub async fn get_config(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
 
     let raw = match read_config_raw() {
         Ok(s) => s,
-        Err(e) => return Json(serde_json::json!({"success": false, "message": e})),
+        Err(e) => return Ok(Json(serde_json::json!({"success": false, "message": e}))),
     };
 
     let config = match parse_config(&raw) {
         Ok(c) => c,
-        Err(e) => return Json(serde_json::json!({"success": false, "message": e})),
+        Err(e) => return Ok(Json(serde_json::json!({"success": false, "message": e}))),
     };
 
-    Json(serde_json::json!({"success": true, "config": config}))
+    Ok(Json(serde_json::json!({"success": true, "config": config})))
 }
 
 /// PUT /api/admin/config
 /// manage_site permission required — updates config.toml
 pub async fn update_config(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Json(payload): Json<UpdateConfigPayload>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
 
     // Validate
     if payload.server.site_url.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "站点URL不能为空"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "站点URL不能为空"})));
+    }
+
+    // Validate admin display_name uniqueness: no user's display_name or username matches
+    {
+        let admin_dn = payload.admin.display_name.trim();
+        if !admin_dn.is_empty() {
+            let users = state.users.read().await;
+            let is_taken = users.values().any(|u| {
+                u.id != "admin" && (u.display_name == admin_dn || u.username == admin_dn)
+            });
+            if is_taken {
+                return Ok(Json(serde_json::json!({
+                    "success": false,
+                    "message": "管理员显示名称已被其他人使用"
+                })));
+            }
+        }
     }
 
     let raw = match read_config_raw() {
         Ok(s) => s,
-        Err(e) => return Json(serde_json::json!({"success": false, "message": e})),
+        Err(e) => return Ok(Json(serde_json::json!({"success": false, "message": e}))),
     };
 
     let updated = match apply_config(&raw, &payload) {
         Ok(s) => s,
-        Err(e) => return Json(serde_json::json!({"success": false, "message": e})),
+        Err(e) => return Ok(Json(serde_json::json!({"success": false, "message": e}))),
     };
 
     match write_config_raw(&updated) {
@@ -428,9 +612,29 @@ pub async fn update_config(
             if !payload.permissions.is_empty() {
                 *state.role_permissions.write().await = payload.permissions.clone();
             }
-            Json(serde_json::json!({"success": true, "message": "配置已保存，立即生效"}))
+            // Sync member_groups in-memory from payload.groups
+            if !payload.groups.is_empty() {
+                let mut mg = state.member_groups.write().await;
+                mg.clear();
+                for g in &payload.groups {
+                    let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let perms: Vec<String> = g.get("permissions")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default();
+                    if !id.is_empty() && !name.is_empty() {
+                        mg.insert(id.clone(), crate::types::MemberGroup {
+                            id,
+                            name,
+                            permissions: perms,
+                        });
+                    }
+                }
+            }
+            Ok(Json(serde_json::json!({"success": true, "message": "配置已保存，立即生效"})))
         }
-        Err(e) => Json(serde_json::json!({"success": false, "message": e})),
+        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": e}))),
     }
 }
 
@@ -438,9 +642,9 @@ pub async fn update_config(
 /// manage_site permission required — restarts the mcguffin service
 pub async fn restart_service(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
 
     // Spawn restart in background — this will restart the service after we respond
     tokio::spawn(async {
@@ -451,7 +655,7 @@ pub async fn restart_service(
             .status();
     });
 
-    Json(serde_json::json!({"success": true, "message": "服务正在重启..."}))
+    Ok(Json(serde_json::json!({"success": true, "message": "服务正在重启..."})))
 }
 
 // ============== Data Backup / Restore ==============
@@ -497,21 +701,21 @@ fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
 /// manage_backups permission required — creates a timestamped backup of the current data file
 pub async fn create_backup(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_BACKUPS);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS).await?;
 
     // Save current state to disk first so we back up the latest data
     state.save().await;
 
     let data_path = PathBuf::from(&state.data_file);
     if !data_path.exists() {
-        return Json(serde_json::json!({"success": false, "message": "数据文件不存在，无法备份"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "数据文件不存在，无法备份"})));
     }
 
     let dir = backup_dir(&state);
     if std::fs::create_dir_all(&dir).is_err() {
-        return Json(serde_json::json!({"success": false, "message": "无法创建备份目录"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "无法创建备份目录"})));
     }
 
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
@@ -521,9 +725,9 @@ pub async fn create_backup(
     match std::fs::copy(&data_path, &backup_path) {
         Ok(_) => {
             tracing::info!("Backup created: {:?}", backup_path);
-            Json(serde_json::json!({"success": true, "message": "备份已创建", "backup": backup_name}))
+            Ok(Json(serde_json::json!({"success": true, "message": "备份已创建", "backup": backup_name})))
         }
-        Err(e) => Json(serde_json::json!({"success": false, "message": format!("备份失败: {}", e)})),
+        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("备份失败: {}", e)}))),
     }
 }
 
@@ -531,24 +735,24 @@ pub async fn create_backup(
 /// manage_backups permission required — lists all available backups with size and date
 pub async fn list_backups(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_BACKUPS);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS).await?;
 
     let dir = backup_dir(&state);
     let backups = list_backup_files(&dir);
 
-    Json(serde_json::json!({"success": true, "backups": backups}))
+    Ok(Json(serde_json::json!({"success": true, "backups": backups})))
 }
 
 /// POST /api/admin/backup/restore/:name
 /// manage_backups permission required — restores data from a named backup
 pub async fn restore_backup(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(name): Path<String>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_BACKUPS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS).await?;
 
     // Validate filename — prevent path traversal
     let name_clean = name.trim();
@@ -557,16 +761,16 @@ pub async fn restore_backup(
         || name_clean.contains('\\')
         || name_clean.contains("..")
     {
-        return Json(serde_json::json!({"success": false, "message": "无效的备份文件名"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "无效的备份文件名"})));
     }
     if !name_clean.ends_with(".json") {
-        return Json(serde_json::json!({"success": false, "message": "无效的备份文件格式"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "无效的备份文件格式"})));
     }
 
     let dir = backup_dir(&state);
     let backup_path = dir.join(name_clean);
     if !backup_path.exists() {
-        return Json(serde_json::json!({"success": false, "message": "备份文件不存在"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "备份文件不存在"})));
     }
 
     let data_path = PathBuf::from(&state.data_file);
@@ -582,9 +786,9 @@ pub async fn restore_backup(
             tracing::info!("Restored from backup: {:?}", backup_path);
             // Reload state from the restored file
             state.reload().await;
-            Json(serde_json::json!({"success": true, "message": "数据已恢复，安全备份已创建"}))
+            Ok(Json(serde_json::json!({"success": true, "message": "数据已恢复，安全备份已创建"})))
         }
-        Err(e) => Json(serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)})),
+        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}))),
     }
 }
 
@@ -592,10 +796,10 @@ pub async fn restore_backup(
 /// manage_backups permission required — deletes a named backup
 pub async fn delete_backup(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(name): Path<String>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_BACKUPS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS).await?;
 
     // Validate filename
     let name_clean = name.trim();
@@ -604,21 +808,21 @@ pub async fn delete_backup(
         || name_clean.contains('\\')
         || name_clean.contains("..")
     {
-        return Json(serde_json::json!({"success": false, "message": "无效的备份文件名"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "无效的备份文件名"})));
     }
 
     let dir = backup_dir(&state);
     let backup_path = dir.join(name_clean);
     if !backup_path.exists() {
-        return Json(serde_json::json!({"success": false, "message": "备份文件不存在"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "备份文件不存在"})));
     }
 
     match std::fs::remove_file(&backup_path) {
         Ok(_) => {
             tracing::info!("Backup deleted: {:?}", backup_path);
-            Json(serde_json::json!({"success": true, "message": "备份已删除"}))
+            Ok(Json(serde_json::json!({"success": true, "message": "备份已删除"})))
         }
-        Err(e) => Json(serde_json::json!({"success": false, "message": format!("删除失败: {}", e)})),
+        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("删除失败: {}", e)}))),
     }
 }
 
@@ -628,22 +832,22 @@ pub async fn delete_backup(
 /// manage_site permission required — exports the data file (JSON) as download
 pub async fn export_data(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
 
     let data_path = PathBuf::from(&state.data_file);
     match std::fs::read_to_string(&data_path) {
         Ok(content) => {
             let filename = format!("mcguffin_data_{}.json", Local::now().format("%Y%m%d_%H%M%S"));
-            Json(serde_json::json!({
+            Ok(Json(serde_json::json!({
                 "success": true,
                 "content": content,
                 "filename": filename,
                 "mime": "application/json",
-            }))
+            })))
         }
-        Err(e) => Json(serde_json::json!({"success": false, "message": format!("读取数据文件失败: {}", e)})),
+        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("读取数据文件失败: {}", e)}))),
     }
 }
 
@@ -651,55 +855,55 @@ pub async fn export_data(
 /// manage_site permission required — exports the config file (TOML) as download
 pub async fn export_config(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
 
     match std::fs::read_to_string(CONFIG_PATH) {
         Ok(content) => {
             let filename = format!("config_{}.toml", Local::now().format("%Y%m%d_%H%M%S"));
-            Json(serde_json::json!({
+            Ok(Json(serde_json::json!({
                 "success": true,
                 "content": content,
                 "filename": filename,
                 "mime": "text/plain",
-            }))
+            })))
         }
-        Err(e) => Json(serde_json::json!({"success": false, "message": format!("读取配置文件失败: {}", e)})),
+        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("读取配置文件失败: {}", e)}))),
     }
 }
 
 // ============== Showcase Configuration ==============
 
 /// GET /api/admin/showcase
-/// manage_site permission required — returns current showcase selections
+/// edit_showcase permission required — returns current showcase selections
 pub async fn get_showcase_config(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::EDIT_SHOWCASE).await?;
 
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "success": true,
         "problem_ids": state.showcase_problem_ids.read().await.clone(),
         "contest_ids": state.showcase_contest_ids.read().await.clone(),
-    }))
+    })))
 }
 
 /// PUT /api/admin/showcase
-/// manage_site permission required — updates which problems/contests appear on the showcase
+/// edit_showcase permission required — updates which problems/contests appear on the showcase
 pub async fn update_showcase_config(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Json(payload): Json<ShowcaseConfigPayload>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SITE);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::EDIT_SHOWCASE).await?;
 
     *state.showcase_problem_ids.write().await = payload.problem_ids;
     *state.showcase_contest_ids.write().await = payload.contest_ids;
     state.save().await;
 
-    Json(serde_json::json!({"success": true, "message": "展板配置已保存"}))
+    Ok(Json(serde_json::json!({"success": true, "message": "展板配置已保存"})))
 }
 
 // ============== Audit Log ==============
@@ -708,13 +912,13 @@ pub async fn update_showcase_config(
 /// view_stats permission required — returns recent permission audit entries
 pub async fn get_audit_log(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::VIEW_STATS);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::VIEW_STATS).await?;
 
     let log = state.audit_log.read().await;
     let entries: Vec<&AuditEntry> = log.iter().rev().take(200).collect();
-    Json(serde_json::json!(entries))
+    Ok(Json(serde_json::json!(entries)))
 }
 
 // ============== User Management ==============
@@ -724,9 +928,9 @@ use crate::state::ADMIN_USER_ID;
 /// List all users (superadmin only)
 pub async fn admin_list_users(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, PERM_WILDCARD);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
     let users = state.users.read().await;
     let members = state.team_members.read().await;
     let result: Vec<serde_json::Value> = users.values().map(|u| {
@@ -739,35 +943,37 @@ pub async fn admin_list_users(
             "role": u.role,
             "team_status": u.team_status,
             "is_team_member": is_team_member,
+            "group_ids": u.group_ids,
+            "user_permissions": u.user_permissions,
             "created_at": u.created_at,
         })
     }).collect();
-    Json(serde_json::json!(result))
+    Ok(Json(serde_json::json!(result)))
 }
 
 /// POST /api/admin/users/{user_id}/role
 /// Change a user's role (superadmin only)
 pub async fn admin_change_user_role(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(user_id): Path<String>,
     Json(payload): Json<ChangeRolePayload>,
-) -> Json<serde_json::Value> {
-    let (_admin_id, _) = req_perm!(&state, &headers, PERM_WILDCARD);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
     if user_id == ADMIN_USER_ID {
-        return Json(serde_json::json!({"success": false, "message": "不能修改系统管理员的角色"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "不能修改系统管理员的角色"})));
     }
     if payload.role != "admin" && payload.role != "member" && payload.role != "guest" {
-        return Json(serde_json::json!({"success": false, "message": "无效角色"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "无效角色"})));
     }
     let mut users = state.users.write().await;
     if let Some(u) = users.get_mut(&user_id) {
         u.role = payload.role.clone();
         drop(users);
         state.save().await;
-        Json(serde_json::json!({"success": true, "message": "角色已更新"}))
+        Ok(Json(serde_json::json!({"success": true, "message": "角色已更新"})))
     } else {
-        Json(serde_json::json!({"success": false, "message": "用户不存在"}))
+        Ok(Json(serde_json::json!({"success": false, "message": "用户不存在"})))
     }
 }
 
@@ -775,18 +981,218 @@ pub async fn admin_change_user_role(
 /// Remove (delete) a user (superadmin only)
 pub async fn admin_remove_user(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(user_id): Path<String>,
-) -> Json<serde_json::Value> {
-    let (_admin_id, _) = req_perm!(&state, &headers, PERM_WILDCARD);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
     if user_id == ADMIN_USER_ID {
-        return Json(serde_json::json!({"success": false, "message": "不能删除系统管理员"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "不能删除系统管理员"})));
     }
-    if user_id == _admin_id {
-        return Json(serde_json::json!({"success": false, "message": "不能删除自己"}));
+    if user_id == auth.user_id {
+        return Ok(Json(serde_json::json!({"success": false, "message": "不能删除自己"})));
     }
     state.users.write().await.remove(&user_id);
     state.team_members.write().await.retain(|_, m| m.user_id != user_id);
     state.save().await;
-    Json(serde_json::json!({"success": true, "message": "用户已删除"}))
+    Ok(Json(serde_json::json!({"success": true, "message": "用户已删除"})))
+}
+
+// ============== Member Groups CRUD ==============
+
+/// GET /api/admin/groups — list all member groups
+pub async fn list_groups(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let groups = state.member_groups.read().await;
+    let result: Vec<serde_json::Value> = groups.values().map(|g| {
+        serde_json::json!({
+            "id": g.id,
+            "name": g.name,
+            "permissions": g.permissions,
+        })
+    }).collect();
+    Ok(Json(serde_json::json!(result)))
+}
+
+/// POST /api/admin/groups — create a member group
+pub async fn create_group(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<CreateGroupPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let name = payload.name.trim().to_string();
+    if name.is_empty() {
+        return Ok(Json(serde_json::json!({"success": false, "message": "组名不能为空"})));
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let group = crate::types::MemberGroup {
+        id: id.clone(),
+        name,
+        permissions: payload.permissions,
+    };
+    state.member_groups.write().await.insert(id.clone(), group);
+    sync_groups_to_config(&state).await;
+    Ok(Json(serde_json::json!({"success": true, "message": "成员组已创建", "id": id})))
+}
+
+/// PUT /api/admin/groups/{group_id} — update a member group
+pub async fn update_group(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(group_id): Path<String>,
+    Json(payload): Json<UpdateGroupPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let mut groups = state.member_groups.write().await;
+    let group = match groups.get_mut(&group_id) {
+        Some(g) => g,
+        None => return Ok(Json(serde_json::json!({"success": false, "message": "成员组不存在"}))),
+    };
+    let name = payload.name.trim().to_string();
+    if name.is_empty() {
+        return Ok(Json(serde_json::json!({"success": false, "message": "组名不能为空"})));
+    }
+    group.name = name;
+    group.permissions = payload.permissions;
+    drop(groups);
+    sync_groups_to_config(&state).await;
+    Ok(Json(serde_json::json!({"success": true, "message": "成员组已更新"})))
+}
+
+/// DELETE /api/admin/groups/{group_id} — delete a member group
+pub async fn delete_group(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(group_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let mut groups = state.member_groups.write().await;
+    if !groups.contains_key(&group_id) {
+        return Ok(Json(serde_json::json!({"success": false, "message": "成员组不存在"})));
+    }
+    groups.remove(&group_id);
+    drop(groups);
+
+    // Clean up references to this group from all users
+    let mut users = state.users.write().await;
+    for user in users.values_mut() {
+        user.group_ids.retain(|gid| gid != &group_id);
+    }
+    drop(users);
+    state.save().await;
+    sync_groups_to_config(&state).await;
+    Ok(Json(serde_json::json!({"success": true, "message": "成员组已删除"})))
+}
+
+// ============== User-Group Membership ==============
+
+/// PUT /api/admin/users/{user_id}/groups — set user's group membership
+pub async fn set_user_groups(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(user_id): Path<String>,
+    Json(payload): Json<SetUserGroupsPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let mut users = state.users.write().await;
+    let user = match users.get_mut(&user_id) {
+        Some(u) => u,
+        None => return Ok(Json(serde_json::json!({"success": false, "message": "用户不存在"}))),
+    };
+    user.group_ids = payload.group_ids;
+    drop(users);
+    state.save().await;
+    Ok(Json(serde_json::json!({"success": true, "message": "用户组已更新"})))
+}
+
+// ============== User Individual Permissions ==============
+
+/// PUT /api/admin/users/{user_id}/permissions — set user's individual permissions
+pub async fn set_user_permissions(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(user_id): Path<String>,
+    Json(payload): Json<SetUserPermissionsPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let mut users = state.users.write().await;
+    let user = match users.get_mut(&user_id) {
+        Some(u) => u,
+        None => return Ok(Json(serde_json::json!({"success": false, "message": "用户不存在"}))),
+    };
+    user.user_permissions = payload.permissions;
+    drop(users);
+    state.save().await;
+    Ok(Json(serde_json::json!({"success": true, "message": "用户权限已更新"})))
+}
+
+// ============== Problem Resource ACL ==============
+
+/// PUT /api/admin/problems/{problem_id}/acl — set who can edit a problem
+pub async fn set_problem_acl(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(problem_id): Path<String>,
+    Json(payload): Json<SetProblemAclPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let mut problems = state.problems.write().await;
+    let problem = match problems.get_mut(&problem_id) {
+        Some(p) => p,
+        None => return Ok(Json(serde_json::json!({"success": false, "message": "题目不存在"}))),
+    };
+    problem.editable_by = payload.editable_by;
+    drop(problems);
+    state.save().await;
+    Ok(Json(serde_json::json!({"success": true, "message": "题目访问控制已更新"})))
+}
+
+// ============== Unified Resource ACL ==============
+
+/// PUT /api/admin/acl/{resource_type}/{resource_id} — set ACL for any resource
+/// resource_type: "problem" | "contest" | "post"
+pub async fn set_resource_acl(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path((resource_type, resource_id)): Path<(String, String)>,
+    Json(payload): Json<SetAclPayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+
+    {
+        let mut found = false;
+        match resource_type.as_str() {
+            "problem" => {
+                if let Some(p) = state.problems.write().await.get_mut(&resource_id) {
+                    p.visible_to = payload.visible_to.clone();
+                    p.editable_by = payload.editable_by.clone();
+                    found = true;
+                }
+            }
+            "contest" => {
+                if let Some(c) = state.contests.write().await.get_mut(&resource_id) {
+                    c.visible_to = payload.visible_to.clone();
+                    c.editable_by = payload.editable_by.clone();
+                    found = true;
+                }
+            }
+            "post" | "discussion" => {
+                if let Some(p) = state.posts.write().await.get_mut(&resource_id) {
+                    p.visible_to = payload.visible_to.clone();
+                    p.editable_by = payload.editable_by.clone();
+                    found = true;
+                }
+            }
+            _ => return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"success": false, "message": "无效的资源类型"})))),
+        }
+        if !found {
+            return Err((StatusCode::NOT_FOUND, Json(serde_json::json!({"success": false, "message": "资源不存在"}))));
+        }
+    } // write locks dropped here
+
+    state.save().await;
+    Ok(Json(serde_json::json!({"success": true, "message": "访问控制已更新"})))
 }

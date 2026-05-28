@@ -9,7 +9,7 @@ export default function AnnouncementsPage() {
   const { hasPermission, isAuthenticated } = useAuth()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
-  const canManage = hasPermission('manage_announcements')
+  const canManage = hasPermission('manage_discussions')
 
   // Form state
   const [showForm, setShowForm] = useState(false)

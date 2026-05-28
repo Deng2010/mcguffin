@@ -15,6 +15,8 @@ interface ContestItem {
   status: string
   link?: string | null
   problem_order: string[]
+  visible_to?: string[]
+  editable_by?: string[]
 }
 
 interface ContestProblem {
@@ -53,6 +55,9 @@ export default function ContestManagePage() {
   const [editProblems, setEditProblems] = useState<ContestProblem[]>([])
   const [editProblemsReady, setEditProblemsReady] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
+  const [allMembers, setAllMembers] = useState<{ id: string; username: string; display_name: string }[]>([])
+  const [editVisibleTo, setEditVisibleTo] = useState<string[]>([])
+  const [editEditableBy, setEditEditableBy] = useState<string[]>([])
 
   const loadContests = () => {
     apiFetch<ContestItem[]>('/contests')
@@ -122,6 +127,14 @@ export default function ContestManagePage() {
     setEditLink(c.link || '')
     setEditProblemsReady(false)
     setError('')
+    setEditVisibleTo(c.visible_to || [])
+    setEditEditableBy(c.editable_by || [])
+    // Load members for ACL editor
+    if (isAdmin && allMembers.length === 0) {
+      apiFetch<{ id: string; username: string; display_name: string }[]>('/admin/users')
+        .then(setAllMembers)
+        .catch(() => {})
+    }
     // Load problems for ordering
     try {
       const problems = await apiFetch<ContestProblem[]>(`/contests/${c.id}/problems`)
@@ -138,6 +151,8 @@ export default function ContestManagePage() {
     setEditProblems([])
     setEditProblemsReady(false)
     setError('')
+    setEditVisibleTo([])
+    setEditEditableBy([])
   }
 
   const moveProblem = (index: number, direction: -1 | 1) => {
@@ -148,6 +163,22 @@ export default function ContestManagePage() {
     newProblems[index] = newProblems[newIndex]
     newProblems[newIndex] = temp
     setEditProblems(newProblems)
+  }
+
+  const toggleVisibleMember = (userId: string) => {
+    setEditVisibleTo(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId],
+    )
+  }
+
+  const toggleEditableMember = (userId: string) => {
+    setEditEditableBy(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId],
+    )
   }
 
   const handleSaveEdit = async () => {
@@ -179,6 +210,21 @@ export default function ContestManagePage() {
         { method: 'POST', body: JSON.stringify({ problem_ids: problemIds }) },
       )
       if (!orderRes.success) { setError(orderRes.message); setEditSaving(false); return }
+
+      // 3. Save ACL (admin only)
+      if (isAdmin) {
+        const aclRes = await apiFetch<{ success: boolean; message: string }>(
+          `/admin/acl/contest/${editingId}`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              visible_to: editVisibleTo,
+              editable_by: editEditableBy,
+            }),
+          },
+        )
+        if (!aclRes.success) { setError(aclRes.message); setEditSaving(false); return }
+      }
 
       cancelEdit()
       loadContests()
@@ -390,6 +436,45 @@ rows={10}
                       </div>
                     )}
                   </div>
+
+                  {/* ACL editor — admin only */}
+                  {isAdmin && allMembers.length > 0 && (
+                    <div className="border-t border-gray-200 pt-4 mb-6 dark:border-gray-700">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 dark:text-gray-200">访问控制</h4>
+                      <div className="mb-3">
+                        <label className="block text-xs font-medium mb-1.5 text-gray-600 dark:text-gray-300">可见成员（选择可查看此比赛的成员）</label>
+                        <div className="flex flex-wrap gap-2">
+                          {allMembers.map(m => (
+                            <label key={m.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editVisibleTo.includes(m.id)}
+                                onChange={() => toggleVisibleMember(m.id)}
+                                className="accent-gray-800 dark:accent-gray-400"
+                              />
+                              {m.display_name || m.username}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1.5 text-gray-600 dark:text-gray-300">可编辑成员（选择可编辑此比赛的成员）</label>
+                        <div className="flex flex-wrap gap-2">
+                          {allMembers.map(m => (
+                            <label key={m.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editEditableBy.includes(m.id)}
+                                onChange={() => toggleEditableMember(m.id)}
+                                className="accent-gray-800 dark:accent-gray-400"
+                              />
+                              {m.display_name || m.username}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="flex gap-2">

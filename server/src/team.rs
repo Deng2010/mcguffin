@@ -1,25 +1,25 @@
 use axum::{
     extract::{Path, State},
+    http::HeaderMap,
     Json,
 };
-use axum::http::HeaderMap;
+use axum::http::StatusCode;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::req_perm;
 use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::*;
-use crate::utils::{check_permission, get_token_from_headers, require_permission_json};
+use crate::utils::{check_permission, get_token_from_headers, AuthUser};
 
 // ============== List Team Members ==============
 
 pub async fn get_team_members(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, user) = req_perm!(&state, &headers, crate::types::perms::VIEW_TEAM);
-    let is_admin_user = check_permission(&state, &user, crate::types::perms::MANAGE_TEAM).await;
-    let is_superadmin_user = check_permission(&state, &user, PERM_WILDCARD).await;
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::VIEW_TEAM).await?;
+    let is_admin_user = check_permission(&state, &auth.user, crate::types::perms::MANAGE_TEAM).await;
+    let is_superadmin_user = check_permission(&state, &auth.user, PERM_WILDCARD).await;
     let members = state.team_members.read().await;
     let users = state.users.read().await;
     let result: Vec<serde_json::Value> = members
@@ -57,18 +57,18 @@ pub async fn get_team_members(
             })
         })
         .collect();
-    Json(serde_json::json!(result))
+    Ok(Json(serde_json::json!(result)))
 }
 
 // ============== List Pending Join Requests ==============
 
 pub async fn get_pending_requests(
     State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_TEAM);
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_TEAM).await?;
     let requests = state.join_requests.read().await;
-    Json(serde_json::json!(requests.values().filter(|r| r.status == "pending").cloned().collect::<Vec<JoinRequest>>()))
+    Ok(Json(serde_json::json!(requests.values().filter(|r| r.status == "pending").cloned().collect::<Vec<JoinRequest>>())))
 }
 
 // ============== Apply to Join ==============
@@ -123,13 +123,12 @@ pub async fn apply_to_join(
 
 pub async fn review_application(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path((request_id, action)): Path<(String, String)>,
 ) -> Json<ReviewResponse> {
-    let (_user_id, _) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_TEAM).await {
-        Ok(u) => u,
-        Err(_) => return Json(ReviewResponse { success: false, message: "权限不足".to_string() }),
-    };
+    if !check_permission(&state, &auth.user, crate::types::perms::MANAGE_TEAM).await {
+        return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
+    }
 
     let action_clone = action.clone();
     let (target_user_id, new_status) = {
@@ -180,22 +179,21 @@ pub async fn review_application(
 
 pub async fn change_member_role(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(user_id): Path<String>,
     Json(payload): Json<ChangeRolePayload>,
 ) -> Json<ReviewResponse> {
     if user_id == ADMIN_USER_ID {
         return Json(ReviewResponse { success: false, message: "不能修改系统管理员的角色".to_string() });
     }
-    let (_admin_user_id, admin_user) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_MEMBERS).await {
-        Ok(u) => u,
-        Err(_) => return Json(ReviewResponse { success: false, message: "权限不足".to_string() }),
-    };
+    if !check_permission(&state, &auth.user, crate::types::perms::MANAGE_MEMBERS).await {
+        return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
+    }
     if payload.role != "admin" && payload.role != "member" {
         return Json(ReviewResponse { success: false, message: "无效角色".to_string() });
     }
     // Only superadmin can demote an existing admin or promote to admin
-    let is_super = check_permission(&state, &admin_user, PERM_WILDCARD).await;
+    let is_super = check_permission(&state, &auth.user, PERM_WILDCARD).await;
     let users = state.users.read().await;
     let target_role = users.get(&user_id).map(|u| u.role.as_str());
     if let Some("admin") = target_role {
@@ -224,23 +222,22 @@ pub async fn change_member_role(
 
 pub async fn remove_member(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(user_id): Path<String>,
 ) -> Json<ReviewResponse> {
     if user_id == ADMIN_USER_ID {
         return Json(ReviewResponse { success: false, message: "不能移除系统管理员".to_string() });
     }
-    let (admin_user_id, admin_user) = match require_permission_json(&state, &headers, crate::types::perms::MANAGE_MEMBERS).await {
-        Ok(u) => u,
-        Err(_) => return Json(ReviewResponse { success: false, message: "权限不足".to_string() }),
-    };
-    if admin_user_id == user_id {
+    if !check_permission(&state, &auth.user, crate::types::perms::MANAGE_MEMBERS).await {
+        return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
+    }
+    if auth.user_id == user_id {
         return Json(ReviewResponse { success: false, message: "不能移除自己".to_string() });
     }
     let users = state.users.read().await;
     // Only superadmin can remove an admin
     let target_is_admin = users.get(&user_id).map(|u| u.role.as_str()) == Some("admin");
-    if target_is_admin && !check_permission(&state, &admin_user, PERM_WILDCARD).await {
+    if target_is_admin && !check_permission(&state, &auth.user, PERM_WILDCARD).await {
         drop(users);
         return Json(ReviewResponse { success: false, message: "权限不足：仅限系统管理员操作".to_string() });
     }

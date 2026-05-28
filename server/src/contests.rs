@@ -1,15 +1,14 @@
 use axum::{
     extract::{Path, State},
-    http::HeaderMap,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::req_perm;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{check_permission, get_token_from_headers};
+use crate::utils::{check_permission, get_token_from_headers, AuthUser};
 
 /// Resolve user from token; returns (user_id, user)
 async fn resolve_user<'a>(state: &'a AppState, headers: &HeaderMap) -> Option<(String, User)> {
@@ -32,6 +31,8 @@ fn to_list_item(c: &Contest) -> ContestListItem {
         status: c.status.clone(),
         link: c.link.clone(),
         problem_order: c.problem_order.clone(),
+        visible_to: c.visible_to.clone(),
+        editable_by: c.editable_by.clone(),
     }
 }
 
@@ -81,10 +82,10 @@ pub async fn get_contests(
 /// Admin only — creates as "draft"
 pub async fn create_contest(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Json(payload): Json<CreateContestPayload>,
-) -> Json<serde_json::Value> {
-    let (user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
 
     let contest = Contest {
         id: Uuid::new_v4().to_string(),
@@ -92,18 +93,20 @@ pub async fn create_contest(
         start_time: payload.start_time,
         end_time: payload.end_time,
         description: payload.description,
-        created_by: user_id,
+        created_by: auth.user_id,
         created_at: Utc::now(),
         status: "draft".to_string(),
         link: payload.link,
         problem_order: vec![],
+        visible_to: vec![],
+        editable_by: vec![],
     };
 
     let cid = contest.id.clone();
     state.contests.write().await.insert(contest.id.clone(), contest);
     state.save().await;
 
-    Json(serde_json::json!({"success": true, "message": "比赛已创建", "contest_id": cid}))
+    Ok(Json(serde_json::json!({"success": true, "message": "比赛已创建", "contest_id": cid})))
 }
 
 // ============== Delete Contest ==============
@@ -112,10 +115,10 @@ pub async fn create_contest(
 /// Admin only — also clears contest_id from all Problems referencing it
 pub async fn delete_contest(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(contest_id): Path<String>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
 
     let mut contests = state.contests.write().await;
     if contests.remove(&contest_id).is_some() {
@@ -129,9 +132,9 @@ pub async fn delete_contest(
         }
         drop(problems);
         state.save().await;
-        Json(serde_json::json!({"success": true, "message": "比赛已删除"}))
+        Ok(Json(serde_json::json!({"success": true, "message": "比赛已删除"})))
     } else {
-        Json(serde_json::json!({"success": false, "message": "比赛不存在"}))
+        Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"})))
     }
 }
 
@@ -141,16 +144,16 @@ pub async fn delete_contest(
 /// Admin only — updates name, time, description
 pub async fn update_contest(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(contest_id): Path<String>,
     Json(payload): Json<UpdateContestPayload>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
         Some(c) => c,
-        None => return Json(serde_json::json!({"success": false, "message": "比赛不存在"})),
+        None => return Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"}))),
     };
 
     contest.name = payload.name;
@@ -163,7 +166,7 @@ pub async fn update_contest(
     drop(contests);
 
     state.save().await;
-    Json(serde_json::json!({"success": true, "message": "比赛已更新"}))
+    Ok(Json(serde_json::json!({"success": true, "message": "比赛已更新"})))
 }
 
 // ============== Set Contest Status ==============
@@ -172,27 +175,27 @@ pub async fn update_contest(
 /// Admin only — toggles between "draft" and "public"
 pub async fn set_contest_status(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(contest_id): Path<String>,
     Json(payload): Json<SetContestStatusPayload>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
 
     if payload.status != "draft" && payload.status != "public" {
-        return Json(serde_json::json!({"success": false, "message": "状态值无效，仅支持 draft 或 public"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "状态值无效，仅支持 draft 或 public"})));
     }
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
         Some(c) => c,
-        None => return Json(serde_json::json!({"success": false, "message": "比赛不存在"})),
+        None => return Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"}))),
     };
 
     if payload.status == "public" && contest.status != "public" {
         // Require link when making public — check payload first, then existing contest link
         let link = payload.link.as_deref().or(contest.link.as_deref()).unwrap_or("");
         if link.is_empty() {
-            return Json(serde_json::json!({"success": false, "message": "设为公开前请先设置比赛链接"}));
+            return Ok(Json(serde_json::json!({"success": false, "message": "设为公开前请先设置比赛链接"})));
         }
         contest.link = Some(link.to_string());
     }
@@ -201,7 +204,7 @@ pub async fn set_contest_status(
     drop(contests);
     state.save().await;
 
-    Json(serde_json::json!({"success": true, "message": "比赛状态已更新"}))
+    Ok(Json(serde_json::json!({"success": true, "message": "比赛状态已更新"})))
 }
 
 // ============== Set Problem Order ==============
@@ -210,16 +213,16 @@ pub async fn set_contest_status(
 /// Admin only — sets the ordered list of problem IDs for a contest
 pub async fn set_problem_order(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(contest_id): Path<String>,
     Json(payload): Json<ContestProblemOrderPayload>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_CONTESTS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
         Some(c) => c,
-        None => return Json(serde_json::json!({"success": false, "message": "比赛不存在"})),
+        None => return Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"}))),
     };
 
     // Validate that all problem_ids exist and belong to this contest
@@ -228,10 +231,10 @@ pub async fn set_problem_order(
         match problems.get(pid) {
             Some(p) if p.contest_id.as_deref() == Some(&contest_id) => {}
             _ => {
-                return Json(serde_json::json!({
+                return Ok(Json(serde_json::json!({
                     "success": false,
                     "message": format!("题目 {} 不存在或不属于此比赛", pid)
-                }));
+                })));
             }
         }
     }
@@ -241,7 +244,7 @@ pub async fn set_problem_order(
     drop(contests);
     state.save().await;
 
-    Json(serde_json::json!({"success": true, "message": "题目顺序已更新"}))
+    Ok(Json(serde_json::json!({"success": true, "message": "题目顺序已更新"})))
 }
 
 // ============== Get Contest Problems (Ordered) ==============

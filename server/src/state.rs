@@ -1,4 +1,4 @@
-use crate::types::{AuditEntry, Contest, DiscussionEmoji, DiscussionTag, JoinRequest, Notification, Post, Problem, SessionEntry, TeamMember, User, AppConfig};
+use crate::types::{AuditEntry, Contest, DiscussionEmoji, DiscussionTag, JoinRequest, MemberGroup, Notification, Post, Problem, SessionEntry, TeamMember, User, AppConfig};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -47,6 +47,10 @@ struct SavedData {
     announcements: HashMap<String, serde_json::Value>,
     #[serde(default)]
     discussions: HashMap<String, serde_json::Value>,
+
+    // ── Permission Groups ──
+    #[serde(default)]
+    member_groups: HashMap<String, MemberGroup>,
 }
 
 /// Migrate legacy data into unified posts.
@@ -112,6 +116,8 @@ fn migrate_legacy_data(
                 status: extract(v, "status"),
                 created_at,
                 updated_at,
+                visible_to: vec![],
+                editable_by: vec![],
             });
             migrated = true;
         }
@@ -142,6 +148,8 @@ fn migrate_legacy_data(
                 status: String::new(),
                 created_at,
                 updated_at,
+                visible_to: vec![],
+                editable_by: vec![],
             });
             migrated = true;
         }
@@ -202,6 +210,8 @@ fn migrate_legacy_data(
                 status: String::new(),
                 created_at,
                 updated_at,
+                visible_to: vec![],
+                editable_by: vec![],
             });
             migrated = true;
         }
@@ -295,13 +305,51 @@ pub struct AppState {
     pub role_permissions: Arc<RwLock<HashMap<String, Vec<String>>>>,
     /// Permission audit log (in-memory, max 500 entries)
     pub audit_log: Arc<RwLock<VecDeque<AuditEntry>>>,
+    /// Member groups for group-based permission assignment
+    pub member_groups: Arc<RwLock<HashMap<String, MemberGroup>>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         // Load config from /usr/share/mcguffin/config.toml
-        let config = load_config();
+        let mut config = load_config();
         let difficulty_config = load_difficulty_config(&config);
+
+        // Migration: if config.toml has no [permissions] section, write default role permissions
+        {
+            let raw_config = std::fs::read_to_string(CONFIG_FILE).unwrap_or_default();
+            let has_permissions_section = raw_config.contains("\n[permissions]") || raw_config.starts_with("[permissions]");
+            if !has_permissions_section {
+            tracing::info!("No [permissions] section in config.toml, writing default permissions");
+            let defaults = crate::types::default_role_permissions();
+            if let Ok(raw) = std::fs::read_to_string(CONFIG_FILE) {
+                use toml_edit::{DocumentMut, Item, Value as TomlValue};
+                use std::str::FromStr;
+                if let Ok(mut doc) = DocumentMut::from_str(&raw) {
+                    // Ensure [permissions] table exists
+                    if doc.get("permissions").is_none() {
+                        doc["permissions"] = Item::Table(toml_edit::Table::new());
+                    }
+                    // Write [permissions.roles]
+                    doc["permissions"]["roles"] = Item::Table(toml_edit::Table::new());
+                    if let Some(roles_t) = doc["permissions"]["roles"].as_table_mut() {
+                        for (role, perms) in &defaults {
+                            if !perms.is_empty() {
+                                let arr = toml_edit::Array::from_iter(
+                                    perms.iter().map(|p| TomlValue::from(p.as_str()))
+                                );
+                                roles_t[role] = Item::Value(TomlValue::Array(arr));
+                            }
+                        }
+                    }
+                    let _ = std::fs::write(CONFIG_FILE, doc.to_string());
+                    tracing::info!("Default permissions written to config.toml");
+                }
+            }
+            // Reload config to pick up the newly written defaults
+            config = load_config();
+        }
+        }
 
         let site_version = env!("CARGO_PKG_VERSION").to_string();
 
@@ -326,11 +374,64 @@ impl AppState {
                     tracing::info!("Migrated legacy data to unified posts model");
                 }
 
+                // Migration: if data.json has member_groups, write to config.toml
+                if !data.member_groups.is_empty() && config.permission_groups.is_empty() {
+                    tracing::info!("Migrating {} member groups from data.json to config.toml", data.member_groups.len());
+                    // Write to config.toml via the admin helper
+                    let groups_json: Vec<serde_json::Value> = data.member_groups.values().map(|g| {
+                        serde_json::json!({
+                            "id": g.id,
+                            "name": g.name,
+                            "permissions": g.permissions,
+                        })
+                    }).collect();
+                    if let Ok(raw) = std::fs::read_to_string(CONFIG_FILE) {
+                        use toml_edit::{DocumentMut, Item, Value as TomlValue};
+                        use std::str::FromStr;
+                        if let Ok(mut doc) = DocumentMut::from_str(&raw) {
+                            if let Some(perms_root) = doc.get_mut("permissions").and_then(|s| s.as_table_mut()) {
+                                // Clear old groups section
+                                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
+                                    let keys: Vec<String> = groups_t.iter().map(|(k, _)| k.to_string()).collect();
+                                    for k in keys { groups_t.remove(&k); }
+                                } else {
+                                    // Ensure groups sub-table exists
+                                    perms_root["groups"] = Item::Table(toml_edit::Table::new());
+                                }
+                                // Write migrated groups
+                                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
+                                    for g in &groups_json {
+                                        let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                        let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                        let perms = g.get("permissions").and_then(|v| v.as_array());
+                                        if id.is_empty() || name.is_empty() { continue; }
+                                        let mut it = toml_edit::InlineTable::new();
+                                        it.insert("name", TomlValue::from(name));
+                                        if let Some(arr) = perms {
+                                            let t_arr = toml_edit::Array::from_iter(arr.iter().filter_map(|v| v.as_str().map(TomlValue::from)));
+                                            it.insert("permissions", TomlValue::Array(t_arr));
+                                        }
+                                        groups_t[id] = Item::Value(TomlValue::InlineTable(it));
+                                    }
+                                }
+                            }
+                            let _ = std::fs::write(CONFIG_FILE, doc.to_string());
+                        }
+                    }
+                    // Also update in-memory member_groups
+                    // (loaded from config.toml again below — handled by load_member_groups fallback)
+                }
+
                 (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids, p)
             } else {
                 tracing::info!("No saved state, using default seed data");
                 (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), Vec::new(), Vec::new(), HashMap::new())
             };
+
+        // Member groups come from config.toml (already migrated from data.json if needed)
+        // Reload config after potential migration
+        let config = load_config();
+        let member_groups = load_member_groups(&config);
 
         // Always ensure superadmin user exists AND has correct role
         let admin_display_name = &config.admin.display_name;
@@ -346,11 +447,25 @@ impl AppState {
             bio: String::new(),
             password_hash: None,
             effective_role: "superadmin".to_string(),
+            group_ids: Vec::new(),
+            user_permissions: Vec::new(),
         });
         // Force update role to superadmin (in case loaded from old data)
         if let Some(u) = users.get_mut(ADMIN_USER_ID) {
             u.role = "superadmin".to_string();
             u.display_name = admin_display_name.clone();
+        }
+
+        // Migration: convert role="pending" to role="guest" (pending role removed)
+        let mut pending_count = 0;
+        for u in users.values_mut() {
+            if u.role == "pending" {
+                u.role = "guest".to_string();
+                pending_count += 1;
+            }
+        }
+        if pending_count > 0 {
+            tracing::info!("Migrated {} users from role=pending to role=guest", pending_count);
         }
 
         // Always ensure superadmin is a team member AND has correct role
@@ -415,6 +530,7 @@ impl AppState {
             discussion_emojis: Arc::new(RwLock::new(discussion_emojis)),
             role_permissions: Arc::new(RwLock::new(role_permissions)),
             audit_log: Arc::new(RwLock::new(VecDeque::with_capacity(500))),
+            member_groups: Arc::new(RwLock::new(member_groups)),
         };
 
         app_state
@@ -438,6 +554,7 @@ impl AppState {
             suggestions: HashMap::new(),
             announcements: HashMap::new(),
             discussions: HashMap::new(),
+            member_groups: self.member_groups.read().await.clone(),
         };
         let json = serde_json::to_string_pretty(&data).unwrap();
         let tmp_path = format!("{}.tmp", self.data_file);
@@ -505,6 +622,9 @@ impl AppState {
                 *self.notifications.write().await = data.notifications;
                 *self.showcase_problem_ids.write().await = data.showcase_problem_ids;
                 *self.showcase_contest_ids.write().await = data.showcase_contest_ids;
+                // member_groups come from config.toml, not data.json
+                let reloaded_config = load_config();
+                *self.member_groups.write().await = load_member_groups(&reloaded_config);
 
                 let mut p = data.posts;
                 migrate_legacy_data(&mut p, &data.suggestions, &data.announcements, &data.discussions);
@@ -553,6 +673,30 @@ fn load_discussion_emojis(config: &AppConfig) -> std::collections::HashMap<Strin
             name: name.clone(),
             char,
         });
+    }
+    map
+}
+
+/// Load member groups from config.toml [permissions.groups]
+/// Format: uuid → { name, permissions: [...] }
+fn load_member_groups(config: &AppConfig) -> HashMap<String, MemberGroup> {
+    let mut map = HashMap::new();
+    for (id, fields) in &config.permission_groups {
+        let name = fields.get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let perms: Vec<String> = fields.get("permissions")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+        if !id.is_empty() && !name.is_empty() {
+            map.insert(id.clone(), MemberGroup {
+                id: id.clone(),
+                name,
+                permissions: perms,
+            });
+        }
     }
     map
 }
@@ -626,6 +770,7 @@ fn load_config() -> AppConfig {
         discussion_tags: std::collections::HashMap::new(),
         discussion_emojis: std::collections::HashMap::new(),
         permissions: std::collections::HashMap::new(),
+        permission_groups: std::collections::HashMap::new(),
     }
 }
 
@@ -658,6 +803,7 @@ mod tests {
             discussion_tags: HashMap::new(),
             discussion_emojis: HashMap::new(),
             permissions: HashMap::new(),
+            permission_groups: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 3); // falls back to Default
@@ -691,6 +837,7 @@ mod tests {
             discussion_tags: HashMap::new(),
             discussion_emojis: HashMap::new(),
             permissions: HashMap::new(),
+            permission_groups: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 1);
@@ -724,6 +871,7 @@ mod tests {
             discussion_tags: HashMap::new(),
             discussion_emojis: HashMap::new(),
             permissions: HashMap::new(),
+            permission_groups: HashMap::new(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 1);

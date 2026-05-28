@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
@@ -31,6 +31,31 @@ export default function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [nameTaken, setNameTaken] = useState(false)
+  const [checkingName, setCheckingName] = useState(false)
+  const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Debounced name uniqueness check
+  useEffect(() => {
+    if (checkTimer.current) clearTimeout(checkTimer.current)
+    if (!editing || !displayName.trim() || displayName === user?.display_name) {
+      setNameTaken(false)
+      setCheckingName(false)
+      return
+    }
+    setCheckingName(true)
+    checkTimer.current = setTimeout(async () => {
+      try {
+        const res = await apiFetch<{ available: boolean }>(`/user/check-name?name=${encodeURIComponent(displayName.trim())}`)
+        setNameTaken(!res.available)
+      } catch {
+        // Silently fail — backend will catch it on save
+      } finally {
+        setCheckingName(false)
+      }
+    }, 500)
+    return () => { if (checkTimer.current) clearTimeout(checkTimer.current) }
+  }, [displayName, editing, user?.display_name])
 
   // Determine if this is viewing self or someone else
   const isSelf = !routeUsername || (user && user.username === routeUsername)
@@ -137,6 +162,7 @@ export default function ProfilePage() {
     setNewPassword('')
     setConfirmPassword('')
     setMsg('')
+    setNameTaken(false)
     setEditing(true)
   }
 
@@ -150,6 +176,10 @@ export default function ProfilePage() {
   const handleSave = async () => {
     if (!displayName.trim()) {
       setMsg('显示名称不能为空')
+      return
+    }
+    if (nameTaken) {
+      setMsg('该显示名称已被其他人使用')
       return
     }
     // Validate password if changing (only for non-superadmin)
@@ -285,9 +315,19 @@ export default function ProfilePage() {
                 onChange={e => setDisplayName(e.target.value)}
                 disabled={isSuperadmin}
                 maxLength={30}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                className={`w-full px-4 py-2 border ${
+                  nameTaken && displayName !== user.display_name
+                    ? 'border-red-500 dark:border-red-500'
+                    : 'border-gray-300 dark:border-gray-700'
+                } bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 dark:focus:border-gray-400 text-sm disabled:opacity-60 disabled:cursor-not-allowed`}
                 placeholder="您的显示名称"
               />
+              {checkingName && displayName !== user.display_name && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">检查中...</p>
+              )}
+              {nameTaken && (
+                <p className="text-xs text-red-500 dark:text-red-400 mt-1">该显示名称已被其他人使用</p>
+              )}
               {isSuperadmin && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                   超级管理员请前往 <Link to="/admin/config" className="text-blue-500 dark:text-blue-400 underline">配置页面</Link> 修改显示名称与密码

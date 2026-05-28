@@ -145,7 +145,7 @@ export default function ShowcasePage() {
   const [showcaseMsg, setShowcaseMsg] = useState('')
   const [showcaseSaving, setShowcaseSaving] = useState(false)
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin'
+  const isAdmin = hasPermission('edit_showcase')
   const { difficultyMap } = useDifficulties()
 
   useEffect(() => {

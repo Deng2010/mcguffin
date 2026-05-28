@@ -262,7 +262,7 @@ pub async fn oauth_callback(
                         };
                         // Compute effective_role for the new user
                         let effective_role: String = match team_status.as_str() {
-                            "pending" => "pending".into(),
+                            "pending" => "guest".into(),
                             _ => match role.as_str() {
                                 "superadmin" => "superadmin".into(),
                                 "admin" => "admin".into(),
@@ -283,6 +283,8 @@ pub async fn oauth_callback(
                             bio: String::new(),
                             password_hash: None,
                             effective_role,
+                            group_ids: Vec::new(),
+                            user_permissions: Vec::new(),
                         };
                         users.insert(user.id.clone(), user);
                     }

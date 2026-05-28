@@ -46,6 +46,7 @@ export default function ProblemDetailPage() {
   // Visibility editor (admin only)
   const [members, setMembers] = useState<TeamMemberOption[]>([])
   const [visibleTo, setVisibleTo] = useState<string[]>([])
+  const [editableBy, setEditableBy] = useState<string[]>([])
 
   useEffect(() => {
     apiFetch<ProblemDetail>(`/problems/detail/${id}`)
@@ -76,6 +77,8 @@ export default function ProblemDetailPage() {
     setEditAuthorId((problem as any).author_id || '')
     setEditAuthorName(problem.author_name)
     setEditMsg('')
+    setVisibleTo((problem as any).visible_to || [])
+    setEditableBy((problem as any).editable_by || [])
     nameManuallyEdited.current = false
     setEditing(true)
     // Load members for visibility editor and author selector
@@ -153,6 +156,18 @@ export default function ProblemDetailPage() {
         }
       }
 
+      // Save editable_by changes (admin only)
+      if (isAdmin) {
+        const origEditable = (problem as any).editable_by || []
+        if (JSON.stringify(editableBy) !== JSON.stringify(origEditable)) {
+          const aclRes = await apiFetch<{ success: boolean; message: string }>(
+            `/admin/acl/problem/${problem.id}`,
+            { method: 'PUT', body: JSON.stringify({ editable_by: editableBy }) },
+          )
+          if (!aclRes.success) { setEditMsg(aclRes.message); setSaving(false); return }
+        }
+      }
+
       // Reload problem details
       const updated = await apiFetch<ProblemDetail>(`/problems/detail/${id}`)
       setProblem(updated)
@@ -180,6 +195,14 @@ export default function ProblemDetailPage() {
 
   const toggleVisibilityMember = (userId: string) => {
     setVisibleTo(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    )
+  }
+
+  const toggleEditableMember = (userId: string) => {
+    setEditableBy(prev =>
       prev.includes(userId)
         ? prev.filter(id => id !== userId)
         : [...prev, userId]
@@ -305,6 +328,26 @@ export default function ProblemDetailPage() {
                         type="checkbox"
                         checked={visibleTo.includes(m.user_id)}
                         onChange={() => toggleVisibilityMember(m.user_id)}
+                        className="accent-gray-800 dark:accent-gray-400"
+                      />
+                      {m.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Editable by editor — admin only */}
+            {isAdmin && members.length > 0 && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">可编辑权限（选择可编辑此题目的成员）</label>
+                <div className="flex flex-wrap gap-2">
+                  {members.map(m => (
+                    <label key={m.user_id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editableBy.includes(m.user_id)}
+                        onChange={() => toggleEditableMember(m.user_id)}
                         className="accent-gray-800 dark:accent-gray-400"
                       />
                       {m.name}

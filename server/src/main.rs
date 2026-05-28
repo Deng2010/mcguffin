@@ -80,6 +80,7 @@ async fn main() {
         .route("/api/user/me", get(get_current_user))
         .route("/api/user/profile/{username}", get(get_public_profile))
         .route("/api/user/profile", put(update_profile))
+        .route("/api/user/check-name", get(check_name_available))
         .route("/api/user/verify", get(verify_token))
         .route("/api/logout", post(logout))
         // Team routes
@@ -166,6 +167,15 @@ async fn main() {
         .route("/api/admin/users", get(admin_list_users))
         .route("/api/admin/users/{user_id}/role", post(admin_change_user_role))
         .route("/api/admin/users/{user_id}/remove", post(admin_remove_user))
+        .route("/api/admin/users/{user_id}/groups", put(set_user_groups))
+        .route("/api/admin/users/{user_id}/permissions", put(set_user_permissions))
+        // Admin member groups
+        .route("/api/admin/groups", get(list_groups).post(create_group))
+        .route("/api/admin/groups/{group_id}", put(update_group).delete(delete_group))
+        // Admin problem ACL
+        .route("/api/admin/problems/{problem_id}/acl", put(set_problem_acl))
+        // Admin unified resource ACL
+        .route("/api/admin/acl/{resource_type}/{resource_id}", put(set_resource_acl))
         .layer(cors)
         .layer(CompressionLayer::new())
         .with_state(state);

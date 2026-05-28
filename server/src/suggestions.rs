@@ -5,16 +5,16 @@
 
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     Json,
 };
 use axum::http::HeaderMap;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::req_perm;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{check_permission, resolve_user};
+use crate::utils::{check_permission, resolve_user, AuthUser};
 use crate::notifications::create_notification;
 
 // ============== List Suggestions (backward compat) ==============
@@ -27,7 +27,7 @@ pub async fn get_suggestions(
         Some(u) => u,
         None => return Json(serde_json::json!([])),
     };
-    let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_SUGGESTIONS).await
+    let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_DISCUSSIONS).await
         || user.team_status == "joined";
     let posts = state.posts.read().await;
     let users = state.users.read().await;
@@ -93,6 +93,8 @@ pub async fn create_suggestion(
         status: "open".to_string(),
         created_at: now,
         updated_at: now,
+        visible_to: vec![],
+        editable_by: vec![],
     };
     let post_id = post.id.clone();
     state.posts.write().await.insert(post_id, post);
@@ -113,7 +115,7 @@ pub async fn get_suggestion_detail(
     };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
-        let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_SUGGESTIONS).await
+        let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_DISCUSSIONS).await
             || user.team_status == "joined";
         if !can_view_all && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
@@ -142,11 +144,11 @@ pub async fn get_suggestion_detail(
 
 pub async fn update_suggestion(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
-    let (user_id, _) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SUGGESTIONS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS).await?;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
         let author_id = p.author_id.clone();
@@ -154,7 +156,7 @@ pub async fn update_suggestion(
         if let Some(new_status) = payload.get("status").and_then(|v| v.as_str()) {
             let valid = ["open", "in_progress", "resolved", "closed"];
             if !valid.contains(&new_status) {
-                return Json(serde_json::json!({"success": false, "message": "无效状态"}));
+                return Ok(Json(serde_json::json!({"success": false, "message": "无效状态"})));
             }
             p.status = new_status.to_string();
         }
@@ -163,13 +165,13 @@ pub async fn update_suggestion(
         state.save().await;
 
         if let Some(new_status) = payload.get("status").and_then(|v| v.as_str()) {
-            if new_status == "resolved" && author_id != user_id {
+            if new_status == "resolved" && author_id != auth.user_id {
                 create_notification(
                     &state, &author_id, "建议已解决",
                     &format!("你的建议「{}」已被标记为已解决", suggestion_title),
                     Some(&format!("/post/{}", id)),
                 ).await;
-            } else if new_status == "closed" && author_id != user_id {
+            } else if new_status == "closed" && author_id != auth.user_id {
                 create_notification(
                     &state, &author_id, "建议已关闭",
                     &format!("你的建议「{}」已被关闭", suggestion_title),
@@ -177,23 +179,23 @@ pub async fn update_suggestion(
                 ).await;
             }
         }
-        return Json(serde_json::json!({"success": true, "message": "建议已更新"}));
+        return Ok(Json(serde_json::json!({"success": true, "message": "建议已更新"})));
     }
-    Json(serde_json::json!({"success": false, "message": "建议不存在"}))
+    Ok(Json(serde_json::json!({"success": false, "message": "建议不存在"})))
 }
 
 // ============== Reply to Suggestion (backward compat) ==============
 
 pub async fn reply_to_suggestion(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
-) -> Json<serde_json::Value> {
-    let (user_id, user) = req_perm!(&state, &headers, crate::types::perms::MANAGE_SUGGESTIONS);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS).await?;
     let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
     if content.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "回复不能为空"}));
+        return Ok(Json(serde_json::json!({"success": false, "message": "回复不能为空"})));
     }
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
@@ -201,8 +203,8 @@ pub async fn reply_to_suggestion(
         let suggestion_title = p.title.clone();
         let reply = PostReply {
             id: Uuid::new_v4().to_string(),
-            author_id: user_id.clone(),
-            author_name: user.display_name,
+            author_id: auth.user_id.clone(),
+            author_name: auth.user.display_name,
             content: content.trim().to_string(),
             created_at: Utc::now(),
             reactions: std::collections::HashMap::new(),
@@ -213,16 +215,16 @@ pub async fn reply_to_suggestion(
         p.updated_at = Utc::now();
         drop(posts);
         state.save().await;
-        if author_id != user_id {
+        if author_id != auth.user_id {
             create_notification(
                 &state, &author_id, "建议有新回复",
                 &format!("你的建议「{}」收到了新回复", suggestion_title),
                 Some(&format!("/post/{}", id)),
             ).await;
         }
-        return Json(serde_json::json!({"success": true, "message": "回复成功"}));
+        return Ok(Json(serde_json::json!({"success": true, "message": "回复成功"})));
     }
-    Json(serde_json::json!({"success": false, "message": "建议不存在"}))
+    Ok(Json(serde_json::json!({"success": false, "message": "建议不存在"})))
 }
 
 // ============== Delete Reply ==============
@@ -236,7 +238,7 @@ pub async fn delete_suggestion_reply(
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_SUGGESTIONS).await;
+    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_DISCUSSIONS).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&suggestion_id) {
         if let Some(reply) = p.replies.iter().find(|r| r.id == reply_id) {
@@ -265,7 +267,7 @@ pub async fn delete_suggestion(
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_SUGGESTIONS).await;
+    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_DISCUSSIONS).await;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get(&id) {
         if !can_manage && p.author_id != user_id {

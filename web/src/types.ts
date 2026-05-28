@@ -6,7 +6,7 @@ export interface User {
   display_name: string
   avatar_url: string | null
   email: string | null
-  role: 'superadmin' | 'admin' | 'member' | 'guest' | 'pending'
+  role: 'superadmin' | 'admin' | 'member' | 'guest'
   team_status: 'none' | 'pending' | 'joined'
   created_at: string
   bio?: string
@@ -35,15 +35,11 @@ export type Permission =
   | 'manage_contests'
   /** Edit site info (team showcase description) */
   | 'manage_site'
-  /** View and submit suggestions */
-  | 'view_suggestions'
-  /** Manage suggestions (change status, delete) */
-  | 'manage_suggestions'
-  /** Manage announcements */
-  | 'manage_announcements'
-  /** View and participate in discussions */
+  /** Edit site description and showcase selections */
+  | 'edit_showcase'
+  /** View and participate in discussions (includes suggestions and announcements) */
   | 'view_discussions'
-  /** @deprecated Use manage_posts instead — kept for backward compat */
+  /** Manage discussions, suggestions, announcements, community posts, and tags */
   | 'manage_discussions'
   /** Manage discussion tags and emojis */
   | 'manage_tags'
@@ -58,11 +54,10 @@ export type Permission =
 
 /** Default role→permissions mapping (fallback when backend unavailable). */
 export const defaultRolePermissions: Record<string, Permission[]> = {
-  superadmin: ['view_showcase', 'view_team', 'manage_team', 'manage_members', 'submit_problem', 'view_problems', 'approve_problem', 'manage_contests', 'manage_site', 'view_suggestions', 'manage_suggestions', 'manage_announcements', 'view_discussions', 'manage_discussions', 'manage_tags', 'manage_notifications', 'manage_backups', 'view_stats', 'manage_posts'],
-  admin:   ['view_showcase', 'view_team', 'manage_team', 'manage_members', 'submit_problem', 'view_problems', 'approve_problem', 'manage_contests', 'manage_site', 'view_suggestions', 'manage_suggestions', 'manage_announcements', 'view_discussions', 'manage_posts', 'manage_tags', 'manage_notifications', 'view_stats'],
-  member:  ['view_showcase', 'view_team', 'submit_problem', 'view_problems', 'view_suggestions', 'view_discussions'],
-  guest:   ['view_showcase', 'apply_join', 'view_discussions'],
-  pending: ['view_showcase', 'apply_join', 'view_discussions'],
+  superadmin: ['view_showcase', 'view_team', 'manage_team', 'manage_members', 'submit_problem', 'view_problems', 'approve_problem', 'manage_contests', 'manage_site', 'edit_showcase', 'view_discussions', 'manage_discussions', 'manage_tags', 'manage_notifications', 'manage_backups', 'view_stats', 'manage_posts'],
+  admin:   ['view_showcase', 'view_team', 'manage_team', 'manage_members', 'submit_problem', 'view_problems', 'approve_problem', 'manage_contests', 'manage_site', 'edit_showcase', 'view_discussions', 'manage_posts', 'manage_tags', 'manage_notifications', 'view_stats'],
+  member: ['view_showcase', 'view_team', 'submit_problem', 'view_problems', 'view_discussions'],
+  guest: ['view_showcase', 'apply_join', 'view_discussions'],
 }
 
 // ============== Suggestion Types ==============
@@ -309,4 +304,6 @@ export interface PostDetail {
   pinned: boolean
   team_only: boolean
   status: string
+  visible_to?: string[]
+  editable_by?: string[]
 }

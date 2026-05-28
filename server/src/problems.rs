@@ -1,5 +1,6 @@
 use axum::{
     extract::{Path, Query, State},
+    http::StatusCode,
     Json,
 };
 use axum::http::HeaderMap;
@@ -7,10 +8,9 @@ use chrono::Utc;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::req_perm;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{resolve_user, check_permission};
+use crate::utils::{resolve_user, check_permission, AuthUser};
 use crate::notifications::create_notification;
 
 // ============== List Problems ==============
@@ -308,6 +308,7 @@ pub async fn submit_problem(
         visible_to: vec![],
         link: payload.link,
         remark: payload.remark,
+        editable_by: vec![],
     };
 
     let pid = problem.id.clone();
@@ -801,16 +802,16 @@ pub async fn delete_problem(
 /// Admin only — sets which contest this problem belongs to
 pub async fn set_problem_contest(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    auth: AuthUser,
     Path(problem_id): Path<String>,
     Json(payload): Json<SetProblemContestPayload>,
-) -> Json<serde_json::Value> {
-    let (_user_id, _) = req_perm!(&state, &headers, crate::types::perms::APPROVE_PROBLEM);
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::APPROVE_PROBLEM).await?;
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
-        None => return Json(serde_json::json!({"success": false, "message": "题目不存在"})),
+        None => return Ok(Json(serde_json::json!({"success": false, "message": "题目不存在"}))),
     };
 
     if let Some(cid) = &payload.contest_id {
@@ -820,7 +821,7 @@ pub async fn set_problem_contest(
             problem.contest = c.name.clone();
             problem.contest_id = Some(cid.clone());
         } else {
-            return Json(serde_json::json!({"success": false, "message": "比赛不存在"}));
+            return Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"})));
         }
     } else {
         // Clear contest
@@ -830,5 +831,5 @@ pub async fn set_problem_contest(
     drop(problems);
     state.save().await;
 
-    Json(serde_json::json!({"success": true, "message": "题目比赛已更新"}))
+    Ok(Json(serde_json::json!({"success": true, "message": "题目比赛已更新"})))
 }

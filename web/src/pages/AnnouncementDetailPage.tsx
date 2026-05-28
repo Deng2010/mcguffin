@@ -33,7 +33,7 @@ export default function AnnouncementDetailPage() {
   const [isPublic, setIsPublic] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
-  const canManage = hasPermission('manage_announcements')
+  const canManage = hasPermission('manage_discussions')
 
   const loadAnnouncement = () => {
     if (!id) return

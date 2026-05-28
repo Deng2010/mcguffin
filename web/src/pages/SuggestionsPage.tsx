@@ -35,7 +35,7 @@ export default function SuggestionsPage() {
   const [replyingId, setReplyingId] = useState<string | null>(null)
 
   const canManage = hasPermission('manage_team') // admins can change status
-  const canReply = hasPermission('view_suggestions') && user?.team_status === 'joined' // members/admins can reply
+  const canReply = hasPermission('view_discussions') && user?.team_status === 'joined' // members/admins can reply
 
   const loadSuggestions = () => {
     apiFetch<Suggestion[]>('/suggestions')

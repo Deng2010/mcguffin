@@ -49,8 +49,8 @@ export default function SuggestionDetailPage() {
   const [replyContent, setReplyContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const canManage = hasPermission('manage_suggestions')
-  const canReply = hasPermission('view_suggestions')
+  const canManage = hasPermission('manage_discussions')
+  const canReply = hasPermission('view_discussions')
 
   const loadSuggestion = () => {
     if (!id) return

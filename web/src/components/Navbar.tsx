@@ -46,7 +46,7 @@ export default function Navbar() {
   const showProblems = hasPermission('view_problems')
   const showTeam = hasPermission('view_team')
   const showManageContests = hasPermission('view_problems')
-  const showSuggestions = hasPermission('view_suggestions')
+  const showSuggestions = hasPermission('view_discussions')
   const canUseCommunity = showSuggestions || true // discussions is public
   const showApply = isAuthenticated && user?.team_status !== 'joined'
   const showAdminConfig = user?.role === 'superadmin'
@@ -127,7 +127,7 @@ export default function Navbar() {
                   <span className="text-sm text-gray-700 dark:text-gray-300">{user.display_name}</span>
                 </Link>
                 <span className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                  {user.role === 'superadmin' || user.role === 'admin' ? '管理员' : user.role === 'member' ? '成员' : user.role === 'pending' ? '待审核' : '游客'}
+                  {user.role === 'superadmin' || user.role === 'admin' ? '管理员' : user.role === 'member' ? '成员' : '游客'}
                 </span>
               </div>
               <button onClick={logout} className="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800">退出</button>

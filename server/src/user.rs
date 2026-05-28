@@ -7,6 +7,8 @@ use axum::http::HeaderMap;
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{get_token_from_headers, resolve_user};
+use std::collections::HashMap;
+use axum::extract::Query;
 
 // ============== Get Current User ==============
 
@@ -81,6 +83,41 @@ pub async fn update_profile(
         }
     };
 
+    // Pre-check display_name uniqueness before write lock
+    let name_change = payload.display_name.as_ref()
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty());
+
+    if let Some(ref name) = name_change {
+        if name.chars().count() > 30 {
+            return Json(serde_json::json!({
+                "success": false,
+                "message": "显示名称不能超过30个字符"
+            }));
+        }
+        let current_display_name = {
+            let users = state.users.read().await;
+            match users.get(&user_id) {
+                Some(u) => u.display_name.clone(),
+                None => return Json(serde_json::json!({"success": false, "message": "用户不存在"})),
+            }
+        };
+        if *name != current_display_name {
+            let is_taken = {
+                let users = state.users.read().await;
+                users.values().any(|u| {
+                    u.id != user_id && (u.display_name == *name || u.username == *name)
+                })
+            };
+            if is_taken {
+                return Json(serde_json::json!({
+                    "success": false,
+                    "message": "该显示名称已被其他人使用"
+                }));
+            }
+        }
+    }
+
     let mut users = state.users.write().await;
     let user = match users.get_mut(&user_id) {
         Some(u) => u,
@@ -88,18 +125,11 @@ pub async fn update_profile(
     };
 
     // Apply changes
-                    if let Some(name) = payload.display_name {
-                        let name = name.trim();
-                        if !name.is_empty() {
-                            if name.chars().count() > 30 {
-                                return Json(serde_json::json!({
-                                    "success": false,
-                                    "message": "显示名称不能超过30个字符"
-                                }));
-                            }
-                            user.display_name = name.to_string();
-                        }
-                    }
+    if let Some(name) = name_change {
+        if !name.is_empty() {
+            user.display_name = name;
+        }
+    }
     if let Some(url) = payload.avatar_url {
         user.avatar_url = if url.trim().is_empty() {
             None
@@ -137,6 +167,42 @@ pub async fn update_profile(
         "message": "个人资料已更新",
         "user": updated_user,
     }))
+}
+
+// ============== Check Name Availability ==============
+
+/// GET /api/user/check-name?name=xxx
+/// Check if a display_name or username is already taken by another user
+pub async fn check_name_available(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+) -> Json<serde_json::Value> {
+    let name = match params.get("name") {
+        Some(n) => n.trim().to_string(),
+        None => return Json(serde_json::json!({"available": true})),
+    };
+    if name.is_empty() {
+        return Json(serde_json::json!({"available": true}));
+    }
+
+    let token = match get_token_from_headers(&headers) {
+        Some(t) => t,
+        None => return Json(serde_json::json!({"available": false, "error": "未登录"})),
+    };
+
+    let user_id = {
+        let sessions = state.sessions.read().await;
+        match sessions.get(&token) {
+            Some(entry) => entry.user_id.clone(),
+            None => return Json(serde_json::json!({"available": false, "error": "无效的会话"})),
+        }
+    };
+
+    let users = state.users.read().await;
+    let taken = users.values().any(|u| u.id != user_id && (u.display_name == name || u.username == name));
+
+    Json(serde_json::json!({"available": !taken}))
 }
 
 // ============== Verify Token ==============

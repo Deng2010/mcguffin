@@ -52,6 +52,11 @@ export default function PostDetailPage() {
   const [teamMembers, setTeamMembers] = useState<MentionMember[]>([])
   const mainMention = useMention(teamMembers)
   const inlineMention = useMention(teamMembers)
+  const [allMembers, setAllMembers] = useState<{ id: string; username: string; display_name: string }[]>([])
+  const [editVisibleTo, setEditVisibleTo] = useState<string[]>([])
+  const [editEditableBy, setEditEditableBy] = useState<string[]>([])
+  const [editingAcl, setEditingAcl] = useState(false)
+  const [savingAcl, setSavingAcl] = useState(false)
 
   const isAdmin = hasPermission('manage_posts')
   const canDelete = post && (isAdmin || post.author_id === user?.id)
@@ -79,6 +84,11 @@ export default function PostDetailPage() {
     apiFetch<MentionMember[]>('/team/members')
       .then(setTeamMembers)
       .catch(() => {})
+    if (isAdmin && allMembers.length === 0) {
+      apiFetch<{ id: string; username: string; display_name: string }[]>('/admin/users')
+        .then(setAllMembers)
+        .catch(() => {})
+    }
   }, [id])
 
   const handleReply = async () => {
@@ -194,6 +204,46 @@ export default function PostDetailPage() {
       })
       loadPost()
     } catch (err) { alert(`操作失败: ${err}`) }
+  }
+
+  const toggleVisibleMember = (userId: string) => {
+    setEditVisibleTo(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId],
+    )
+  }
+
+  const toggleEditableMember = (userId: string) => {
+    setEditEditableBy(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId],
+    )
+  }
+
+  const handleSaveAcl = async () => {
+    if (!id) return
+    setSavingAcl(true)
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>(
+        `/admin/acl/post/${id}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            visible_to: editVisibleTo,
+            editable_by: editEditableBy,
+          }),
+        },
+      )
+      if (res.success) {
+        setEditingAcl(false)
+        loadPost()
+      } else {
+        alert(res.message || '保存权限失败')
+      }
+    } catch (err) { alert(`保存权限失败: ${err}`) }
+    finally { setSavingAcl(false) }
   }
 
 
@@ -385,6 +435,66 @@ export default function PostDetailPage() {
             >
               {post.team_only ? '设为公开' : '设为内部'}
             </button>
+            <button
+              onClick={() => {
+                setEditVisibleTo(post.visible_to || [])
+                setEditEditableBy(post.editable_by || [])
+                setEditingAcl(!editingAcl)
+              }}
+              className={`text-xs px-2 py-0.5 border ${
+                editingAcl
+                  ? 'border-gray-600 dark:border-gray-400 text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800'
+                  : 'border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+            >
+              {editingAcl ? '关闭权限' : '权限控制'}
+            </button>
+          </div>
+        )}
+        {editingAcl && allMembers.length > 0 && (
+          <div className="mb-4 ml-0 border border-gray-200 dark:border-gray-700 p-3">
+            <h4 className="text-xs font-semibold text-gray-700 mb-3 dark:text-gray-200">访问控制</h4>
+            <div className="mb-3">
+              <label className="block text-xs font-medium mb-1.5 text-gray-600 dark:text-gray-300">可见成员</label>
+              <div className="flex flex-wrap gap-2">
+                {allMembers.map(m => (
+                  <label key={m.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editVisibleTo.includes(m.id)}
+                      onChange={() => toggleVisibleMember(m.id)}
+                      className="accent-gray-800 dark:accent-gray-400"
+                    />
+                    {m.display_name || m.username}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs font-medium mb-1.5 text-gray-600 dark:text-gray-300">可编辑成员</label>
+              <div className="flex flex-wrap gap-2">
+                {allMembers.map(m => (
+                  <label key={m.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editEditableBy.includes(m.id)}
+                      onChange={() => toggleEditableMember(m.id)}
+                      className="accent-gray-800 dark:accent-gray-400"
+                    />
+                    {m.display_name || m.username}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveAcl}
+                disabled={savingAcl}
+                className="px-3 py-1 text-xs bg-gray-800 text-white hover:bg-gray-700 disabled:opacity-50"
+              >
+                {savingAcl ? '保存中...' : '保存权限'}
+              </button>
+            </div>
           </div>
         )}
 
