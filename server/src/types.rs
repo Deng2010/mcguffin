@@ -1017,6 +1017,7 @@ color = "#ef4444"
             visible_to: vec![],
             link: Some("https://example.com".to_string()),
             remark: None,
+            editable_by: vec![],
         };
 
         let json = serde_json::to_string(&problem).unwrap();
