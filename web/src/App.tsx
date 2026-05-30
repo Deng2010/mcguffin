@@ -1,46 +1,49 @@
-import { HashRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
-import { AuthProvider } from './AuthContext'
-import { SiteProvider, useSite } from './SiteContext'
-import { DarkModeProvider } from './DarkModeContext'
-import { NotificationProvider } from './NotificationContext'
-import Navbar from './components/Navbar'
-import AdminLayout from './components/AdminLayout'
-import ProtectedRoute from './components/ProtectedRoute'
-import LoginPage from './pages/LoginPage'
-import AuthCallbackPage from './pages/AuthCallbackPage'
-import ShowcasePage from './pages/ShowcasePage'
-import ProblemsPage from './pages/ProblemsPage'
-import ProblemDetailPage from './pages/ProblemDetailPage'
-import TeamPage from './pages/TeamPage'
-import ApplyPage from './pages/ApplyPage'
-import ContestManagePage from './pages/ContestManagePage'
-import ProfilePage from './pages/ProfilePage'
-import AdminConfigPage from './pages/AdminConfigPage'
-import AdminDiscussionsPage from './pages/AdminDiscussionsPage'
-import AdminUsersPage from './pages/AdminUsersPage'
-import AdminGroupsPage from './pages/AdminGroupsPage'
-import AdminRolesPage from './pages/AdminRolesPage'
-import AdminBackupsPage from './pages/AdminBackupsPage'
-import SuggestionsPage from './pages/SuggestionsPage'
-import DiscussionsPage from './pages/DiscussionsPage'
-import DiscussionDetailPage from './pages/DiscussionDetailPage'
-import SuggestionDetailPage from './pages/SuggestionDetailPage'
-import AnnouncementDetailPage from './pages/AnnouncementDetailPage'
-import AnnouncementsPage from './pages/AnnouncementsPage'
-import CommunityPage from './pages/CommunityPage'
-import PostDetailPage from './pages/PostDetailPage'
-import NotFoundPage from './pages/NotFoundPage'
+import { HashRouter, Routes, Route, Navigate, Outlet } from "react-router-dom";
+import { AuthProvider } from "./AuthContext";
+import { SiteProvider, useSite } from "./SiteContext";
+import { DarkModeProvider } from "./DarkModeContext";
+import { NotificationProvider } from "./NotificationContext";
+import Navbar from "./components/Navbar";
+import AdminLayout from "./components/AdminLayout";
+import ProtectedRoute from "./components/ProtectedRoute";
+import LoginPage from "./pages/LoginPage";
+import AuthCallbackPage from "./pages/AuthCallbackPage";
+import ShowcasePage from "./pages/ShowcasePage";
+import ProblemsPage from "./pages/ProblemsPage";
+import ProblemDetailPage from "./pages/ProblemDetailPage";
+import TeamPage from "./pages/TeamPage";
+import ApplyPage from "./pages/ApplyPage";
+import ContestManagePage from "./pages/ContestManagePage";
+import ProfilePage from "./pages/ProfilePage";
+import AdminConfigPage from "./pages/AdminConfigPage";
+import AdminDiscussionsPage from "./pages/AdminDiscussionsPage";
+import AdminUsersPage from "./pages/AdminUsersPage";
+import AdminGroupsPage from "./pages/AdminGroupsPage";
+import AdminRolesPage from "./pages/AdminRolesPage";
+import AdminBackupsPage from "./pages/AdminBackupsPage";
+import CommunityPage from "./pages/CommunityPage";
+import PostDetailPage from "./pages/PostDetailPage";
+import NotFoundPage from "./pages/NotFoundPage";
 
 function Footer() {
-  const { siteInfo } = useSite()
-  const version = siteInfo?.version || '0.1.0'
+  const { siteInfo } = useSite();
+  const version = siteInfo?.version || "0.1.0";
   return (
     <footer className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 mt-12 py-4 px-6">
       <div className="max-w-6xl mx-auto text-center text-xs text-gray-400 dark:text-gray-500">
-        Powered by <a href="https://github.com/Deng2010/mcguffin" target="_blank" rel="noopener noreferrer" className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 underline">McGuffin</a> v{version}
+        Powered by{" "}
+        <a
+          href="https://github.com/Deng2010/mcguffin"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 underline"
+        >
+          McGuffin
+        </a>{" "}
+        v{version}
       </div>
     </footer>
-  )
+  );
 }
 
 /** Main site layout: Navbar + content + Footer */
@@ -53,7 +56,7 @@ function MainLayout() {
       </div>
       <Footer />
     </div>
-  )
+  );
 }
 
 /** Admin guard layout */
@@ -62,7 +65,7 @@ function AdminGuardLayout() {
     <ProtectedRoute requiredPermission="manage_site">
       <AdminLayout />
     </ProtectedRoute>
-  )
+  );
 }
 
 function AppContent() {
@@ -77,40 +80,38 @@ function AppContent() {
           <Route path="/problems" element={<ProblemsPage />} />
           <Route
             path="/problems/:id"
-            element={<ProtectedRoute requiredPermission="view_problems"><ProblemDetailPage /></ProtectedRoute>}
+            element={
+              <ProtectedRoute requiredPermission="view_problems">
+                <ProblemDetailPage />
+              </ProtectedRoute>
+            }
           />
           <Route
             path="/team"
-            element={<ProtectedRoute requiredPermission="view_team"><TeamPage /></ProtectedRoute>}
+            element={
+              <ProtectedRoute requiredPermission="view_team">
+                <TeamPage />
+              </ProtectedRoute>
+            }
           />
           <Route
             path="/apply"
-            element={<ProtectedRoute requiredPermission="apply_join"><ApplyPage /></ProtectedRoute>}
+            element={
+              <ProtectedRoute requiredPermission="apply_join">
+                <ApplyPage />
+              </ProtectedRoute>
+            }
           />
           <Route path="/contests" element={<ContestManagePage />} />
-          <Route
-            path="/suggestions"
-            element={<ProtectedRoute requiredPermission="view_discussions"><SuggestionsPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/suggestions/:id"
-            element={<ProtectedRoute requiredPermission="view_discussions"><SuggestionDetailPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/discussions"
-            element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionsPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/discussions/:id"
-            element={<ProtectedRoute requiredPermission="view_discussions"><DiscussionDetailPage /></ProtectedRoute>}
-          />
-          <Route path="/announcements" element={<AnnouncementsPage />} />
-          <Route path="/announcements/:id" element={<AnnouncementDetailPage />} />
           <Route path="/community" element={<CommunityPage />} />
           <Route path="/post/:id" element={<PostDetailPage />} />
           <Route
             path="/profile"
-            element={<ProtectedRoute requiredPermission="view_showcase"><ProfilePage /></ProtectedRoute>}
+            element={
+              <ProtectedRoute requiredPermission="view_showcase">
+                <ProfilePage />
+              </ProtectedRoute>
+            }
           />
           <Route path="/profile/:username" element={<ProfilePage />} />
           <Route path="*" element={<NotFoundPage />} />
@@ -128,7 +129,7 @@ function AppContent() {
         </Route>
       </Routes>
     </HashRouter>
-  )
+  );
 }
 
 export default function App() {
@@ -142,5 +143,5 @@ export default function App() {
         </SiteProvider>
       </AuthProvider>
     </DarkModeProvider>
-  )
+  );
 }

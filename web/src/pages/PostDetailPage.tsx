@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import NotFoundPage from "./NotFoundPage";
 import { useAuth } from "../AuthContext";
 import { apiFetch } from "../api";
 import MarkdownRenderer from "../components/MarkdownRenderer";
@@ -303,12 +304,7 @@ export default function PostDetailPage() {
         加载中...
       </div>
     );
-  if (!post)
-    return (
-      <div className="p-6 text-center text-gray-400 dark:text-gray-500 py-12">
-        帖子不存在
-      </div>
-    );
+  if (!post) return <NotFoundPage />;
 
   const hasStatus =
     post.status &&

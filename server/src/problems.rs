@@ -162,13 +162,18 @@ pub async fn get_problem_detail(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(problem_id): Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let current_user = resolve_user(&state, &headers).await;
 
     let problems = state.problems.read().await;
     let problem = match problems.get(&problem_id) {
         Some(p) => p.clone(),
-        None => return Json(serde_json::json!({"error": "题目不存在"})),
+        None => {
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "题目不存在"})),
+            ))
+        }
     };
     drop(problems);
 
@@ -204,7 +209,10 @@ pub async fn get_problem_detail(
         _ => false,
     };
     if !can_view {
-        return Json(serde_json::json!({"error": "无权限查看"}));
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "无权限查看"})),
+        ));
     }
 
     // Determine what to show
@@ -278,7 +286,7 @@ pub async fn get_problem_detail(
         }
     }
 
-    Json(resp)
+    Ok(Json(resp))
 }
 
 // ============== Submit Problem ==============

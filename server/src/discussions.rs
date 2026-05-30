@@ -2,6 +2,7 @@ use axum::extract::Path;
 use axum::http::HeaderMap;
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     Json,
 };
 use chrono::Utc;
@@ -247,7 +248,7 @@ pub async fn get_post_detail(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Json<serde_json::Value> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let is_team = if let Some((_, ref user)) = resolve_user(&state, &headers).await {
         user.team_status == "joined"
     } else {
@@ -256,7 +257,10 @@ pub async fn get_post_detail(
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
         if p.team_only && !is_team {
-            return Json(serde_json::json!({"success": false, "message": "无权查看"}));
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({"success": false, "message": "无权查看"})),
+            ));
         }
         let users = state.users.read().await;
         let enriched_replies: Vec<serde_json::Value> = p
@@ -304,7 +308,7 @@ pub async fn get_post_detail(
         drop(all_tags);
         drop(users);
 
-        return Json(serde_json::json!({
+        return Ok(Json(serde_json::json!({
             "id": p.id,
             "title": p.title,
             "content": p.content,
@@ -320,9 +324,12 @@ pub async fn get_post_detail(
             "pinned": p.pinned,
             "team_only": p.team_only,
             "status": p.status,
-        }));
+        })));
     }
-    Json(serde_json::json!({"success": false, "message": "帖子不存在"}))
+    Err((
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
+    ))
 }
 
 // ============== Update Post ==============
