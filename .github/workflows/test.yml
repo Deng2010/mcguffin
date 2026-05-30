@@ -11,10 +11,10 @@ name: Test
 on:
   push:
     branches:
-      - '**'
+      - "**"
   pull_request:
     branches:
-      - '**'
+      - "**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -46,24 +46,22 @@ jobs:
         with:
           workspaces: server
 
-      # ── Node.js ────────────────────────────────────────
-      - name: 📦 Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
+      # ── Bun ───────────────────────────────────────────
+      - name: 📦 Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       # ── Frontend ───────────────────────────────────────
       - name: 🌐 Install frontend dependencies
         working-directory: web
-        run: npm install
+        run: bun install --frozen-lockfile
 
       - name: 🌐 Build frontend (type-check + Vite)
         working-directory: web
-        run: npm run build
+        run: bun run build
 
       - name: 🌐 Run frontend tests
         working-directory: web
-        run: npm test
+        run: bun run test
 
       # ── Backend ────────────────────────────────────────
       - name: 🦀 Run backend unit + integration tests
@@ -105,16 +103,14 @@ jobs:
         with:
           workspaces: server
 
-      # ── Node.js (needed for frontend build) ─────────────
-      - name: 📦 Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
+      # ── Bun ───────────────────────────────────────────
+      - name: 📦 Setup Bun
+        uses: oven-sh/setup-bun@v2
 
       # ── Frontend ────────────────────────────────────────
       - name: 🌐 Build frontend
         working-directory: web
-        run: npm install && npm run build
+        run: bun install --frozen-lockfile && bun run build
 
       # ── Backend ─────────────────────────────────────────
       - name: 🔨 Build backend (release)

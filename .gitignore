@@ -17,7 +17,8 @@ web/vite.config.d.ts
 web/vite.config.d.ts.map
 
 # ========== Package manager lock files ==========
-web/bun.lock
+# bun.lock 需要提交以确保 CI 可复现构建
+# web/bun.lock
 web/package-lock.json
 
 # ========== General ==========
