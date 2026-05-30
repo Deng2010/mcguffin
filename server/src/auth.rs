@@ -48,31 +48,31 @@ pub async fn login(
 
         match found {
             Some(user) => {
-                match &user.password_hash {
-                    Some(hash) => {
-                        match bcrypt::verify(&payload.password, hash) {
-                            Ok(true) => {
-                                // Password correct — create session
-                                let session_token = state.create_session(&user.id).await;
-                                Json(LoginResponse {
-                                    success: true,
-                                    message: "登录成功".to_string(),
-                                    token: Some(session_token),
-                                })
-                            }
-                            _ => Json(LoginResponse {
-                                success: false,
-                                message: "密码错误".to_string(),
-                                token: None,
-                            }),
-                        }
-                    }
-                    None => Json(LoginResponse {
+                let password_ok = match &user.password_hash {
+                    Some(hash) => bcrypt::verify(&payload.password, hash).unwrap_or(false),
+                    // 若用户未设密码哈希，管理员（admin）可回退到配置密码
+                    None if user.id == ADMIN_USER_ID => payload.password == state.admin_password,
+                    None => false,
+                };
+                if password_ok {
+                    let session_token = state.create_session(&user.id).await;
+                    Json(LoginResponse {
+                        success: true,
+                        message: "登录成功".to_string(),
+                        token: Some(session_token),
+                    })
+                } else if user.id == ADMIN_USER_ID && user.password_hash.is_none() {
+                    Json(LoginResponse {
                         success: false,
-                        message: "该用户未设置密码，请使用其他方式登录或先在个人资料中设置密码"
-                            .to_string(),
+                        message: "密码错误（可在配置文件 admin.password 中修改）".to_string(),
                         token: None,
-                    }),
+                    })
+                } else {
+                    Json(LoginResponse {
+                        success: false,
+                        message: "密码错误".to_string(),
+                        token: None,
+                    })
                 }
             }
             None => Json(LoginResponse {

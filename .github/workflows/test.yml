@@ -86,7 +86,6 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
-          - windows-latest
 
     runs-on: ${{ matrix.os }}
 
@@ -123,7 +122,6 @@ jobs:
         shell: bash
         run: |
           EXT=""
-          [ "${{ runner.os }}" = "Windows" ] && EXT=".exe"
           echo "::group::Binary info"
           ls -lh "mcguffin${EXT}" "mcguffin-server${EXT}"
           echo "::endgroup::"
@@ -133,7 +131,6 @@ jobs:
 
       # ── Integration test (Linux/macOS only) ──────────────
       - name: 🧪 Smoke test API
-        if: runner.os != 'Windows'
         shell: bash
         working-directory: server
         env:
@@ -213,8 +210,8 @@ jobs:
         with:
           name: mcguffin-nightly-${{ runner.os }}-${{ github.sha }}
           path: |
-            server/target/release/mcguffin-server${{ runner.os == 'Windows' && '.exe' || '' }}
-            server/target/release/mcguffin${{ runner.os == 'Windows' && '.exe' || '' }}
+            server/target/release/mcguffin-server
+            server/target/release/mcguffin
             web/dist/
           retention-days: 7
           if-no-files-found: error

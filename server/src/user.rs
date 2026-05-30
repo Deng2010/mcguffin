@@ -83,6 +83,17 @@ pub async fn update_profile(
         }
     };
 
+    // 显示名称不能为空
+    if let Some(ref raw_name) = payload.display_name {
+        let trimmed = raw_name.trim();
+        if trimmed.is_empty() {
+            return Json(serde_json::json!({
+                "success": false,
+                "message": "显示名称不能为空"
+            }));
+        }
+    }
+
     // Pre-check display_name uniqueness before write lock
     let name_change = payload
         .display_name

@@ -99,13 +99,13 @@ jobs:
           mkdir -p "release/${PKG_DIR}"
 
           # Copy server binary
-          cp "server/target/release/mcguffin-server${SUFFIX}" "release/${PKG_DIR}/"
+          cp "server/target/release/mcguffin-server${SUFFIX}" "release/${PKG_DIR}/dist"
 
           # Copy CLI binary
-          cp "server/target/release/mcguffin${SUFFIX}" "release/${PKG_DIR}/"
+          cp "server/target/release/mcguffin${SUFFIX}" "release/${PKG_DIR}/dist"
 
           # Copy frontend dist (production build of SPA)
-          cp -r web/dist "release/${PKG_DIR}/web-dist"
+          cp -r web/dist "release/${PKG_DIR}/dist"
 
           # Create archive
           cd release
