@@ -26,7 +26,7 @@ pub async fn get_notifications(
         .values()
         .filter(|n| n.user_id == user_id)
         .collect();
-    user_notifications.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    user_notifications.sort_by_key(|b| std::cmp::Reverse(b.created_at));
 
     let unread_count = user_notifications.iter().filter(|n| !n.read).count();
 
@@ -106,6 +106,10 @@ pub async fn create_notification(
         created_at: Utc::now(),
         link: link.map(|l| l.to_string()),
     };
-    state.notifications.write().await.insert(notification.id.clone(), notification);
+    state
+        .notifications
+        .write()
+        .await
+        .insert(notification.id.clone(), notification);
     state.save().await;
 }

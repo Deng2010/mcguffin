@@ -1,9 +1,9 @@
+use axum::extract::Path;
+use axum::http::HeaderMap;
 use axum::{
     extract::{Query, State},
     Json,
 };
-use axum::extract::Path;
-use axum::http::HeaderMap;
 use chrono::Utc;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -62,64 +62,91 @@ pub async fn get_posts(
     headers: HeaderMap,
     Query(query): Query<ListPostsQuery>,
 ) -> Json<serde_json::Value> {
-    let is_team = if let Some((_, ref user)) = resolve_user(&state, &headers).await { user.team_status == "joined" } else { false };
+    let is_team = if let Some((_, ref user)) = resolve_user(&state, &headers).await {
+        user.team_status == "joined"
+    } else {
+        false
+    };
     let posts = state.posts.read().await;
     let users = state.users.read().await;
     let all_tags = state.discussion_tags.read().await;
-    let mut result: Vec<&Post> = posts.values().filter(|p| {
-        if p.team_only && !is_team { return false; }
-        if let Some(ref tag_ids) = query.tags {
-            if !tag_ids.is_empty() {
-                let ids: Vec<&str> = tag_ids.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-                if !ids.is_empty() && !ids.iter().any(|id| p.tags.iter().any(|t| t == id)) {
+    let mut result: Vec<&Post> = posts
+        .values()
+        .filter(|p| {
+            if p.team_only && !is_team {
+                return false;
+            }
+            if let Some(ref tag_ids) = query.tags {
+                if !tag_ids.is_empty() {
+                    let ids: Vec<&str> = tag_ids
+                        .split(',')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    if !ids.is_empty() && !ids.iter().any(|id| p.tags.iter().any(|t| t == id)) {
+                        return false;
+                    }
+                }
+            } else if let Some(ref tag_id) = query.tag {
+                if !p.tags.iter().any(|t| t == tag_id) {
                     return false;
                 }
             }
-        } else if let Some(ref tag_id) = query.tag {
-            if !p.tags.iter().any(|t| t == tag_id) {
-                return false;
-            }
-        }
-        true
-    }).collect();
+            true
+        })
+        .collect();
     result.sort_by(|a, b| {
         if a.pinned != b.pinned {
-            if a.pinned { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
+            if a.pinned {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            }
         } else {
             b.created_at.cmp(&a.created_at)
         }
     });
-    let list: Vec<serde_json::Value> = result.iter().map(|p| {
-        let user_info = users.get(&p.author_id);
-        let display_name = user_info.map(|u| u.display_name.as_str())
-            .unwrap_or(&p.author_name)
-            .to_string();
-        let avatar_url = user_info.and_then(|u| u.avatar_url.clone());
-        let enriched_tags: Vec<serde_json::Value> = p.tags.iter().filter_map(|tid| {
-            all_tags.get(tid).map(|t| serde_json::json!({
-                "id": t.id,
-                "name": t.name,
-                "color": t.color,
-            }))
-        }).collect();
-        serde_json::json!({
-            "id": p.id,
-            "title": p.title,
-            "content": p.content,
-            "author_id": p.author_id,
-            "author_name": display_name,
-            "author_avatar_url": avatar_url,
-            "tags": enriched_tags,
-            "reactions": p.reactions,
-            "emoji": p.emoji,
-            "reply_count": p.replies.len(),
-            "created_at": p.created_at,
-            "updated_at": p.updated_at,
-            "pinned": p.pinned,
-            "team_only": p.team_only,
-            "status": p.status,
+    let list: Vec<serde_json::Value> = result
+        .iter()
+        .map(|p| {
+            let user_info = users.get(&p.author_id);
+            let display_name = user_info
+                .map(|u| u.display_name.as_str())
+                .unwrap_or(&p.author_name)
+                .to_string();
+            let avatar_url = user_info.and_then(|u| u.avatar_url.clone());
+            let enriched_tags: Vec<serde_json::Value> = p
+                .tags
+                .iter()
+                .filter_map(|tid| {
+                    all_tags.get(tid).map(|t| {
+                        serde_json::json!({
+                            "id": t.id,
+                            "name": t.name,
+                            "color": t.color,
+                        })
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "id": p.id,
+                "title": p.title,
+                "content": p.content,
+                "author_id": p.author_id,
+                "author_name": display_name,
+                "author_avatar_url": avatar_url,
+                "tags": enriched_tags,
+                "reactions": p.reactions,
+                "emoji": p.emoji,
+                "reply_count": p.replies.len(),
+                "created_at": p.created_at,
+                "updated_at": p.updated_at,
+                "pinned": p.pinned,
+                "team_only": p.team_only,
+                "status": p.status,
+            })
         })
-    }).collect();
+        .collect();
     drop(all_tags);
     drop(users);
     Json(serde_json::json!(list))
@@ -140,13 +167,17 @@ pub async fn create_post(
         return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
     }
     if payload.title.chars().count() > TITLE_MAX_LEN {
-        return Json(serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}));
+        return Json(
+            serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}),
+        );
     }
     if payload.content.trim().is_empty() {
         return Json(serde_json::json!({"success": false, "message": "内容不能为空"}));
     }
     if payload.content.chars().count() > CONTENT_MAX_LEN {
-        return Json(serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}));
+        return Json(
+            serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}),
+        );
     }
 
     let now = Utc::now();
@@ -158,7 +189,9 @@ pub async fn create_post(
     for tag_id in &payload.tags {
         if let Some(tag) = all_tags.get(tag_id) {
             if tag.admin_only && !is_admin_user {
-                return Json(serde_json::json!({"success": false, "message": format!("标签「{}」仅管理员可用", tag.name)}));
+                return Json(
+                    serde_json::json!({"success": false, "message": format!("标签「{}」仅管理员可用", tag.name)}),
+                );
             }
         }
     }
@@ -194,9 +227,14 @@ pub async fn create_post(
                 &state,
                 uid,
                 "在帖子中提到了你",
-                &format!("{} 在帖子「{}」中提到了你", display_name, payload.title.trim()),
+                &format!(
+                    "{} 在帖子「{}」中提到了你",
+                    display_name,
+                    payload.title.trim()
+                ),
                 Some(&format!("/post/{}", post_id)),
-            ).await;
+            )
+            .await;
         }
     }
 
@@ -210,43 +248,59 @@ pub async fn get_post_detail(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Json<serde_json::Value> {
-    let is_team = if let Some((_, ref user)) = resolve_user(&state, &headers).await { user.team_status == "joined" } else { false };
+    let is_team = if let Some((_, ref user)) = resolve_user(&state, &headers).await {
+        user.team_status == "joined"
+    } else {
+        false
+    };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
         if p.team_only && !is_team {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
         let users = state.users.read().await;
-        let enriched_replies: Vec<serde_json::Value> = p.replies.iter().map(|r| {
-            let user_info = users.get(&r.author_id);
-            let display_name = user_info.map(|u| u.display_name.clone())
-                .unwrap_or_else(|| r.author_name.clone());
-            let avatar_url = user_info.and_then(|u| u.avatar_url.clone());
-            serde_json::json!({
-                "id": r.id,
-                "author_id": r.author_id,
-                "author_name": display_name,
-                "author_avatar_url": avatar_url,
-                "content": r.content,
-                "reactions": r.reactions,
-                "parent_id": r.parent_id,
-                "reply_to": r.reply_to,
-                "created_at": r.created_at,
+        let enriched_replies: Vec<serde_json::Value> = p
+            .replies
+            .iter()
+            .map(|r| {
+                let user_info = users.get(&r.author_id);
+                let display_name = user_info
+                    .map(|u| u.display_name.clone())
+                    .unwrap_or_else(|| r.author_name.clone());
+                let avatar_url = user_info.and_then(|u| u.avatar_url.clone());
+                serde_json::json!({
+                    "id": r.id,
+                    "author_id": r.author_id,
+                    "author_name": display_name,
+                    "author_avatar_url": avatar_url,
+                    "content": r.content,
+                    "reactions": r.reactions,
+                    "parent_id": r.parent_id,
+                    "reply_to": r.reply_to,
+                    "created_at": r.created_at,
+                })
             })
-        }).collect();
+            .collect();
         let author_info = users.get(&p.author_id);
-        let author_name = author_info.map(|u| u.display_name.clone())
+        let author_name = author_info
+            .map(|u| u.display_name.clone())
             .unwrap_or_else(|| p.author_name.clone());
         let author_avatar_url = author_info.and_then(|u| u.avatar_url.clone());
         let all_tags = state.discussion_tags.read().await;
-        let enriched_tags: Vec<serde_json::Value> = p.tags.iter().filter_map(|tid| {
-            all_tags.get(tid).map(|t| serde_json::json!({
-                "id": t.id,
-                "name": t.name,
-                "color": t.color,
-                "admin_only": t.admin_only,
-            }))
-        }).collect();
+        let enriched_tags: Vec<serde_json::Value> = p
+            .tags
+            .iter()
+            .filter_map(|tid| {
+                all_tags.get(tid).map(|t| {
+                    serde_json::json!({
+                        "id": t.id,
+                        "name": t.name,
+                        "color": t.color,
+                        "admin_only": t.admin_only,
+                    })
+                })
+            })
+            .collect();
         drop(all_tags);
         drop(users);
 
@@ -292,7 +346,9 @@ pub async fn update_post(
         if let Some(ref title) = payload.title {
             if !title.trim().is_empty() {
                 if title.chars().count() > TITLE_MAX_LEN {
-                    return Json(serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}));
+                    return Json(
+                        serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}),
+                    );
                 }
                 p.title = title.trim().to_string();
             }
@@ -300,7 +356,9 @@ pub async fn update_post(
         if let Some(ref content) = payload.content {
             if !content.trim().is_empty() {
                 if content.chars().count() > CONTENT_MAX_LEN {
-                    return Json(serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}));
+                    return Json(
+                        serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}),
+                    );
                 }
                 p.content = content.clone();
             }
@@ -312,9 +370,11 @@ pub async fn update_post(
             } else {
                 // Non-admin: only keep tags they're allowed to set
                 let all_tags = state.discussion_tags.read().await;
-                p.tags = tags.iter().filter(|tid| {
-                    all_tags.get(*tid).map(|t| !t.admin_only).unwrap_or(true)
-                }).cloned().collect();
+                p.tags = tags
+                    .iter()
+                    .filter(|tid| all_tags.get(*tid).map(|t| !t.admin_only).unwrap_or(true))
+                    .cloned()
+                    .collect();
             }
         }
         if let Some(ref emoji) = payload.emoji {
@@ -347,7 +407,8 @@ pub async fn update_post(
                             "帖子状态已更新",
                             &format!("你的帖子「{}」已被标记为已解决", post_title),
                             Some(&format!("/post/{}", id)),
-                        ).await;
+                        )
+                        .await;
                     } else if status == "closed" && author_id != user_id && old_status != "closed" {
                         create_notification(
                             &state,
@@ -355,7 +416,8 @@ pub async fn update_post(
                             "帖子已关闭",
                             &format!("你的帖子「{}」已被关闭", post_title),
                             Some(&format!("/post/{}", id)),
-                        ).await;
+                        )
+                        .await;
                     }
                 } else {
                     return Json(serde_json::json!({"success": false, "message": "无效状态"}));
@@ -411,7 +473,9 @@ pub async fn reply_to_post(
         return Json(serde_json::json!({"success": false, "message": "回复不能为空"}));
     }
     if payload.content.chars().count() > REPLY_MAX_LEN {
-        return Json(serde_json::json!({"success": false, "message": format!("回复不能超过{} 字", REPLY_MAX_LEN)}));
+        return Json(
+            serde_json::json!({"success": false, "message": format!("回复不能超过{} 字", REPLY_MAX_LEN)}),
+        );
     }
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
@@ -442,7 +506,8 @@ pub async fn reply_to_post(
                 "帖子有新回复",
                 &format!("你的帖子「{}」收到了新回复", post_title),
                 Some(&format!("/post/{}", id)),
-            ).await;
+            )
+            .await;
         }
 
         // Create notifications for @mentioned users
@@ -454,7 +519,8 @@ pub async fn reply_to_post(
                     "在回复中提到了你",
                     &format!("{} 在帖子「{}」的回复中提到了你", display_name, post_title),
                     Some(&format!("/post/{}", id)),
-                ).await;
+                )
+                .await;
             }
         }
 
@@ -485,7 +551,8 @@ pub async fn delete_post_reply(
             return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
         }
         p.replies.retain(|r| r.id != reply_id);
-        p.replies.retain(|r| r.parent_id.as_deref() != Some(&reply_id));
+        p.replies
+            .retain(|r| r.parent_id.as_deref() != Some(&reply_id));
         p.updated_at = Utc::now();
         drop(posts);
         state.save().await;
@@ -496,18 +563,14 @@ pub async fn delete_post_reply(
 
 // ============== Tags (read-only — managed via config) ==============
 
-pub async fn get_discussion_tags(
-    State(state): State<AppState>,
-) -> Json<Vec<DiscussionTag>> {
+pub async fn get_discussion_tags(State(state): State<AppState>) -> Json<Vec<DiscussionTag>> {
     let tags = state.discussion_tags.read().await;
     Json(tags.values().cloned().collect())
 }
 
 // ============== Emojis (read-only — managed via config) ==============
 
-pub async fn get_discussion_emojis(
-    State(state): State<AppState>,
-) -> Json<Vec<DiscussionEmoji>> {
+pub async fn get_discussion_emojis(State(state): State<AppState>) -> Json<Vec<DiscussionEmoji>> {
     let emojis = state.discussion_emojis.read().await;
     Json(emojis.values().cloned().collect())
 }
@@ -565,7 +628,10 @@ pub async fn react_to_reply(
     if let Some(p) = posts.get_mut(&post_id) {
         let emoji = payload.emoji.trim().to_string();
         if let Some(reply) = p.replies.iter_mut().find(|r| r.id == reply_id) {
-            let users_set = reply.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
+            let users_set = reply
+                .reactions
+                .entry(emoji.clone())
+                .or_insert_with(Vec::new);
             if let Some(pos) = users_set.iter().position(|u| u == &user_id) {
                 users_set.remove(pos);
                 if users_set.is_empty() {

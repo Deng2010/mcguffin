@@ -1,8 +1,8 @@
+use axum::http::HeaderMap;
 use axum::{
     extract::{Query, State},
     Json,
 };
-use axum::http::HeaderMap;
 
 use crate::state::AppState;
 use crate::types::*;
@@ -16,12 +16,19 @@ pub async fn get_community_posts(
     Query(query): Query<CommunityQuery>,
 ) -> Json<serde_json::Value> {
     let auth_info = resolve_user(&state, &headers).await;
-    let is_team = auth_info.as_ref().map(|(_, user)| user.team_status == "joined").unwrap_or(false);
+    let is_team = auth_info
+        .as_ref()
+        .map(|(_, user)| user.team_status == "joined")
+        .unwrap_or(false);
 
     // Parse tag filter
     let filter_tags: Vec<String> = if let Some(ref tags_str) = query.tags {
         if !tags_str.is_empty() {
-            tags_str.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+            tags_str
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
         } else {
             vec![]
         }
@@ -38,14 +45,17 @@ pub async fn get_community_posts(
 
     for p in posts.values() {
         // ── Visibility ──
-        if p.team_only && !is_team { continue; }
-
-        // ── Tag filter ──
-        if !filter_tags.is_empty() {
-            if !p.tags.iter().any(|t| filter_tags.contains(t)) { continue; }
+        if p.team_only && !is_team {
+            continue;
         }
 
-        let author_name = users.get(&p.author_id)
+        // ── Tag filter ──
+        if !filter_tags.is_empty() && !p.tags.iter().any(|t| filter_tags.contains(t)) {
+            continue;
+        }
+
+        let author_name = users
+            .get(&p.author_id)
             .map(|u| u.display_name.clone())
             .unwrap_or_else(|| p.author_name.clone());
         let author_avatar_url = users.get(&p.author_id).and_then(|u| u.avatar_url.clone());
@@ -72,7 +82,8 @@ pub async fn get_community_posts(
 
     // Sort: pinned first, then by updated_at descending
     result.sort_by(|a, b| {
-        b.pinned.cmp(&a.pinned)
+        b.pinned
+            .cmp(&a.pinned)
             .then_with(|| b.updated_at.cmp(&a.updated_at))
     });
 

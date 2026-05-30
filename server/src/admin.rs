@@ -3,16 +3,16 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use chrono::Local;
 use std::path::PathBuf;
 use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
-use chrono::Local;
 
 use crate::state::AppState;
 use crate::types::{
-    AuditEntry, ChangeRolePayload, CreateGroupPayload, DifficultyLevel,
-    SetAclPayload, SetProblemAclPayload, SetUserGroupsPayload, SetUserPermissionsPayload,
-    ShowcaseConfigPayload, UpdateGroupPayload, PERM_WILDCARD,
+    AuditEntry, ChangeRolePayload, CreateGroupPayload, DifficultyLevel, SetAclPayload,
+    SetProblemAclPayload, SetUserGroupsPayload, SetUserPermissionsPayload, ShowcaseConfigPayload,
+    UpdateGroupPayload, PERM_WILDCARD,
 };
 use crate::utils::AuthUser;
 
@@ -29,9 +29,11 @@ pub struct ConfigResponse {
     pub oauth: OAuthSection,
     pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
-    pub discussion_tags: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub discussion_tags:
+        std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
-    pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub discussion_emojis:
+        std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub permissions: std::collections::HashMap<String, Vec<String>>,
     #[serde(default)]
@@ -75,9 +77,11 @@ pub struct UpdateConfigPayload {
     pub oauth: OAuthSection,
     pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
-    pub discussion_tags: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub discussion_tags:
+        std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
-    pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub discussion_emojis:
+        std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub permissions: std::collections::HashMap<String, Vec<String>>,
     #[serde(default)]
@@ -100,11 +104,15 @@ fn write_config_raw(content: &str) -> Result<(), String> {
 async fn sync_groups_to_config(state: &AppState) {
     let groups = {
         let mg = state.member_groups.read().await;
-        mg.values().map(|g| serde_json::json!({
-            "id": g.id,
-            "name": g.name,
-            "permissions": g.permissions,
-        })).collect::<Vec<_>>()
+        mg.values()
+            .map(|g| {
+                serde_json::json!({
+                    "id": g.id,
+                    "name": g.name,
+                    "permissions": g.permissions,
+                })
+            })
+            .collect::<Vec<_>>()
     };
     if let Ok(raw) = read_config_raw() {
         let mut doc = match DocumentMut::from_str(&raw) {
@@ -113,10 +121,24 @@ async fn sync_groups_to_config(state: &AppState) {
         };
         // Build a minimal payload with only groups
         let payload = UpdateConfigPayload {
-            server: ServerSection { site_url: String::new(), port: 0, data_file: String::new() },
-            admin: AdminSection { password: String::new(), display_name: String::new() },
-            site: SiteSection { name: String::new(), title: None, difficulty_order: vec![] },
-            oauth: OAuthSection { cp_client_id: String::new(), cp_client_secret: String::new() },
+            server: ServerSection {
+                site_url: String::new(),
+                port: 0,
+                data_file: String::new(),
+            },
+            admin: AdminSection {
+                password: String::new(),
+                display_name: String::new(),
+            },
+            site: SiteSection {
+                name: String::new(),
+                title: None,
+                difficulty_order: vec![],
+            },
+            oauth: OAuthSection {
+                cp_client_id: String::new(),
+                cp_client_secret: String::new(),
+            },
             difficulty: std::collections::HashMap::new(),
             discussion_tags: std::collections::HashMap::new(),
             discussion_emojis: std::collections::HashMap::new(),
@@ -128,26 +150,37 @@ async fn sync_groups_to_config(state: &AppState) {
             // Clear old groups
             if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
                 let keys: Vec<String> = groups_t.iter().map(|(k, _)| k.to_string()).collect();
-                for k in keys { groups_t.remove(&k); }
+                for k in keys {
+                    groups_t.remove(&k);
+                }
             }
             // Write new groups
             if !payload.groups.is_empty() {
                 if perms_root.get("groups").is_none() {
                     perms_root["groups"] = Item::Table(toml_edit::Table::new());
                 }
-                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
+                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut())
+                {
                     for g in &payload.groups {
                         let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
                         let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("");
                         let perms = g.get("permissions").and_then(|v| v.as_array());
-                        if id.is_empty() || name.is_empty() { continue; }
+                        if id.is_empty() || name.is_empty() {
+                            continue;
+                        }
                         let mut it = toml_edit::InlineTable::new();
                         it.insert("name", toml_edit::Value::from(name));
                         if let Some(arr) = perms {
-                            let t_arr = toml_edit::Array::from_iter(arr.iter().filter_map(|v| v.as_str().map(toml_edit::Value::from)));
+                            let t_arr = toml_edit::Array::from_iter(
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(toml_edit::Value::from)),
+                            );
                             it.insert("permissions", toml_edit::Value::Array(t_arr));
                         } else {
-                            it.insert("permissions", toml_edit::Value::Array(toml_edit::Array::new()));
+                            it.insert(
+                                "permissions",
+                                toml_edit::Value::Array(toml_edit::Array::new()),
+                            );
                         }
                         groups_t[id] = Item::Value(toml_edit::Value::InlineTable(it));
                     }
@@ -181,7 +214,11 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         doc.get(section)
             .and_then(|s| s.get(key))
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default()
     };
 
@@ -226,12 +263,20 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         for (key, item) in t.iter() {
             let mut fields = std::collections::HashMap::new();
             if let Some(tbl) = item.as_table() {
-                if let Some(v) = tbl.get("color").and_then(|v| v.as_str()) { fields.insert("color".to_string(), v.to_string()); }
-                if let Some(v) = tbl.get("description").and_then(|v| v.as_str()) { fields.insert("description".to_string(), v.to_string()); }
+                if let Some(v) = tbl.get("color").and_then(|v| v.as_str()) {
+                    fields.insert("color".to_string(), v.to_string());
+                }
+                if let Some(v) = tbl.get("description").and_then(|v| v.as_str()) {
+                    fields.insert("description".to_string(), v.to_string());
+                }
             } else if let Some(v) = item.as_value() {
                 if let Some(inline) = v.as_inline_table() {
-                    if let Some(v) = inline.get("color").and_then(|v| v.as_str()) { fields.insert("color".to_string(), v.to_string()); }
-                    if let Some(v) = inline.get("description").and_then(|v| v.as_str()) { fields.insert("description".to_string(), v.to_string()); }
+                    if let Some(v) = inline.get("color").and_then(|v| v.as_str()) {
+                        fields.insert("color".to_string(), v.to_string());
+                    }
+                    if let Some(v) = inline.get("description").and_then(|v| v.as_str()) {
+                        fields.insert("description".to_string(), v.to_string());
+                    }
                 }
             }
             if !fields.is_empty() {
@@ -246,10 +291,14 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         for (key, item) in t.iter() {
             let mut fields = std::collections::HashMap::new();
             if let Some(tbl) = item.as_table() {
-                if let Some(v) = tbl.get("char").and_then(|v| v.as_str()) { fields.insert("char".to_string(), v.to_string()); }
+                if let Some(v) = tbl.get("char").and_then(|v| v.as_str()) {
+                    fields.insert("char".to_string(), v.to_string());
+                }
             } else if let Some(v) = item.as_value() {
                 if let Some(inline) = v.as_inline_table() {
-                    if let Some(v) = inline.get("char").and_then(|v| v.as_str()) { fields.insert("char".to_string(), v.to_string()); }
+                    if let Some(v) = inline.get("char").and_then(|v| v.as_str()) {
+                        fields.insert("char".to_string(), v.to_string());
+                    }
                 }
             }
             if !fields.is_empty() {
@@ -268,7 +317,9 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         if let Some(roles_table) = perms_table.get("roles").and_then(|s| s.as_table()) {
             for (role, item) in roles_table.iter() {
                 let perms: Vec<String> = if let Some(arr) = item.as_array() {
-                    arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
                 } else if let Some(v) = item.as_value() {
                     v.as_str().map(|s| vec![s.to_string()]).unwrap_or_default()
                 } else {
@@ -281,9 +332,13 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         } else {
             // Fallback: flat [permissions] format (old)
             for (role, item) in perms_table.iter() {
-                if role == "roles" || role == "groups" { continue; }
+                if role == "roles" || role == "groups" {
+                    continue;
+                }
                 let perms: Vec<String> = if let Some(arr) = item.as_array() {
-                    arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
                 } else if let Some(v) = item.as_value() {
                     v.as_str().map(|s| vec![s.to_string()]).unwrap_or_default()
                 } else {
@@ -305,7 +360,10 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
                         name = n.to_string();
                     }
                     if let Some(arr) = tbl.get("permissions").and_then(|v| v.as_array()) {
-                        group_perms = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                        group_perms = arr
+                            .iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect();
                     }
                 } else if let Some(v) = item.as_value() {
                     if let Some(inline) = v.as_inline_table() {
@@ -313,7 +371,10 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
                             name = n.to_string();
                         }
                         if let Some(arr) = inline.get("permissions").and_then(|v| v.as_array()) {
-                            group_perms = arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                            group_perms = arr
+                                .iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .collect();
                         }
                     }
                 }
@@ -342,7 +403,11 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
             name: get_str("site", "name"),
             title: {
                 let t = get_str("site", "title");
-                if t.is_empty() { None } else { Some(t) }
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t)
+                }
             },
             difficulty_order: get_array("site", "difficulty_order"),
         },
@@ -381,13 +446,21 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         set_str(t, "name", &payload.site.name);
         match &payload.site.title {
             Some(title) if !title.trim().is_empty() => set_str(t, "title", title.trim()),
-            _ => { t.remove("title"); }
+            _ => {
+                t.remove("title");
+            }
         }
         // Write difficulty_order array
         if payload.site.difficulty_order.is_empty() {
             t.remove("difficulty_order");
         } else {
-            let arr = toml_edit::Array::from_iter(payload.site.difficulty_order.iter().map(|s| toml_edit::Value::from(s.as_str())));
+            let arr = toml_edit::Array::from_iter(
+                payload
+                    .site
+                    .difficulty_order
+                    .iter()
+                    .map(|s| toml_edit::Value::from(s.as_str())),
+            );
             t["difficulty_order"] = Item::Value(toml_edit::Value::Array(arr));
         }
     }
@@ -405,36 +478,64 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
     }
     for (name, fields) in &payload.difficulty {
         let mut level = toml_edit::InlineTable::new();
-        level.insert("label", toml_edit::Value::from(fields.get("label").map(|s| s.as_str()).unwrap_or(name)));
-        level.insert("color", toml_edit::Value::from(fields.get("color").map(|s| s.as_str()).unwrap_or("#888888")));
+        level.insert(
+            "label",
+            toml_edit::Value::from(fields.get("label").map(|s| s.as_str()).unwrap_or(name)),
+        );
+        level.insert(
+            "color",
+            toml_edit::Value::from(fields.get("color").map(|s| s.as_str()).unwrap_or("#888888")),
+        );
         if let Some(t) = doc.get_mut("difficulty").and_then(|s| s.as_table_mut()) {
             t[name] = toml_edit::Item::Value(toml_edit::Value::InlineTable(level));
         }
     }
 
     // Write discussion_tags — remove old, add new
-    if let Some(t) = doc.get_mut("discussion_tags").and_then(|s| s.as_table_mut()) {
+    if let Some(t) = doc
+        .get_mut("discussion_tags")
+        .and_then(|s| s.as_table_mut())
+    {
         let keys: Vec<String> = t.iter().map(|(k, _)| k.to_string()).collect();
-        for k in keys { t.remove(&k); }
+        for k in keys {
+            t.remove(&k);
+        }
     }
     for (name, fields) in &payload.discussion_tags {
         let mut it = toml_edit::InlineTable::new();
-        if let Some(v) = fields.get("color") { it.insert("color", toml_edit::Value::from(v.as_str())); }
-        if let Some(v) = fields.get("description") { it.insert("description", toml_edit::Value::from(v.as_str())); }
-        if let Some(t) = doc.get_mut("discussion_tags").and_then(|s| s.as_table_mut()) {
+        if let Some(v) = fields.get("color") {
+            it.insert("color", toml_edit::Value::from(v.as_str()));
+        }
+        if let Some(v) = fields.get("description") {
+            it.insert("description", toml_edit::Value::from(v.as_str()));
+        }
+        if let Some(t) = doc
+            .get_mut("discussion_tags")
+            .and_then(|s| s.as_table_mut())
+        {
             t[name] = toml_edit::Item::Value(toml_edit::Value::InlineTable(it));
         }
     }
 
     // Write discussion_emojis — remove old, add new
-    if let Some(t) = doc.get_mut("discussion_emojis").and_then(|s| s.as_table_mut()) {
+    if let Some(t) = doc
+        .get_mut("discussion_emojis")
+        .and_then(|s| s.as_table_mut())
+    {
         let keys: Vec<String> = t.iter().map(|(k, _)| k.to_string()).collect();
-        for k in keys { t.remove(&k); }
+        for k in keys {
+            t.remove(&k);
+        }
     }
     for (name, fields) in &payload.discussion_emojis {
         let mut it = toml_edit::InlineTable::new();
-        if let Some(v) = fields.get("char") { it.insert("char", toml_edit::Value::from(v.as_str())); }
-        if let Some(t) = doc.get_mut("discussion_emojis").and_then(|s| s.as_table_mut()) {
+        if let Some(v) = fields.get("char") {
+            it.insert("char", toml_edit::Value::from(v.as_str()));
+        }
+        if let Some(t) = doc
+            .get_mut("discussion_emojis")
+            .and_then(|s| s.as_table_mut())
+        {
             t[name] = toml_edit::Item::Value(toml_edit::Value::InlineTable(it));
         }
     }
@@ -449,7 +550,9 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         // Clear old roles
         if let Some(roles_t) = perms_root.get_mut("roles").and_then(|s| s.as_table_mut()) {
             let keys: Vec<String> = roles_t.iter().map(|(k, _)| k.to_string()).collect();
-            for k in keys { roles_t.remove(&k); }
+            for k in keys {
+                roles_t.remove(&k);
+            }
         }
         // Write roles
         if !payload.permissions.is_empty() {
@@ -458,43 +561,55 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
                 perms_root["roles"] = Item::Table(toml_edit::Table::new());
             }
             if let Some(roles_t) = perms_root.get_mut("roles").and_then(|s| s.as_table_mut()) {
-                    for (role, perms) in &payload.permissions {
-                        if !perms.is_empty() {
-                            let arr = toml_edit::Array::from_iter(perms.iter().map(|p| toml_edit::Value::from(p.as_str())));
-                            roles_t[role] = Item::Value(toml_edit::Value::Array(arr));
-                        }
+                for (role, perms) in &payload.permissions {
+                    if !perms.is_empty() {
+                        let arr = toml_edit::Array::from_iter(
+                            perms.iter().map(|p| toml_edit::Value::from(p.as_str())),
+                        );
+                        roles_t[role] = Item::Value(toml_edit::Value::Array(arr));
                     }
                 }
             }
+        }
 
-            // Clear old groups
+        // Clear old groups
+        if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
+            let keys: Vec<String> = groups_t.iter().map(|(k, _)| k.to_string()).collect();
+            for k in keys {
+                groups_t.remove(&k);
+            }
+        }
+        // Write groups
+        if !payload.groups.is_empty() {
+            if perms_root.get("groups").is_none() {
+                perms_root["groups"] = Item::Table(toml_edit::Table::new());
+            }
             if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
-                let keys: Vec<String> = groups_t.iter().map(|(k, _)| k.to_string()).collect();
-                for k in keys { groups_t.remove(&k); }
-            }
-            // Write groups
-            if !payload.groups.is_empty() {
-                if perms_root.get("groups").is_none() {
-                    perms_root["groups"] = Item::Table(toml_edit::Table::new());
-                }
-                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
-                    for g in &payload.groups {
-                        let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                        let perms = g.get("permissions").and_then(|v| v.as_array());
-                        if id.is_empty() || name.is_empty() { continue; }
-                        let mut it = toml_edit::InlineTable::new();
-                        it.insert("name", toml_edit::Value::from(name));
-                        if let Some(arr) = perms {
-                            let t_arr = toml_edit::Array::from_iter(arr.iter().filter_map(|v| v.as_str().map(toml_edit::Value::from)));
-                            it.insert("permissions", toml_edit::Value::Array(t_arr));
-                        } else {
-                            it.insert("permissions", toml_edit::Value::Array(toml_edit::Array::new()));
-                        }
-                        groups_t[id] = Item::Value(toml_edit::Value::InlineTable(it));
+                for g in &payload.groups {
+                    let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let perms = g.get("permissions").and_then(|v| v.as_array());
+                    if id.is_empty() || name.is_empty() {
+                        continue;
                     }
+                    let mut it = toml_edit::InlineTable::new();
+                    it.insert("name", toml_edit::Value::from(name));
+                    if let Some(arr) = perms {
+                        let t_arr = toml_edit::Array::from_iter(
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(toml_edit::Value::from)),
+                        );
+                        it.insert("permissions", toml_edit::Value::Array(t_arr));
+                    } else {
+                        it.insert(
+                            "permissions",
+                            toml_edit::Value::Array(toml_edit::Array::new()),
+                        );
+                    }
+                    groups_t[id] = Item::Value(toml_edit::Value::InlineTable(it));
                 }
             }
+        }
     }
 
     Ok(doc.to_string())
@@ -508,7 +623,8 @@ pub async fn get_config(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+        .await?;
 
     let raw = match read_config_raw() {
         Ok(s) => s,
@@ -530,11 +646,14 @@ pub async fn update_config(
     auth: AuthUser,
     Json(payload): Json<UpdateConfigPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+        .await?;
 
     // Validate
     if payload.server.site_url.trim().is_empty() {
-        return Ok(Json(serde_json::json!({"success": false, "message": "站点URL不能为空"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "站点URL不能为空"}),
+        ));
     }
 
     // Validate admin display_name uniqueness: no user's display_name or username matches
@@ -542,9 +661,9 @@ pub async fn update_config(
         let admin_dn = payload.admin.display_name.trim();
         if !admin_dn.is_empty() {
             let users = state.users.read().await;
-            let is_taken = users.values().any(|u| {
-                u.id != "admin" && (u.display_name == admin_dn || u.username == admin_dn)
-            });
+            let is_taken = users
+                .values()
+                .any(|u| u.id != "admin" && (u.display_name == admin_dn || u.username == admin_dn));
             if is_taken {
                 return Ok(Json(serde_json::json!({
                     "success": false,
@@ -569,10 +688,16 @@ pub async fn update_config(
             // Also update in-memory difficulty so it applies immediately
             let mut levels = std::collections::HashMap::new();
             for (name, fields) in &payload.difficulty {
-                levels.insert(name.clone(), DifficultyLevel {
-                    label: fields.get("label").cloned().unwrap_or_else(|| name.clone()),
-                    color: fields.get("color").cloned().unwrap_or_else(|| "#888888".to_string()),
-                });
+                levels.insert(
+                    name.clone(),
+                    DifficultyLevel {
+                        label: fields.get("label").cloned().unwrap_or_else(|| name.clone()),
+                        color: fields
+                            .get("color")
+                            .cloned()
+                            .unwrap_or_else(|| "#888888".to_string()),
+                    },
+                );
             }
             if !levels.is_empty() {
                 *state.difficulty.write().await = crate::types::DifficultyConfig { levels };
@@ -586,13 +711,22 @@ pub async fn update_config(
                 let mut tags = state.discussion_tags.write().await;
                 tags.clear();
                 for (name, fields) in &payload.discussion_tags {
-            tags.insert(name.clone(), crate::types::DiscussionTag {
-                id: name.clone(),
-                name: name.clone(),
-                color: fields.get("color").cloned().unwrap_or_else(|| "#888888".to_string()),
-                description: fields.get("description").cloned().unwrap_or_default(),
-                admin_only: fields.get("admin_only").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false),
-            });
+                    tags.insert(
+                        name.clone(),
+                        crate::types::DiscussionTag {
+                            id: name.clone(),
+                            name: name.clone(),
+                            color: fields
+                                .get("color")
+                                .cloned()
+                                .unwrap_or_else(|| "#888888".to_string()),
+                            description: fields.get("description").cloned().unwrap_or_default(),
+                            admin_only: fields
+                                .get("admin_only")
+                                .and_then(|v| v.parse::<bool>().ok())
+                                .unwrap_or(false),
+                        },
+                    );
                 }
             }
             {
@@ -600,11 +734,14 @@ pub async fn update_config(
                 emojis.clear();
                 for (name, fields) in &payload.discussion_emojis {
                     if let Some(ch) = fields.get("char") {
-                        emojis.insert(name.clone(), crate::types::DiscussionEmoji {
-                            id: name.clone(),
-                            name: name.clone(),
-                            char: ch.clone(),
-                        });
+                        emojis.insert(
+                            name.clone(),
+                            crate::types::DiscussionEmoji {
+                                id: name.clone(),
+                                name: name.clone(),
+                                char: ch.clone(),
+                            },
+                        );
                     }
                 }
             }
@@ -617,22 +754,40 @@ pub async fn update_config(
                 let mut mg = state.member_groups.write().await;
                 mg.clear();
                 for g in &payload.groups {
-                    let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let perms: Vec<String> = g.get("permissions")
+                    let id = g
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let name = g
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let perms: Vec<String> = g
+                        .get("permissions")
                         .and_then(|v| v.as_array())
-                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     if !id.is_empty() && !name.is_empty() {
-                        mg.insert(id.clone(), crate::types::MemberGroup {
-                            id,
-                            name,
-                            permissions: perms,
-                        });
+                        mg.insert(
+                            id.clone(),
+                            crate::types::MemberGroup {
+                                id,
+                                name,
+                                permissions: perms,
+                            },
+                        );
                     }
                 }
             }
-            Ok(Json(serde_json::json!({"success": true, "message": "配置已保存，立即生效"})))
+            Ok(Json(
+                serde_json::json!({"success": true, "message": "配置已保存，立即生效"}),
+            ))
         }
         Err(e) => Ok(Json(serde_json::json!({"success": false, "message": e}))),
     }
@@ -644,7 +799,8 @@ pub async fn restart_service(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+        .await?;
 
     // Spawn restart in background — this will restart the service after we respond
     tokio::spawn(async {
@@ -655,7 +811,9 @@ pub async fn restart_service(
             .status();
     });
 
-    Ok(Json(serde_json::json!({"success": true, "message": "服务正在重启..."})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "服务正在重启..."}),
+    ))
 }
 
 // ============== Data Backup / Restore ==============
@@ -663,7 +821,9 @@ pub async fn restart_service(
 /// Get the backup directory path (same parent as data_file)
 fn backup_dir(state: &AppState) -> PathBuf {
     let data_path = PathBuf::from(&state.data_file);
-    let parent = data_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let parent = data_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
     parent.join("backups")
 }
 
@@ -675,7 +835,12 @@ fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
     };
     let mut entries: Vec<_> = dir
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map(|ext| ext == "json").unwrap_or(false))
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ext| ext == "json")
+                .unwrap_or(false)
+        })
         .filter_map(|e| {
             let meta = e.metadata().ok()?;
             let name = e.file_name().to_string_lossy().to_string();
@@ -703,19 +868,24 @@ pub async fn create_backup(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
+        .await?;
 
     // Save current state to disk first so we back up the latest data
     state.save().await;
 
     let data_path = PathBuf::from(&state.data_file);
     if !data_path.exists() {
-        return Ok(Json(serde_json::json!({"success": false, "message": "数据文件不存在，无法备份"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "数据文件不存在，无法备份"}),
+        ));
     }
 
     let dir = backup_dir(&state);
     if std::fs::create_dir_all(&dir).is_err() {
-        return Ok(Json(serde_json::json!({"success": false, "message": "无法创建备份目录"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "无法创建备份目录"}),
+        ));
     }
 
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
@@ -725,9 +895,13 @@ pub async fn create_backup(
     match std::fs::copy(&data_path, &backup_path) {
         Ok(_) => {
             tracing::info!("Backup created: {:?}", backup_path);
-            Ok(Json(serde_json::json!({"success": true, "message": "备份已创建", "backup": backup_name})))
+            Ok(Json(
+                serde_json::json!({"success": true, "message": "备份已创建", "backup": backup_name}),
+            ))
         }
-        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("备份失败: {}", e)}))),
+        Err(e) => Ok(Json(
+            serde_json::json!({"success": false, "message": format!("备份失败: {}", e)}),
+        )),
     }
 }
 
@@ -737,12 +911,15 @@ pub async fn list_backups(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
+        .await?;
 
     let dir = backup_dir(&state);
     let backups = list_backup_files(&dir);
 
-    Ok(Json(serde_json::json!({"success": true, "backups": backups})))
+    Ok(Json(
+        serde_json::json!({"success": true, "backups": backups}),
+    ))
 }
 
 /// POST /api/admin/backup/restore/:name
@@ -752,7 +929,8 @@ pub async fn restore_backup(
     auth: AuthUser,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
+        .await?;
 
     // Validate filename — prevent path traversal
     let name_clean = name.trim();
@@ -761,16 +939,22 @@ pub async fn restore_backup(
         || name_clean.contains('\\')
         || name_clean.contains("..")
     {
-        return Ok(Json(serde_json::json!({"success": false, "message": "无效的备份文件名"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "无效的备份文件名"}),
+        ));
     }
     if !name_clean.ends_with(".json") {
-        return Ok(Json(serde_json::json!({"success": false, "message": "无效的备份文件格式"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "无效的备份文件格式"}),
+        ));
     }
 
     let dir = backup_dir(&state);
     let backup_path = dir.join(name_clean);
     if !backup_path.exists() {
-        return Ok(Json(serde_json::json!({"success": false, "message": "备份文件不存在"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "备份文件不存在"}),
+        ));
     }
 
     let data_path = PathBuf::from(&state.data_file);
@@ -786,9 +970,13 @@ pub async fn restore_backup(
             tracing::info!("Restored from backup: {:?}", backup_path);
             // Reload state from the restored file
             state.reload().await;
-            Ok(Json(serde_json::json!({"success": true, "message": "数据已恢复，安全备份已创建"})))
+            Ok(Json(
+                serde_json::json!({"success": true, "message": "数据已恢复，安全备份已创建"}),
+            ))
         }
-        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}))),
+        Err(e) => Ok(Json(
+            serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}),
+        )),
     }
 }
 
@@ -799,7 +987,8 @@ pub async fn delete_backup(
     auth: AuthUser,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
+        .await?;
 
     // Validate filename
     let name_clean = name.trim();
@@ -808,21 +997,29 @@ pub async fn delete_backup(
         || name_clean.contains('\\')
         || name_clean.contains("..")
     {
-        return Ok(Json(serde_json::json!({"success": false, "message": "无效的备份文件名"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "无效的备份文件名"}),
+        ));
     }
 
     let dir = backup_dir(&state);
     let backup_path = dir.join(name_clean);
     if !backup_path.exists() {
-        return Ok(Json(serde_json::json!({"success": false, "message": "备份文件不存在"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "备份文件不存在"}),
+        ));
     }
 
     match std::fs::remove_file(&backup_path) {
         Ok(_) => {
             tracing::info!("Backup deleted: {:?}", backup_path);
-            Ok(Json(serde_json::json!({"success": true, "message": "备份已删除"})))
+            Ok(Json(
+                serde_json::json!({"success": true, "message": "备份已删除"}),
+            ))
         }
-        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("删除失败: {}", e)}))),
+        Err(e) => Ok(Json(
+            serde_json::json!({"success": false, "message": format!("删除失败: {}", e)}),
+        )),
     }
 }
 
@@ -834,12 +1031,16 @@ pub async fn export_data(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+        .await?;
 
     let data_path = PathBuf::from(&state.data_file);
     match std::fs::read_to_string(&data_path) {
         Ok(content) => {
-            let filename = format!("mcguffin_data_{}.json", Local::now().format("%Y%m%d_%H%M%S"));
+            let filename = format!(
+                "mcguffin_data_{}.json",
+                Local::now().format("%Y%m%d_%H%M%S")
+            );
             Ok(Json(serde_json::json!({
                 "success": true,
                 "content": content,
@@ -847,7 +1048,9 @@ pub async fn export_data(
                 "mime": "application/json",
             })))
         }
-        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("读取数据文件失败: {}", e)}))),
+        Err(e) => Ok(Json(
+            serde_json::json!({"success": false, "message": format!("读取数据文件失败: {}", e)}),
+        )),
     }
 }
 
@@ -857,7 +1060,8 @@ pub async fn export_config(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+        .await?;
 
     match std::fs::read_to_string(CONFIG_PATH) {
         Ok(content) => {
@@ -869,7 +1073,9 @@ pub async fn export_config(
                 "mime": "text/plain",
             })))
         }
-        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": format!("读取配置文件失败: {}", e)}))),
+        Err(e) => Ok(Json(
+            serde_json::json!({"success": false, "message": format!("读取配置文件失败: {}", e)}),
+        )),
     }
 }
 
@@ -881,7 +1087,8 @@ pub async fn get_showcase_config(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::EDIT_SHOWCASE).await?;
+    auth.require_perm(&state, crate::types::perms::EDIT_SHOWCASE)
+        .await?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -897,13 +1104,16 @@ pub async fn update_showcase_config(
     auth: AuthUser,
     Json(payload): Json<ShowcaseConfigPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::EDIT_SHOWCASE).await?;
+    auth.require_perm(&state, crate::types::perms::EDIT_SHOWCASE)
+        .await?;
 
     *state.showcase_problem_ids.write().await = payload.problem_ids;
     *state.showcase_contest_ids.write().await = payload.contest_ids;
     state.save().await;
 
-    Ok(Json(serde_json::json!({"success": true, "message": "展板配置已保存"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "展板配置已保存"}),
+    ))
 }
 
 // ============== Audit Log ==============
@@ -914,7 +1124,8 @@ pub async fn get_audit_log(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::VIEW_STATS).await?;
+    auth.require_perm(&state, crate::types::perms::VIEW_STATS)
+        .await?;
 
     let log = state.audit_log.read().await;
     let entries: Vec<&AuditEntry> = log.iter().rev().take(200).collect();
@@ -933,21 +1144,24 @@ pub async fn admin_list_users(
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let users = state.users.read().await;
     let members = state.team_members.read().await;
-    let result: Vec<serde_json::Value> = users.values().map(|u| {
-        let is_team_member = members.values().any(|m| m.user_id == u.id);
-        serde_json::json!({
-            "id": u.id,
-            "username": u.username,
-            "display_name": u.display_name,
-            "email": u.email,
-            "role": u.role,
-            "team_status": u.team_status,
-            "is_team_member": is_team_member,
-            "group_ids": u.group_ids,
-            "user_permissions": u.user_permissions,
-            "created_at": u.created_at,
+    let result: Vec<serde_json::Value> = users
+        .values()
+        .map(|u| {
+            let is_team_member = members.values().any(|m| m.user_id == u.id);
+            serde_json::json!({
+                "id": u.id,
+                "username": u.username,
+                "display_name": u.display_name,
+                "email": u.email,
+                "role": u.role,
+                "team_status": u.team_status,
+                "is_team_member": is_team_member,
+                "group_ids": u.group_ids,
+                "user_permissions": u.user_permissions,
+                "created_at": u.created_at,
+            })
         })
-    }).collect();
+        .collect();
     Ok(Json(serde_json::json!(result)))
 }
 
@@ -961,19 +1175,27 @@ pub async fn admin_change_user_role(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
     if user_id == ADMIN_USER_ID {
-        return Ok(Json(serde_json::json!({"success": false, "message": "不能修改系统管理员的角色"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "不能修改系统管理员的角色"}),
+        ));
     }
     if payload.role != "admin" && payload.role != "member" && payload.role != "guest" {
-        return Ok(Json(serde_json::json!({"success": false, "message": "无效角色"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "无效角色"}),
+        ));
     }
     let mut users = state.users.write().await;
     if let Some(u) = users.get_mut(&user_id) {
         u.role = payload.role.clone();
         drop(users);
         state.save().await;
-        Ok(Json(serde_json::json!({"success": true, "message": "角色已更新"})))
+        Ok(Json(
+            serde_json::json!({"success": true, "message": "角色已更新"}),
+        ))
     } else {
-        Ok(Json(serde_json::json!({"success": false, "message": "用户不存在"})))
+        Ok(Json(
+            serde_json::json!({"success": false, "message": "用户不存在"}),
+        ))
     }
 }
 
@@ -986,15 +1208,25 @@ pub async fn admin_remove_user(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
     if user_id == ADMIN_USER_ID {
-        return Ok(Json(serde_json::json!({"success": false, "message": "不能删除系统管理员"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "不能删除系统管理员"}),
+        ));
     }
     if user_id == auth.user_id {
-        return Ok(Json(serde_json::json!({"success": false, "message": "不能删除自己"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "不能删除自己"}),
+        ));
     }
     state.users.write().await.remove(&user_id);
-    state.team_members.write().await.retain(|_, m| m.user_id != user_id);
+    state
+        .team_members
+        .write()
+        .await
+        .retain(|_, m| m.user_id != user_id);
     state.save().await;
-    Ok(Json(serde_json::json!({"success": true, "message": "用户已删除"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "用户已删除"}),
+    ))
 }
 
 // ============== Member Groups CRUD ==============
@@ -1006,13 +1238,16 @@ pub async fn list_groups(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let groups = state.member_groups.read().await;
-    let result: Vec<serde_json::Value> = groups.values().map(|g| {
-        serde_json::json!({
-            "id": g.id,
-            "name": g.name,
-            "permissions": g.permissions,
+    let result: Vec<serde_json::Value> = groups
+        .values()
+        .map(|g| {
+            serde_json::json!({
+                "id": g.id,
+                "name": g.name,
+                "permissions": g.permissions,
+            })
         })
-    }).collect();
+        .collect();
     Ok(Json(serde_json::json!(result)))
 }
 
@@ -1025,7 +1260,9 @@ pub async fn create_group(
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let name = payload.name.trim().to_string();
     if name.is_empty() {
-        return Ok(Json(serde_json::json!({"success": false, "message": "组名不能为空"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "组名不能为空"}),
+        ));
     }
     let id = uuid::Uuid::new_v4().to_string();
     let group = crate::types::MemberGroup {
@@ -1035,7 +1272,9 @@ pub async fn create_group(
     };
     state.member_groups.write().await.insert(id.clone(), group);
     sync_groups_to_config(&state).await;
-    Ok(Json(serde_json::json!({"success": true, "message": "成员组已创建", "id": id})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "成员组已创建", "id": id}),
+    ))
 }
 
 /// PUT /api/admin/groups/{group_id} — update a member group
@@ -1049,17 +1288,25 @@ pub async fn update_group(
     let mut groups = state.member_groups.write().await;
     let group = match groups.get_mut(&group_id) {
         Some(g) => g,
-        None => return Ok(Json(serde_json::json!({"success": false, "message": "成员组不存在"}))),
+        None => {
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "成员组不存在"}),
+            ))
+        }
     };
     let name = payload.name.trim().to_string();
     if name.is_empty() {
-        return Ok(Json(serde_json::json!({"success": false, "message": "组名不能为空"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "组名不能为空"}),
+        ));
     }
     group.name = name;
     group.permissions = payload.permissions;
     drop(groups);
     sync_groups_to_config(&state).await;
-    Ok(Json(serde_json::json!({"success": true, "message": "成员组已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "成员组已更新"}),
+    ))
 }
 
 /// DELETE /api/admin/groups/{group_id} — delete a member group
@@ -1071,7 +1318,9 @@ pub async fn delete_group(
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let mut groups = state.member_groups.write().await;
     if !groups.contains_key(&group_id) {
-        return Ok(Json(serde_json::json!({"success": false, "message": "成员组不存在"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "成员组不存在"}),
+        ));
     }
     groups.remove(&group_id);
     drop(groups);
@@ -1084,7 +1333,9 @@ pub async fn delete_group(
     drop(users);
     state.save().await;
     sync_groups_to_config(&state).await;
-    Ok(Json(serde_json::json!({"success": true, "message": "成员组已删除"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "成员组已删除"}),
+    ))
 }
 
 // ============== User-Group Membership ==============
@@ -1100,12 +1351,18 @@ pub async fn set_user_groups(
     let mut users = state.users.write().await;
     let user = match users.get_mut(&user_id) {
         Some(u) => u,
-        None => return Ok(Json(serde_json::json!({"success": false, "message": "用户不存在"}))),
+        None => {
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "用户不存在"}),
+            ))
+        }
     };
     user.group_ids = payload.group_ids;
     drop(users);
     state.save().await;
-    Ok(Json(serde_json::json!({"success": true, "message": "用户组已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "用户组已更新"}),
+    ))
 }
 
 // ============== User Individual Permissions ==============
@@ -1121,12 +1378,18 @@ pub async fn set_user_permissions(
     let mut users = state.users.write().await;
     let user = match users.get_mut(&user_id) {
         Some(u) => u,
-        None => return Ok(Json(serde_json::json!({"success": false, "message": "用户不存在"}))),
+        None => {
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "用户不存在"}),
+            ))
+        }
     };
     user.user_permissions = payload.permissions;
     drop(users);
     state.save().await;
-    Ok(Json(serde_json::json!({"success": true, "message": "用户权限已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "用户权限已更新"}),
+    ))
 }
 
 // ============== Problem Resource ACL ==============
@@ -1142,12 +1405,18 @@ pub async fn set_problem_acl(
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
-        None => return Ok(Json(serde_json::json!({"success": false, "message": "题目不存在"}))),
+        None => {
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "题目不存在"}),
+            ))
+        }
     };
     problem.editable_by = payload.editable_by;
     drop(problems);
     state.save().await;
-    Ok(Json(serde_json::json!({"success": true, "message": "题目访问控制已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "题目访问控制已更新"}),
+    ))
 }
 
 // ============== Unified Resource ACL ==============
@@ -1186,13 +1455,23 @@ pub async fn set_resource_acl(
                     found = true;
                 }
             }
-            _ => return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"success": false, "message": "无效的资源类型"})))),
+            _ => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({"success": false, "message": "无效的资源类型"})),
+                ))
+            }
         }
         if !found {
-            return Err((StatusCode::NOT_FOUND, Json(serde_json::json!({"success": false, "message": "资源不存在"}))));
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"success": false, "message": "资源不存在"})),
+            ));
         }
     } // write locks dropped here
 
     state.save().await;
-    Ok(Json(serde_json::json!({"success": true, "message": "访问控制已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "访问控制已更新"}),
+    ))
 }

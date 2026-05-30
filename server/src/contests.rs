@@ -11,7 +11,7 @@ use crate::types::*;
 use crate::utils::{check_permission, get_token_from_headers, AuthUser};
 
 /// Resolve user from token; returns (user_id, user)
-async fn resolve_user<'a>(state: &'a AppState, headers: &HeaderMap) -> Option<(String, User)> {
+async fn resolve_user(state: &AppState, headers: &HeaderMap) -> Option<(String, User)> {
     let token = get_token_from_headers(headers)?;
     let entry = state.sessions.read().await.get(&token)?.clone();
     let user_id = entry.user_id;
@@ -47,30 +47,30 @@ pub async fn get_contests(
     headers: HeaderMap,
 ) -> Json<Vec<ContestListItem>> {
     let current_user = resolve_user(&state, &headers).await;
-    let is_admin_user = if let Some((_user_id, user)) = &current_user {
-        check_permission(&state, user, crate::types::perms::MANAGE_CONTESTS).await
+
+    let (can_view_all, can_view_public) = if let Some((_, user)) = &current_user {
+        (
+            check_permission(&state, user, crate::types::perms::VIEW_ALL_CONTESTS).await,
+            check_permission(&state, user, crate::types::perms::VIEW_PUBLIC_CONTESTS).await,
+        )
     } else {
-        false
-    };
-    let is_member_user = if let Some((_, user)) = &current_user {
-        user.team_status == "joined"
-    } else {
-        false
+        // Unauthenticated users can still see public contests
+        (false, true)
     };
 
     let contests = state.contests.read().await;
     let mut list: Vec<ContestListItem> = contests
         .values()
         .filter(|c| {
-            if is_admin_user {
-                true // admin sees all
-            } else if is_member_user {
-                true // members see all (including unpublished)
+            if can_view_all {
+                true
+            } else if can_view_public {
+                c.status == "public"
             } else {
-                c.status == "public" // guests see only public
+                false
             }
         })
-        .map(|c| to_list_item(c))
+        .map(to_list_item)
         .collect();
     list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     Json(list)
@@ -85,7 +85,8 @@ pub async fn create_contest(
     auth: AuthUser,
     Json(payload): Json<CreateContestPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+        .await?;
 
     let contest = Contest {
         id: Uuid::new_v4().to_string(),
@@ -103,10 +104,16 @@ pub async fn create_contest(
     };
 
     let cid = contest.id.clone();
-    state.contests.write().await.insert(contest.id.clone(), contest);
+    state
+        .contests
+        .write()
+        .await
+        .insert(contest.id.clone(), contest);
     state.save().await;
 
-    Ok(Json(serde_json::json!({"success": true, "message": "比赛已创建", "contest_id": cid})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "比赛已创建", "contest_id": cid}),
+    ))
 }
 
 // ============== Delete Contest ==============
@@ -118,7 +125,8 @@ pub async fn delete_contest(
     auth: AuthUser,
     Path(contest_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+        .await?;
 
     let mut contests = state.contests.write().await;
     if contests.remove(&contest_id).is_some() {
@@ -132,9 +140,13 @@ pub async fn delete_contest(
         }
         drop(problems);
         state.save().await;
-        Ok(Json(serde_json::json!({"success": true, "message": "比赛已删除"})))
+        Ok(Json(
+            serde_json::json!({"success": true, "message": "比赛已删除"}),
+        ))
     } else {
-        Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"})))
+        Ok(Json(
+            serde_json::json!({"success": false, "message": "比赛不存在"}),
+        ))
     }
 }
 
@@ -148,12 +160,17 @@ pub async fn update_contest(
     Path(contest_id): Path<String>,
     Json(payload): Json<UpdateContestPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+        .await?;
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
         Some(c) => c,
-        None => return Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"}))),
+        None => {
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "比赛不存在"}),
+            ))
+        }
     };
 
     contest.name = payload.name;
@@ -166,7 +183,9 @@ pub async fn update_contest(
     drop(contests);
 
     state.save().await;
-    Ok(Json(serde_json::json!({"success": true, "message": "比赛已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "比赛已更新"}),
+    ))
 }
 
 // ============== Set Contest Status ==============
@@ -179,23 +198,36 @@ pub async fn set_contest_status(
     Path(contest_id): Path<String>,
     Json(payload): Json<SetContestStatusPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+        .await?;
 
     if payload.status != "draft" && payload.status != "public" {
-        return Ok(Json(serde_json::json!({"success": false, "message": "状态值无效，仅支持 draft 或 public"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "状态值无效，仅支持 draft 或 public"}),
+        ));
     }
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
         Some(c) => c,
-        None => return Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"}))),
+        None => {
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "比赛不存在"}),
+            ))
+        }
     };
 
     if payload.status == "public" && contest.status != "public" {
         // Require link when making public — check payload first, then existing contest link
-        let link = payload.link.as_deref().or(contest.link.as_deref()).unwrap_or("");
+        let link = payload
+            .link
+            .as_deref()
+            .or(contest.link.as_deref())
+            .unwrap_or("");
         if link.is_empty() {
-            return Ok(Json(serde_json::json!({"success": false, "message": "设为公开前请先设置比赛链接"})));
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "设为公开前请先设置比赛链接"}),
+            ));
         }
         contest.link = Some(link.to_string());
     }
@@ -204,7 +236,9 @@ pub async fn set_contest_status(
     drop(contests);
     state.save().await;
 
-    Ok(Json(serde_json::json!({"success": true, "message": "比赛状态已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "比赛状态已更新"}),
+    ))
 }
 
 // ============== Set Problem Order ==============
@@ -217,12 +251,17 @@ pub async fn set_problem_order(
     Path(contest_id): Path<String>,
     Json(payload): Json<ContestProblemOrderPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+        .await?;
 
     let mut contests = state.contests.write().await;
     let contest = match contests.get_mut(&contest_id) {
         Some(c) => c,
-        None => return Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"}))),
+        None => {
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "比赛不存在"}),
+            ))
+        }
     };
 
     // Validate that all problem_ids exist and belong to this contest
@@ -244,7 +283,9 @@ pub async fn set_problem_order(
     drop(contests);
     state.save().await;
 
-    Ok(Json(serde_json::json!({"success": true, "message": "题目顺序已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "题目顺序已更新"}),
+    ))
 }
 
 // ============== Get Contest Problems (Ordered) ==============

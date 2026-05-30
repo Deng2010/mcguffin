@@ -1,7 +1,4 @@
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{extract::State, Json};
 
 use crate::state::AppState;
 use crate::types::{SiteInfo, UpdateSiteDescriptionPayload};
@@ -9,9 +6,7 @@ use crate::utils::require_permission;
 
 /// GET /api/site/info
 /// Returns site info (no auth required)
-pub async fn get_site_info(
-    State(state): State<AppState>,
-) -> Json<SiteInfo> {
+pub async fn get_site_info(State(state): State<AppState>) -> Json<SiteInfo> {
     let difficulty_order = state.difficulty_order.read().await.clone();
     Json(SiteInfo {
         name: state.site_name.clone(),
@@ -32,7 +27,8 @@ pub async fn update_site_description(
     Json(payload): Json<UpdateSiteDescriptionPayload>,
 ) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
     // Check edit_showcase permission
-    require_permission(&state, &headers, crate::types::perms::EDIT_SHOWCASE).await
+    require_permission(&state, &headers, crate::types::perms::EDIT_SHOWCASE)
+        .await
         .map_err(|_| axum::http::StatusCode::FORBIDDEN)?;
 
     *state.site_description.write().await = payload.description.clone();
@@ -50,20 +46,21 @@ pub async fn update_site_description(
 /// GET /api/site/difficulties
 /// Returns the custom difficulty levels (no auth required)
 /// Ordered by the configured difficulty_order
-pub async fn get_difficulties(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+pub async fn get_difficulties(State(state): State<AppState>) -> Json<serde_json::Value> {
     let diff = state.difficulty.read().await;
     let order = state.difficulty_order.read().await.clone();
-    let mut levels: Vec<serde_json::Value> = order.iter().filter_map(|name| {
-        diff.levels.get(name).map(|level| {
-            serde_json::json!({
-                "name": name,
-                "label": level.label,
-                "color": level.color,
+    let mut levels: Vec<serde_json::Value> = order
+        .iter()
+        .filter_map(|name| {
+            diff.levels.get(name).map(|level| {
+                serde_json::json!({
+                    "name": name,
+                    "label": level.label,
+                    "color": level.color,
+                })
             })
         })
-    }).collect();
+        .collect();
     // Also add any levels not in the order (shouldn't happen, but be safe)
     for (name, level) in &diff.levels {
         if !order.contains(name) {

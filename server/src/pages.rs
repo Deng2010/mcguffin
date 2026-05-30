@@ -1,8 +1,8 @@
+use crate::state::AppState;
 use axum::{
     extract::State,
     response::{Html, Redirect},
 };
-use crate::state::AppState;
 
 // ============== Login Page ==============
 
@@ -50,15 +50,20 @@ pub async fn portfolio_page(State(state): State<AppState>) -> Html<String> {
                     <p class="meta">作者：{} | 赛事：{} | 公开于：{}</p>
                     <span class="badge badge-{}">{}</span>
                 </div>"#,
-                p.title, p.author_name, p.contest, 
-                p.public_at.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default(),
+                p.title,
+                p.author_name,
+                p.contest,
+                p.public_at
+                    .map(|d| d.format("%Y-%m-%d").to_string())
+                    .unwrap_or_default(),
                 p.difficulty.to_lowercase(),
                 p.difficulty
             )
         })
         .collect();
 
-    let html = format!(r#"
+    let html = format!(
+        r#"
     <!DOCTYPE html>
     <html>
     <head>

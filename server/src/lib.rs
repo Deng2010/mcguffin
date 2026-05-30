@@ -1,36 +1,36 @@
 // ============== Modules ==============
 
-pub mod types;
-pub mod state;
-pub mod utils;
-pub mod pages;
+pub mod admin;
+pub mod announcements;
 pub mod auth;
-pub mod user;
-pub mod team;
-pub mod problems;
+pub mod community;
 pub mod contests;
 pub mod info;
-pub mod admin;
-pub mod suggestions;
-pub mod announcements;
-pub mod community;
 pub mod notifications;
+pub mod pages;
+pub mod problems;
+pub mod state;
+pub mod suggestions;
+pub mod team;
+pub mod types;
+pub mod user;
+pub mod utils;
 
 // ============== Re-exports ==============
 
-pub use types::*;
-pub use state::*;
-pub use pages::*;
+pub use admin::*;
+pub use announcements::*;
 pub use auth::*;
-pub use user::*;
-pub use team::*;
-pub use problems::*;
+pub use community::*;
 pub use contests::*;
 pub use info::*;
-pub use admin::*;
-pub use suggestions::*;
-pub use announcements::*;
-pub use community::*;
 pub use notifications::*;
+pub use pages::*;
+pub use problems::*;
+pub use state::*;
+pub use suggestions::*;
+pub use team::*;
+pub use types::*;
+pub use user::*;
 pub mod discussions;
 pub use discussions::*;

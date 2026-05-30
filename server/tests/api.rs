@@ -39,8 +39,10 @@ fn test_difficulty_config_loaded() {
     let dc = state.difficulty.blocking_read();
     assert!(!dc.levels.is_empty(), "difficulty config must have levels");
     // Should at least have some common difficulties
-    assert!(dc.levels.contains_key("Blue") || dc.levels.contains_key("Easy"),
-        "should contain at least one expected difficulty");
+    assert!(
+        dc.levels.contains_key("Blue") || dc.levels.contains_key("Easy"),
+        "should contain at least one expected difficulty"
+    );
 }
 
 /// Verify site info reflects config
@@ -80,7 +82,10 @@ fn test_problem_state_operations() {
         remark: None,
         editable_by: vec![],
     };
-    state.problems.blocking_write().insert(problem.id.clone(), problem);
+    state
+        .problems
+        .blocking_write()
+        .insert(problem.id.clone(), problem);
 
     // Verify it's there
     let problems = state.problems.blocking_read();
@@ -108,14 +113,22 @@ fn test_role_based_access() {
 #[test]
 fn test_oauth_config() {
     let state = AppState::new();
-    assert!(!state.cpoauth_client_id.is_empty(), "OAuth client ID must be configured");
-    assert!(state.cpoauth_redirect_uri.contains("callback"),
-        "redirect URI must contain callback");
+    assert!(
+        !state.cpoauth_client_id.is_empty(),
+        "OAuth client ID must be configured"
+    );
+    assert!(
+        state.cpoauth_redirect_uri.contains("callback"),
+        "redirect URI must contain callback"
+    );
 }
 
 /// Verify admin password is loaded from config
 #[test]
 fn test_admin_password_loaded() {
     let state = AppState::new();
-    assert!(!state.admin_password.is_empty(), "admin password must be configured");
+    assert!(
+        !state.admin_password.is_empty(),
+        "admin password must be configured"
+    );
 }

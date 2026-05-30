@@ -1,17 +1,17 @@
+use axum::http::HeaderMap;
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     Json,
 };
-use axum::http::HeaderMap;
 use chrono::Utc;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::notifications::create_notification;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{resolve_user, check_permission, AuthUser};
-use crate::notifications::create_notification;
+use crate::utils::{check_permission, resolve_user, AuthUser};
 
 // ============== List Problems ==============
 
@@ -35,16 +35,21 @@ pub async fn get_problems(
         false
     };
     let current_uid = current_user.as_ref().map(|(id, _)| id.clone());
-    let current_display_name = current_user.as_ref().map(|(_, u)| u.display_name.clone());
 
     let all_problems = state.problems.read().await;
     let show_all = params.get("all").map(|v| v == "true").unwrap_or(false);
 
     // Search/filter query params
-    let search_q = params.get("search").map(|v| v.to_lowercase()).filter(|v| !v.is_empty());
+    let search_q = params
+        .get("search")
+        .map(|v| v.to_lowercase())
+        .filter(|v| !v.is_empty());
     let diff_filter = params.get("difficulty").filter(|v| !v.is_empty()).cloned();
     let status_filter = params.get("status").filter(|v| !v.is_empty()).cloned();
-    let author_filter = params.get("author").map(|v| v.to_lowercase()).filter(|v| !v.is_empty());
+    let author_filter = params
+        .get("author")
+        .map(|v| v.to_lowercase())
+        .filter(|v| !v.is_empty());
 
     let contests = state.contests.read().await;
     let difficulty_order = state.difficulty_order.read().await.clone();
@@ -62,16 +67,16 @@ pub async fn get_problems(
                     return true;
                 }
             } else if is_member {
-                // Members see: published, approved, pending, their own problems,
+                // Members see: published, approved, pending, problems they authored,
                 // and problems where they're in visible_to
-                // Also match author by display_name
-                let is_author = current_uid.as_ref().map_or(false, |uid| p.author_id == *uid)
-                    || current_display_name.as_ref().map_or(false, |dn| p.author_name == *dn);
+                let is_author = current_uid.as_ref().is_some_and(|uid| p.author_id == *uid);
                 let ok = p.status == "published"
                     || p.status == "approved"
                     || p.status == "pending"
                     || is_author
-                    || current_uid.as_ref().map_or(false, |uid| p.visible_to.contains(uid));
+                    || current_uid
+                        .as_ref()
+                        .is_some_and(|uid| p.visible_to.contains(uid));
                 if !ok {
                     return false;
                 }
@@ -107,7 +112,9 @@ pub async fn get_problems(
         })
         .map(|p| {
             // Derive contest name from contest_id if available (handles contest rename)
-            let contest_name = p.contest_id.as_ref()
+            let contest_name = p
+                .contest_id
+                .as_ref()
                 .and_then(|cid| contests.get(cid))
                 .map(|c| c.name.clone())
                 .unwrap_or_else(|| p.contest.clone());
@@ -125,7 +132,10 @@ pub async fn get_problems(
                 claimed_by: p.claimed_by.clone(),
                 has_verifier_solution: p.verifier_solution.is_some(),
                 link: p.link.clone(),
-                remark: if p.status == "pending" && (is_admin_user || current_uid.as_ref().map_or(false, |uid| p.author_id == *uid) || current_display_name.as_ref().map_or(false, |dn| p.author_name == *dn)) {
+                remark: if p.status == "pending"
+                    && (is_admin_user
+                        || current_uid.as_ref().is_some_and(|uid| p.author_id == *uid))
+                {
                     p.remark.clone()
                 } else {
                     None
@@ -174,20 +184,23 @@ pub async fn get_problem_detail(
     } else {
         false
     };
-    let current_display_name = current_user.as_ref().map(|(_, u)| u.display_name.clone());
-    let is_author = current_user.as_ref().map_or(false, |(uid, _)| problem.author_id == *uid)
-        || current_display_name.as_ref().map_or(false, |dn| problem.author_name == *dn);
+    let is_author = current_user
+        .as_ref()
+        .is_some_and(|(uid, _)| problem.author_id == *uid);
 
     // Permission check
     let can_view = match problem.status.as_str() {
         "published" => true,
         "approved" => is_member_user || is_admin_user,
         "pending" => {
-            if is_admin_user { true }
-            else if let Some((uid, _)) = &current_user {
+            if is_admin_user {
+                true
+            } else if let Some((uid, _)) = &current_user {
                 // Author by user_id or display_name match
                 is_author || problem.visible_to.contains(uid)
-            } else { false }
+            } else {
+                false
+            }
         }
         _ => false,
     };
@@ -208,7 +221,9 @@ pub async fn get_problem_detail(
             show_solution = false;
         }
     }
-    let in_visible_to = current_user.as_ref().map_or(false, |(uid, _)| problem.visible_to.contains(uid));
+    let in_visible_to = current_user
+        .as_ref()
+        .is_some_and(|(uid, _)| problem.visible_to.contains(uid));
     let show_content = match problem.status.as_str() {
         "published" => true,
         "approved" => true,
@@ -218,7 +233,9 @@ pub async fn get_problem_detail(
 
     let contests = state.contests.read().await;
     // Derive contest name from contest_id if available
-    let contest_name = problem.contest_id.as_ref()
+    let contest_name = problem
+        .contest_id
+        .as_ref()
         .and_then(|cid| contests.get(cid))
         .map(|c| c.name.clone())
         .unwrap_or_else(|| problem.contest.clone());
@@ -274,8 +291,20 @@ pub async fn submit_problem(
 ) -> Json<SubmitResponse> {
     let user = match resolve_user(&state, &headers).await {
         Some((_, u)) if u.team_status == "joined" => u,
-        Some(_) => return Json(SubmitResponse { success: false, message: "只有团队成员才能投稿".to_string(), problem_id: None }),
-        None => return Json(SubmitResponse { success: false, message: "未登录".to_string(), problem_id: None }),
+        Some(_) => {
+            return Json(SubmitResponse {
+                success: false,
+                message: "只有团队成员才能投稿".to_string(),
+                problem_id: None,
+            })
+        }
+        None => {
+            return Json(SubmitResponse {
+                success: false,
+                message: "未登录".to_string(),
+                problem_id: None,
+            })
+        }
     };
 
     // Auto-fill contest name from contest_id if provided and contest is empty
@@ -312,10 +341,18 @@ pub async fn submit_problem(
     };
 
     let pid = problem.id.clone();
-    state.problems.write().await.insert(problem.id.clone(), problem);
+    state
+        .problems
+        .write()
+        .await
+        .insert(problem.id.clone(), problem);
     state.save().await;
 
-    Json(SubmitResponse { success: true, message: "提交成功，等待审核".to_string(), problem_id: Some(pid) })
+    Json(SubmitResponse {
+        success: true,
+        message: "提交成功，等待审核".to_string(),
+        problem_id: Some(pid),
+    })
 }
 
 // ============== Review Problem ==============
@@ -329,10 +366,18 @@ pub async fn review_problem(
 ) -> Json<ReviewResponse> {
     let (_user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(ReviewResponse { success: false, message: "未登录".to_string() }),
+        None => {
+            return Json(ReviewResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
     };
     if !check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await {
-        return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
+        return Json(ReviewResponse {
+            success: false,
+            message: "权限不足".to_string(),
+        });
     }
 
     // For 'reject', delete the problem entirely (not just mark as rejected)
@@ -340,10 +385,18 @@ pub async fn review_problem(
         let problems = state.problems.read().await;
         let problem = match problems.get(&problem_id) {
             Some(p) => p.clone(),
-            None => return Json(ReviewResponse { success: false, message: "题目不存在".to_string() }),
+            None => {
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
         };
         if problem.status != "pending" {
-            return Json(ReviewResponse { success: false, message: "只能拒绝待审核题目".to_string() });
+            return Json(ReviewResponse {
+                success: false,
+                message: "只能拒绝待审核题目".to_string(),
+            });
         }
         let author_id = problem.author_id.clone();
         let problem_title = problem.title.clone();
@@ -358,15 +411,24 @@ pub async fn review_problem(
             "题目未通过",
             &format!("题目「{}」未通过审核，已被删除", problem_title),
             Some("/problems"),
-        ).await;
+        )
+        .await;
 
-        return Json(ReviewResponse { success: true, message: "已拒绝题目，数据已删除".to_string() });
+        return Json(ReviewResponse {
+            success: true,
+            message: "已拒绝题目，数据已删除".to_string(),
+        });
     }
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
-        None => return Json(ReviewResponse { success: false, message: "题目不存在".to_string() }),
+        None => {
+            return Json(ReviewResponse {
+                success: false,
+                message: "题目不存在".to_string(),
+            })
+        }
     };
 
     // Capture info for notification before modifying
@@ -376,41 +438,71 @@ pub async fn review_problem(
     let result = match action.as_str() {
         "approve" => {
             if problem.status != "pending" {
-                return Json(ReviewResponse { success: false, message: "只能审核待审核题目".to_string() });
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "只能审核待审核题目".to_string(),
+                });
             }
             problem.status = "approved".to_string();
-            Json(ReviewResponse { success: true, message: "已批准题目".to_string() })
+            Json(ReviewResponse {
+                success: true,
+                message: "已批准题目".to_string(),
+            })
         }
         "publish" => {
             if problem.status != "approved" {
-                return Json(ReviewResponse { success: false, message: "只能发布已批准题目".to_string() });
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "只能发布已批准题目".to_string(),
+                });
             }
             if problem.link.is_none() || problem.link.as_deref() == Some("") {
-                return Json(ReviewResponse { success: false, message: "发布前请先设置题目链接".to_string() });
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "发布前请先设置题目链接".to_string(),
+                });
             }
             problem.status = "published".to_string();
             problem.public_at = Some(Utc::now());
-            Json(ReviewResponse { success: true, message: "已发布题目".to_string() })
+            Json(ReviewResponse {
+                success: true,
+                message: "已发布题目".to_string(),
+            })
         }
         "return" => {
             if problem.status != "approved" {
-                return Json(ReviewResponse { success: false, message: "只能退回已批准题目".to_string() });
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "只能退回已批准题目".to_string(),
+                });
             }
             problem.status = "pending".to_string();
             // Clear claim info since only approved problems can be claimed
             problem.claimed_by = None;
             problem.verifier_solution = None;
-            Json(ReviewResponse { success: true, message: "已退回至待审核".to_string() })
+            Json(ReviewResponse {
+                success: true,
+                message: "已退回至待审核".to_string(),
+            })
         }
         "unpublish" => {
             if problem.status != "published" {
-                return Json(ReviewResponse { success: false, message: "只能取消发布已发布题目".to_string() });
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "只能取消发布已发布题目".to_string(),
+                });
             }
             problem.status = "approved".to_string();
             problem.public_at = None;
-            Json(ReviewResponse { success: true, message: "已取消发布".to_string() })
+            Json(ReviewResponse {
+                success: true,
+                message: "已取消发布".to_string(),
+            })
         }
-        _ => Json(ReviewResponse { success: false, message: "无效操作".to_string() }),
+        _ => Json(ReviewResponse {
+            success: false,
+            message: "无效操作".to_string(),
+        }),
     };
 
     drop(problems);
@@ -425,7 +517,8 @@ pub async fn review_problem(
                 "题目已批准",
                 &format!("题目「{}」已通过审核", problem_title),
                 Some("/problems"),
-            ).await;
+            )
+            .await;
         }
         "publish" => {
             create_notification(
@@ -434,7 +527,8 @@ pub async fn review_problem(
                 "题目已发布",
                 &format!("题目「{}」已成功发布", problem_title),
                 Some("/problems"),
-            ).await;
+            )
+            .await;
         }
         _ => {}
     }
@@ -452,25 +546,47 @@ pub async fn claim_problem(
 ) -> Json<ClaimResponse> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(ClaimResponse { success: false, message: "未登录".to_string() }),
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
     };
     if user.team_status != "joined" {
-        return Json(ClaimResponse { success: false, message: "只有团队成员才能认领题目".to_string() });
+        return Json(ClaimResponse {
+            success: false,
+            message: "只有团队成员才能认领题目".to_string(),
+        });
     }
     // Author cannot claim their own problem
     let problems = state.problems.read().await;
     let problem = match problems.get(&problem_id) {
         Some(p) => p,
-        None => return Json(ClaimResponse { success: false, message: "题目不存在".to_string() }),
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "题目不存在".to_string(),
+            })
+        }
     };
     if problem.author_id == user_id {
-        return Json(ClaimResponse { success: false, message: "不能认领自己的题目".to_string() });
+        return Json(ClaimResponse {
+            success: false,
+            message: "不能认领自己的题目".to_string(),
+        });
     }
     if problem.status != "approved" {
-        return Json(ClaimResponse { success: false, message: "只能认领已批准的题目".to_string() });
+        return Json(ClaimResponse {
+            success: false,
+            message: "只能认领已批准的题目".to_string(),
+        });
     }
     if problem.claimed_by.is_some() {
-        return Json(ClaimResponse { success: false, message: "该题目已被认领".to_string() });
+        return Json(ClaimResponse {
+            success: false,
+            message: "该题目已被认领".to_string(),
+        });
     }
     drop(problems);
 
@@ -481,7 +597,10 @@ pub async fn claim_problem(
     drop(problems);
     state.save().await;
 
-    Json(ClaimResponse { success: true, message: "认领成功".to_string() })
+    Json(ClaimResponse {
+        success: true,
+        message: "认领成功".to_string(),
+    })
 }
 
 // ============== Unclaim Problem ==============
@@ -494,23 +613,39 @@ pub async fn unclaim_problem(
 ) -> Json<ClaimResponse> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(ClaimResponse { success: false, message: "未登录".to_string() }),
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
     };
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
-        None => return Json(ClaimResponse { success: false, message: "题目不存在".to_string() }),
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "题目不存在".to_string(),
+            })
+        }
     };
     if problem.claimed_by.as_deref() != Some(&user_id) {
-        return Json(ClaimResponse { success: false, message: "您不是该题目的验题人".to_string() });
+        return Json(ClaimResponse {
+            success: false,
+            message: "您不是该题目的验题人".to_string(),
+        });
     }
     problem.claimed_by = None;
     problem.verifier_solution = None;
     drop(problems);
     state.save().await;
 
-    Json(ClaimResponse { success: true, message: "已取消认领".to_string() })
+    Json(ClaimResponse {
+        success: true,
+        message: "已取消认领".to_string(),
+    })
 }
 
 // ============== Submit Verifier Solution ==============
@@ -524,22 +659,38 @@ pub async fn submit_verifier_solution(
 ) -> Json<ClaimResponse> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(ClaimResponse { success: false, message: "未登录".to_string() }),
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
     };
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
-        None => return Json(ClaimResponse { success: false, message: "题目不存在".to_string() }),
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "题目不存在".to_string(),
+            })
+        }
     };
     if problem.claimed_by.as_deref() != Some(&user_id) {
-        return Json(ClaimResponse { success: false, message: "您不是该题目的验题人".to_string() });
+        return Json(ClaimResponse {
+            success: false,
+            message: "您不是该题目的验题人".to_string(),
+        });
     }
     problem.verifier_solution = Some(payload.solution);
     drop(problems);
     state.save().await;
 
-    Json(ClaimResponse { success: true, message: "验题人题解已保存".to_string() })
+    Json(ClaimResponse {
+        success: true,
+        message: "验题人题解已保存".to_string(),
+    })
 }
 
 // ============== Set Problem Visibility ==============
@@ -554,25 +705,43 @@ pub async fn set_problem_visibility(
 ) -> Json<ClaimResponse> {
     let (_user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(ClaimResponse { success: false, message: "未登录".to_string() }),
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
     };
     if !check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await {
-        return Json(ClaimResponse { success: false, message: "权限不足".to_string() });
+        return Json(ClaimResponse {
+            success: false,
+            message: "权限不足".to_string(),
+        });
     }
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
-        None => return Json(ClaimResponse { success: false, message: "题目不存在".to_string() }),
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "题目不存在".to_string(),
+            })
+        }
     };
     if problem.status != "pending" {
-        return Json(ClaimResponse { success: false, message: "只能设置待审核题目的可见性".to_string() });
+        return Json(ClaimResponse {
+            success: false,
+            message: "只能设置待审核题目的可见性".to_string(),
+        });
     }
 
     // Only allow setting for actual 普通成员 (users.role == "member")
     let members = state.team_members.read().await;
     let users = state.users.read().await;
-    let valid_ids: Vec<String> = payload.user_ids.into_iter()
+    let valid_ids: Vec<String> = payload
+        .user_ids
+        .into_iter()
         .filter(|uid| {
             members.values().any(|m| &m.user_id == uid)
                 && users.get(uid).map(|u| u.role.as_str()) == Some("member")
@@ -585,7 +754,10 @@ pub async fn set_problem_visibility(
     drop(problems);
     state.save().await;
 
-    Json(ClaimResponse { success: true, message: "可见性已更新".to_string() })
+    Json(ClaimResponse {
+        success: true,
+        message: "可见性已更新".to_string(),
+    })
 }
 
 // ============== Admin: Get Pending Problems with Full Detail ==============
@@ -610,7 +782,9 @@ pub async fn get_pending_problems_admin(
         .filter(|p| p.status == "pending")
         .map(|p| {
             // Derive contest name from contest_id if available
-            let contest_name = p.contest_id.as_ref()
+            let contest_name = p
+                .contest_id
+                .as_ref()
                 .and_then(|cid| contests.get(cid))
                 .map(|c| c.name.clone())
                 .unwrap_or_else(|| p.contest.clone());
@@ -658,7 +832,10 @@ pub async fn get_team_members_for_visibility(
         .values()
         .filter(|m| users.get(&m.user_id).map(|u| u.role.as_str()) == Some("member"))
         .map(|m| {
-            let user_name = users.get(&m.user_id).map(|u| u.display_name.clone()).unwrap_or_default();
+            let user_name = users
+                .get(&m.user_id)
+                .map(|u| u.display_name.clone())
+                .unwrap_or_default();
             serde_json::json!({
                 "user_id": m.user_id,
                 "name": user_name,
@@ -682,19 +859,32 @@ pub async fn update_problem(
 ) -> Json<ReviewResponse> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(ReviewResponse { success: false, message: "未登录".to_string() }),
+        None => {
+            return Json(ReviewResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
     };
     let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await;
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
-        None => return Json(ReviewResponse { success: false, message: "题目不存在".to_string() }),
+        None => {
+            return Json(ReviewResponse {
+                success: false,
+                message: "题目不存在".to_string(),
+            })
+        }
     };
 
     // Check permission: author or admin
     if problem.author_id != user_id && !is_admin_user {
-        return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
+        return Json(ReviewResponse {
+            success: false,
+            message: "权限不足".to_string(),
+        });
     }
 
     // Apply changes
@@ -757,7 +947,10 @@ pub async fn update_problem(
     drop(problems);
     state.save().await;
 
-    Json(ReviewResponse { success: true, message: "已保存".to_string() })
+    Json(ReviewResponse {
+        success: true,
+        message: "已保存".to_string(),
+    })
 }
 
 // ============== Delete Problem (Admin only) ==============
@@ -771,29 +964,48 @@ pub async fn delete_problem(
 ) -> Json<ReviewResponse> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(ReviewResponse { success: false, message: "未登录".to_string() }),
+        None => {
+            return Json(ReviewResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
     };
     let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await;
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get(&problem_id) {
         Some(p) => p.clone(),
-        None => return Json(ReviewResponse { success: false, message: "题目不存在".to_string() }),
+        None => {
+            return Json(ReviewResponse {
+                success: false,
+                message: "题目不存在".to_string(),
+            })
+        }
     };
 
     // Author can delete their own pending problem; admin can delete anything
     if problem.author_id != user_id && !is_admin_user {
-        return Json(ReviewResponse { success: false, message: "权限不足".to_string() });
+        return Json(ReviewResponse {
+            success: false,
+            message: "权限不足".to_string(),
+        });
     }
     if !is_admin_user && problem.status != "pending" {
-        return Json(ReviewResponse { success: false, message: "只能删除自己的待审核题目".to_string() });
+        return Json(ReviewResponse {
+            success: false,
+            message: "只能删除自己的待审核题目".to_string(),
+        });
     }
 
     problems.remove(&problem_id);
     drop(problems);
     state.save().await;
 
-    Json(ReviewResponse { success: true, message: "已删除题目".to_string() })
+    Json(ReviewResponse {
+        success: true,
+        message: "已删除题目".to_string(),
+    })
 }
 
 // ============== Set Problem Contest ==============
@@ -806,12 +1018,17 @@ pub async fn set_problem_contest(
     Path(problem_id): Path<String>,
     Json(payload): Json<SetProblemContestPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::APPROVE_PROBLEM).await?;
+    auth.require_perm(&state, crate::types::perms::APPROVE_PROBLEM)
+        .await?;
 
     let mut problems = state.problems.write().await;
     let problem = match problems.get_mut(&problem_id) {
         Some(p) => p,
-        None => return Ok(Json(serde_json::json!({"success": false, "message": "题目不存在"}))),
+        None => {
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "题目不存在"}),
+            ))
+        }
     };
 
     if let Some(cid) = &payload.contest_id {
@@ -821,7 +1038,9 @@ pub async fn set_problem_contest(
             problem.contest = c.name.clone();
             problem.contest_id = Some(cid.clone());
         } else {
-            return Ok(Json(serde_json::json!({"success": false, "message": "比赛不存在"})));
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": "比赛不存在"}),
+            ));
         }
     } else {
         // Clear contest
@@ -831,5 +1050,7 @@ pub async fn set_problem_contest(
     drop(problems);
     state.save().await;
 
-    Ok(Json(serde_json::json!({"success": true, "message": "题目比赛已更新"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "题目比赛已更新"}),
+    ))
 }

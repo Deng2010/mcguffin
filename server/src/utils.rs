@@ -39,7 +39,10 @@ pub fn get_token_from_headers(headers: &axum::http::HeaderMap) -> Option<String>
 
 /// Resolve user from token; returns (user_id, user)
 /// Checks session expiry (24h inactivity) and updates last_active timestamp
-pub async fn resolve_user(state: &AppState, headers: &axum::http::HeaderMap) -> Option<(String, User)> {
+pub async fn resolve_user(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> Option<(String, User)> {
     let token = get_token_from_headers(headers)?;
     let now = Utc::now();
 
@@ -79,7 +82,8 @@ pub async fn resolve_user(state: &AppState, headers: &axum::http::HeaderMap) -> 
 /// Check if user has admin role (includes superadmin)
 pub async fn is_admin(state: &AppState, user_id: &str) -> bool {
     let users = state.users.read().await;
-    users.get(user_id)
+    users
+        .get(user_id)
         .map(|u| u.role == "admin" || u.role == "superadmin")
         .unwrap_or(false)
 }
@@ -107,28 +111,28 @@ pub async fn require_permission(
     headers: &axum::http::HeaderMap,
     permission: &str,
 ) -> Result<(String, User), impl IntoResponse> {
-    let (user_id, user) = resolve_user(state, headers)
-        .await
-        .ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "success": false,
-                    "message": "未登录或会话已过期"
-                })),
-            )
-        })?;
+    let (user_id, user) = resolve_user(state, headers).await.ok_or_else(|| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "未登录或会话已过期"
+            })),
+        )
+    })?;
 
     if !check_permission(state, &user, permission).await {
-        state.log_audit(AuditEntry {
-            timestamp: Utc::now(),
-            user_id: user_id.clone(),
-            user_name: user.display_name.clone(),
-            action: permission.to_string(),
-            resource: String::new(),
-            result: "deny".to_string(),
-            reason: "权限检查未通过".to_string(),
-        }).await;
+        state
+            .log_audit(AuditEntry {
+                timestamp: Utc::now(),
+                user_id: user_id.clone(),
+                user_name: user.display_name.clone(),
+                action: permission.to_string(),
+                resource: String::new(),
+                result: "deny".to_string(),
+                reason: "权限检查未通过".to_string(),
+            })
+            .await;
         return Err((
             StatusCode::FORBIDDEN,
             Json(serde_json::json!({
@@ -168,7 +172,11 @@ pub async fn check_permission(state: &AppState, user: &User, permission: &str) -
     }
 
     // ── 2. Individual permissions ──
-    if user.user_permissions.iter().any(|p| p == types::PERM_WILDCARD || p == permission) {
+    if user
+        .user_permissions
+        .iter()
+        .any(|p| p == types::PERM_WILDCARD || p == permission)
+    {
         return true;
     }
 
@@ -177,7 +185,11 @@ pub async fn check_permission(state: &AppState, user: &User, permission: &str) -
         let groups = state.member_groups.read().await;
         for gid in &user.group_ids {
             if let Some(group) = groups.get(gid) {
-                if group.permissions.iter().any(|p| p == types::PERM_WILDCARD || p == permission) {
+                if group
+                    .permissions
+                    .iter()
+                    .any(|p| p == types::PERM_WILDCARD || p == permission)
+                {
                     return true;
                 }
             }
@@ -196,28 +208,35 @@ pub async fn require_permission_json(
 ) -> Result<(String, User), Json<serde_json::Value>> {
     let (uid, user) = match resolve_user(state, headers).await {
         Some(u) => u,
-        None => return Err(Json(serde_json::json!({
-            "success": false,
-            "message": "未登录或会话已过期"
-        }))),
+        None => {
+            return Err(Json(serde_json::json!({
+                "success": false,
+                "message": "未登录或会话已过期"
+            })))
+        }
     };
     let perms = state.role_permissions.read().await;
     let has_perm = perms
         .get(&user.role)
-        .map(|p| p.iter().any(|p| p == types::PERM_WILDCARD || p == permission))
+        .map(|p| {
+            p.iter()
+                .any(|p| p == types::PERM_WILDCARD || p == permission)
+        })
         .unwrap_or(false);
     if has_perm {
         Ok((uid, user))
     } else {
-        state.log_audit(AuditEntry {
-            timestamp: Utc::now(),
-            user_id: uid.clone(),
-            user_name: user.display_name.clone(),
-            action: permission.to_string(),
-            resource: String::new(),
-            result: "deny".to_string(),
-            reason: "权限检查未通过".to_string(),
-        }).await;
+        state
+            .log_audit(AuditEntry {
+                timestamp: Utc::now(),
+                user_id: uid.clone(),
+                user_name: user.display_name.clone(),
+                action: permission.to_string(),
+                resource: String::new(),
+                result: "deny".to_string(),
+                reason: "权限检查未通过".to_string(),
+            })
+            .await;
         Err(Json(serde_json::json!({
             "success": false,
             "message": "权限不足"
@@ -249,17 +268,15 @@ where
         state: &S,
     ) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
-        let (user_id, user) = resolve_user(&state, &parts.headers)
-            .await
-            .ok_or_else(|| {
-                (
-                    StatusCode::UNAUTHORIZED,
-                    Json(serde_json::json!({
-                        "success": false,
-                        "message": "未登录或会话已过期"
-                    })),
-                )
-            })?;
+        let (user_id, user) = resolve_user(&state, &parts.headers).await.ok_or_else(|| {
+            (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": "未登录或会话已过期"
+                })),
+            )
+        })?;
         Ok(AuthUser { user_id, user })
     }
 }
@@ -349,7 +366,10 @@ mod tests {
         assert_eq!(url_encode("hello world"), "hello%20world");
         assert_eq!(url_encode("a&b"), "a%26b");
         assert_eq!(url_encode("a=b"), "a%3Db");
-        assert_eq!(url_encode("https://example.com"), "https%3A%2F%2Fexample.com");
+        assert_eq!(
+            url_encode("https://example.com"),
+            "https%3A%2F%2Fexample.com"
+        );
     }
 
     #[test]
@@ -371,7 +391,10 @@ mod tests {
     fn test_get_token_valid_header() {
         let mut headers = HeaderMap::new();
         headers.insert("Authorization", "Bearer my-test-token".parse().unwrap());
-        assert_eq!(get_token_from_headers(&headers), Some("my-test-token".to_string()));
+        assert_eq!(
+            get_token_from_headers(&headers),
+            Some("my-test-token".to_string())
+        );
     }
 
     #[test]

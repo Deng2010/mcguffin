@@ -31,14 +31,19 @@ pub async fn login(
     if let Some(identifier) = &payload.identifier {
         let identifier = identifier.trim();
         if identifier.is_empty() {
-            return Json(LoginResponse { success: false, message: "请输入账户名或显示名称".to_string(), token: None });
+            return Json(LoginResponse {
+                success: false,
+                message: "请输入账户名或显示名称".to_string(),
+                token: None,
+            });
         }
 
         let users = state.users.read().await;
         // Find user by username or display_name
-        let found = users.values().find(|u| {
-            u.username == identifier || u.display_name == identifier
-        }).cloned();
+        let found = users
+            .values()
+            .find(|u| u.username == identifier || u.display_name == identifier)
+            .cloned();
         drop(users);
 
         match found {
@@ -59,21 +64,22 @@ pub async fn login(
                                 success: false,
                                 message: "密码错误".to_string(),
                                 token: None,
-                            })
+                            }),
                         }
                     }
                     None => Json(LoginResponse {
                         success: false,
-                        message: "该用户未设置密码，请使用其他方式登录或先在个人资料中设置密码".to_string(),
+                        message: "该用户未设置密码，请使用其他方式登录或先在个人资料中设置密码"
+                            .to_string(),
                         token: None,
-                    })
+                    }),
                 }
             }
             None => Json(LoginResponse {
                 success: false,
                 message: "未找到该账户".to_string(),
                 token: None,
-            })
+            }),
         }
     } else {
         // No identifier — admin password login (backward compatible)
@@ -97,30 +103,29 @@ pub async fn login(
 
 // ============== OAuth Authorize ==============
 
-pub async fn oauth_authorize(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
-    use sha2::{Sha256, Digest};
+pub async fn oauth_authorize(State(state): State<AppState>) -> impl IntoResponse {
     use base64::Engine;
-    
+    use sha2::{Digest, Sha256};
+
     // Generate PKCE code_verifier (43-128 chars, URL-safe)
     let code_verifier: String = (0..43)
         .map(|_| {
-            const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+            const CHARSET: &[u8] =
+                b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
             let idx = (Uuid::new_v4().as_u128() % CHARSET.len() as u128) as usize;
             CHARSET[idx] as char
         })
         .collect();
-    
+
     // Derive code_challenge = BASE64URL(SHA256(code_verifier))
     let mut hasher = Sha256::new();
     hasher.update(code_verifier.as_bytes());
     let hash = hasher.finalize();
     let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash);
-    
+
     // Generate CSRF state
     let state_csrf = Uuid::new_v4().to_string();
-    
+
     let authorize_url = format!(
         "https://www.cpoauth.com/oauth/authorize?response_type=code&client_id={}&redirect_uri={}&scope=openid+profile&state={}&code_challenge={}&code_challenge_method=S256",
         state.cpoauth_client_id,
@@ -128,19 +133,28 @@ pub async fn oauth_authorize(
         state_csrf,
         code_challenge,
     );
-    
+
     // Set cookies for code_verifier and state (HttpOnly, 10min)
-    let state_cookie = axum::http::HeaderValue::from_str(
-        &format!("oauth_state={}; Path=/api/oauth; HttpOnly; Max-Age=600; SameSite=Lax", state_csrf)
-    ).expect("valid cookie header value");
-    let verifier_cookie = axum::http::HeaderValue::from_str(
-        &format!("oauth_code_verifier={}; Path=/api/oauth; HttpOnly; Max-Age=600; SameSite=Lax", code_verifier)
-    ).expect("valid cookie header value");
-    
+    let state_cookie = axum::http::HeaderValue::from_str(&format!(
+        "oauth_state={}; Path=/api/oauth; HttpOnly; Max-Age=600; SameSite=Lax",
+        state_csrf
+    ))
+    .expect("valid cookie header value");
+    let verifier_cookie = axum::http::HeaderValue::from_str(&format!(
+        "oauth_code_verifier={}; Path=/api/oauth; HttpOnly; Max-Age=600; SameSite=Lax",
+        code_verifier
+    ))
+    .expect("valid cookie header value");
+
     (
-        axum::response::AppendHeaders([
-            axum::http::header::SET_COOKIE, axum::http::header::SET_COOKIE,
-        ].into_iter().zip([state_cookie, verifier_cookie])),
+        axum::response::AppendHeaders(
+            [
+                axum::http::header::SET_COOKIE,
+                axum::http::header::SET_COOKIE,
+            ]
+            .into_iter()
+            .zip([state_cookie, verifier_cookie]),
+        ),
         Redirect::to(&authorize_url),
     )
 }
@@ -154,11 +168,11 @@ pub async fn oauth_callback(
 ) -> impl IntoResponse {
     let fe = state.site_url.clone();
     let code = params.get("code").cloned().unwrap_or_default();
-    
+
     if code.is_empty() {
         return Redirect::to(&format!("{}#/login?error=no_code", fe));
     }
-    
+
     // Validate state from cookie
     let cookie_state = headers
         .get_all(axum::http::header::COOKIE)
@@ -169,14 +183,14 @@ pub async fn oauth_callback(
             let c = c.trim();
             c.strip_prefix("oauth_state=").map(|v| v.to_string())
         });
-    
+
     let callback_state = params.get("state").cloned();
     if let (Some(cs), Some(bs)) = (&callback_state, &cookie_state) {
         if cs != bs {
             return Redirect::to(&format!("{}#/login?error=state_mismatch", fe));
         }
     }
-    
+
     // Read code_verifier from cookie
     let code_verifier = headers
         .get_all(axum::http::header::COOKIE)
@@ -185,17 +199,20 @@ pub async fn oauth_callback(
         .flat_map(|s| s.split(';'))
         .find_map(|c| {
             let c = c.trim();
-            c.strip_prefix("oauth_code_verifier=").map(|v| v.to_string())
+            c.strip_prefix("oauth_code_verifier=")
+                .map(|v| v.to_string())
         })
         .unwrap_or_default();
-    
+
     match exchange_token(
         &code,
         &code_verifier,
         &state.cpoauth_client_id,
         &state.cpoauth_client_secret,
         &state.cpoauth_redirect_uri,
-    ).await {
+    )
+    .await
+    {
         Ok(token_resp) => {
             match get_user_info(&token_resp.access_token).await {
                 Ok(userinfo) => {
@@ -206,14 +223,17 @@ pub async fn oauth_callback(
                             "joined".to_string()
                         } else {
                             let requests = state.join_requests.read().await;
-                            if requests.values().any(|r| r.user_id == user_id && r.status == "pending") {
+                            if requests
+                                .values()
+                                .any(|r| r.user_id == user_id && r.status == "pending")
+                            {
                                 "pending".to_string()
                             } else {
                                 "none".to_string()
                             }
                         }
                     };
-                    
+
                     let role = {
                         // New users: team member → "member", otherwise "guest"
                         // Existing users: preserve their current role
@@ -229,11 +249,15 @@ pub async fn oauth_callback(
                             }
                         }
                     };
-                    
+
                     // Truncate username to 30 characters max
                     const MAX_USERNAME_LEN: usize = 30;
                     let username = if userinfo.username.chars().count() > MAX_USERNAME_LEN {
-                        userinfo.username.chars().take(MAX_USERNAME_LEN).collect::<String>()
+                        userinfo
+                            .username
+                            .chars()
+                            .take(MAX_USERNAME_LEN)
+                            .collect::<String>()
                     } else {
                         userinfo.username
                     };
@@ -243,7 +267,7 @@ pub async fn oauth_callback(
                         // User already exists — preserve custom fields (display_name, avatar_url, bio, created_at)
                         // Only update OAuth-provided fields and computed role/status
                         existing.username = username.clone();
-                        if !userinfo.email.is_none() {
+                        if userinfo.email.is_some() {
                             existing.email = userinfo.email;
                         }
                         existing.role = role;
@@ -289,7 +313,7 @@ pub async fn oauth_callback(
                         users.insert(user.id.clone(), user);
                     }
                     drop(users);
-                    
+
                     let session_token = state.create_session(&user_id).await;
                     // Remove old refresh tokens for this user to prevent accumulation
                     {
@@ -297,23 +321,33 @@ pub async fn oauth_callback(
                         rts.retain(|_, uid| uid != &user_id);
                         rts.insert(token_resp.refresh_token.clone(), user_id);
                     }
-                    
+
                     state.save().await;
-                    
+
                     Redirect::to(&format!("{}#/auth/callback?token={}", fe, session_token))
                 }
-                Err(e) => {
-                    Redirect::to(&format!("{}#/login?error=userinfo_failed&msg={}", fe, url_encode(&e)))
-                }
+                Err(e) => Redirect::to(&format!(
+                    "{}#/login?error=userinfo_failed&msg={}",
+                    fe,
+                    url_encode(&e)
+                )),
             }
         }
-        Err(e) => {
-            Redirect::to(&format!("{}#/login?error=token_failed&msg={}", fe, url_encode(&e)))
-        }
+        Err(e) => Redirect::to(&format!(
+            "{}#/login?error=token_failed&msg={}",
+            fe,
+            url_encode(&e)
+        )),
     }
 }
 
-async fn exchange_token(code: &str, code_verifier: &str, client_id: &str, client_secret: &str, redirect_uri: &str) -> Result<OAuthTokenResponse, String> {
+async fn exchange_token(
+    code: &str,
+    code_verifier: &str,
+    client_id: &str,
+    client_secret: &str,
+    redirect_uri: &str,
+) -> Result<OAuthTokenResponse, String> {
     let client = reqwest::Client::new();
 
     let mut body = serde_json::json!({
@@ -323,24 +357,30 @@ async fn exchange_token(code: &str, code_verifier: &str, client_id: &str, client
         "client_secret": client_secret,
         "redirect_uri": redirect_uri,
     });
-    
+
     if !code_verifier.is_empty() {
         body["code_verifier"] = serde_json::Value::String(code_verifier.to_string());
     }
-    
+
     let response = client
         .post("https://www.cpoauth.com/api/oauth/token")
         .json(&body)
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    
+
     if response.status().is_success() {
-        response.json::<OAuthTokenResponse>().await.map_err(|e| e.to_string())
+        response
+            .json::<OAuthTokenResponse>()
+            .await
+            .map_err(|e| e.to_string())
     } else {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        Err(format!("CP OAuth token exchange failed ({}): {}", status, body))
+        Err(format!(
+            "CP OAuth token exchange failed ({}): {}",
+            status, body
+        ))
     }
 }
 
@@ -352,9 +392,12 @@ async fn get_user_info(access_token: &str) -> Result<OAuthUserInfo, String> {
         .send()
         .await
         .map_err(|e| e.to_string())?;
-    
+
     if response.status().is_success() {
-        response.json::<OAuthUserInfo>().await.map_err(|e| e.to_string())
+        response
+            .json::<OAuthUserInfo>()
+            .await
+            .map_err(|e| e.to_string())
     } else {
         Err("Failed to get user info".to_string())
     }
@@ -367,14 +410,23 @@ pub async fn refresh_token(
     Json(payload): Json<RefreshTokenPayload>,
 ) -> Json<serde_json::Value> {
     let refresh_token = payload.refresh_token.clone();
-    let user_id = state.refresh_tokens.read().await.get(&refresh_token).cloned();
+    let user_id = state
+        .refresh_tokens
+        .read()
+        .await
+        .get(&refresh_token)
+        .cloned();
 
     if let Some(uid) = user_id {
         let access_token = format!("access_{}", Uuid::new_v4());
         let new_refresh_token = format!("refresh_{}", Uuid::new_v4());
 
         state.refresh_tokens.write().await.remove(&refresh_token);
-        state.refresh_tokens.write().await.insert(new_refresh_token.clone(), uid);
+        state
+            .refresh_tokens
+            .write()
+            .await
+            .insert(new_refresh_token.clone(), uid);
 
         state.save().await;
 

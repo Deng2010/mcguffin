@@ -3,19 +3,19 @@
 // These routes are kept for backward compatibility.
 // They delegate to the unified discussion/post handlers.
 
+use axum::http::HeaderMap;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     Json,
 };
-use axum::http::HeaderMap;
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::notifications::create_notification;
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{check_permission, resolve_user, AuthUser};
-use crate::notifications::create_notification;
 
 // ============== List Suggestions (backward compat) ==============
 
@@ -33,9 +33,14 @@ pub async fn get_suggestions(
     let users = state.users.read().await;
     let mut result: Vec<serde_json::Value> = Vec::new();
     for p in posts.values() {
-        if !p.tags.contains(&"建议".to_string()) && p.status.is_empty() { continue; }
-        if !can_view_all && p.author_id != user_id { continue; }
-        let author_name = users.get(&p.author_id)
+        if !p.tags.contains(&"建议".to_string()) && p.status.is_empty() {
+            continue;
+        }
+        if !can_view_all && p.author_id != user_id {
+            continue;
+        }
+        let author_name = users
+            .get(&p.author_id)
             .map(|u| u.display_name.clone())
             .unwrap_or_else(|| p.author_name.clone());
         result.push(serde_json::json!({
@@ -51,7 +56,10 @@ pub async fn get_suggestions(
         }));
     }
     result.sort_by(|a, b| {
-        b["created_at"].as_str().unwrap_or("").cmp(&a["created_at"].as_str().unwrap_or(""))
+        b["created_at"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(a["created_at"].as_str().unwrap_or(""))
     });
     Json(serde_json::json!(result))
 }
@@ -71,8 +79,16 @@ pub async fn create_suggestion(
     if user.team_status == "pending" {
         return Json(serde_json::json!({"success": false, "message": "待审核用户无法提交建议"}));
     }
-    let title = payload.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let title = payload
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let content = payload
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     if title.trim().is_empty() {
         return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
     }
@@ -115,13 +131,15 @@ pub async fn get_suggestion_detail(
     };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
-        let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_DISCUSSIONS).await
+        let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_DISCUSSIONS)
+            .await
             || user.team_status == "joined";
         if !can_view_all && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
         let users = state.users.read().await;
-        let author_name = users.get(&p.author_id)
+        let author_name = users
+            .get(&p.author_id)
             .map(|u| u.display_name.clone())
             .unwrap_or_else(|| p.author_name.clone());
         drop(users);
@@ -148,7 +166,8 @@ pub async fn update_suggestion(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
+        .await?;
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
         let author_id = p.author_id.clone();
@@ -156,7 +175,9 @@ pub async fn update_suggestion(
         if let Some(new_status) = payload.get("status").and_then(|v| v.as_str()) {
             let valid = ["open", "in_progress", "resolved", "closed"];
             if !valid.contains(&new_status) {
-                return Ok(Json(serde_json::json!({"success": false, "message": "无效状态"})));
+                return Ok(Json(
+                    serde_json::json!({"success": false, "message": "无效状态"}),
+                ));
             }
             p.status = new_status.to_string();
         }
@@ -167,21 +188,31 @@ pub async fn update_suggestion(
         if let Some(new_status) = payload.get("status").and_then(|v| v.as_str()) {
             if new_status == "resolved" && author_id != auth.user_id {
                 create_notification(
-                    &state, &author_id, "建议已解决",
+                    &state,
+                    &author_id,
+                    "建议已解决",
                     &format!("你的建议「{}」已被标记为已解决", suggestion_title),
                     Some(&format!("/post/{}", id)),
-                ).await;
+                )
+                .await;
             } else if new_status == "closed" && author_id != auth.user_id {
                 create_notification(
-                    &state, &author_id, "建议已关闭",
+                    &state,
+                    &author_id,
+                    "建议已关闭",
                     &format!("你的建议「{}」已被关闭", suggestion_title),
                     Some(&format!("/post/{}", id)),
-                ).await;
+                )
+                .await;
             }
         }
-        return Ok(Json(serde_json::json!({"success": true, "message": "建议已更新"})));
+        return Ok(Json(
+            serde_json::json!({"success": true, "message": "建议已更新"}),
+        ));
     }
-    Ok(Json(serde_json::json!({"success": false, "message": "建议不存在"})))
+    Ok(Json(
+        serde_json::json!({"success": false, "message": "建议不存在"}),
+    ))
 }
 
 // ============== Reply to Suggestion (backward compat) ==============
@@ -192,10 +223,17 @@ pub async fn reply_to_suggestion(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS).await?;
-    let content = payload.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
+        .await?;
+    let content = payload
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
     if content.trim().is_empty() {
-        return Ok(Json(serde_json::json!({"success": false, "message": "回复不能为空"})));
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "回复不能为空"}),
+        ));
     }
     let mut posts = state.posts.write().await;
     if let Some(p) = posts.get_mut(&id) {
@@ -217,14 +255,21 @@ pub async fn reply_to_suggestion(
         state.save().await;
         if author_id != auth.user_id {
             create_notification(
-                &state, &author_id, "建议有新回复",
+                &state,
+                &author_id,
+                "建议有新回复",
                 &format!("你的建议「{}」收到了新回复", suggestion_title),
                 Some(&format!("/post/{}", id)),
-            ).await;
+            )
+            .await;
         }
-        return Ok(Json(serde_json::json!({"success": true, "message": "回复成功"})));
+        return Ok(Json(
+            serde_json::json!({"success": true, "message": "回复成功"}),
+        ));
     }
-    Ok(Json(serde_json::json!({"success": false, "message": "建议不存在"})))
+    Ok(Json(
+        serde_json::json!({"success": false, "message": "建议不存在"}),
+    ))
 }
 
 // ============== Delete Reply ==============

@@ -1,4 +1,7 @@
-use crate::types::{AuditEntry, Contest, DiscussionEmoji, DiscussionTag, JoinRequest, MemberGroup, Notification, Post, Problem, SessionEntry, TeamMember, User, AppConfig};
+use crate::types::{
+    AppConfig, AuditEntry, Contest, DiscussionEmoji, DiscussionTag, JoinRequest, MemberGroup,
+    Notification, Post, Problem, SessionEntry, TeamMember, User,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, VecDeque};
@@ -65,7 +68,10 @@ fn migrate_legacy_data(
 
     // Helper to convert a legacy value to a Post
     let extract = |v: &serde_json::Value, field: &str| -> String {
-        v.get(field).and_then(|v| v.as_str()).unwrap_or("").to_string()
+        v.get(field)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
     };
     let extract_bool = |v: &serde_json::Value, field: &str, default: bool| -> bool {
         v.get(field).and_then(|v| v.as_bool()).unwrap_or(default)
@@ -74,51 +80,81 @@ fn migrate_legacy_data(
     for (id, v) in suggestions {
         if !posts.contains_key(id) {
             let now = Utc::now();
-            let created_at = v.get("created_at").and_then(|c| {
-                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
-            }).unwrap_or(now);
-            let updated_at = v.get("updated_at").and_then(|c| {
-                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
-            }).unwrap_or(now);
+            let created_at = v
+                .get("created_at")
+                .and_then(|c| {
+                    c.as_str().and_then(|s| {
+                        DateTime::parse_from_rfc3339(s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                })
+                .unwrap_or(now);
+            let updated_at = v
+                .get("updated_at")
+                .and_then(|c| {
+                    c.as_str().and_then(|s| {
+                        DateTime::parse_from_rfc3339(s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                })
+                .unwrap_or(now);
             // Convert legacy SuggestionReply if any
-            let replies: Vec<crate::types::PostReply> = v.get("replies").and_then(|r| r.as_array()).map(|arr| {
-                arr.iter().map(|rv| {
-                    let aid = extract(rv, "author_id");
-                    let an = extract(rv, "author_name");
-                    crate::types::PostReply {
-                        id: extract(rv, "id"),
-                        author_id: aid.clone(),
-                        author_name: an,
-                        content: extract(rv, "content"),
-                        created_at: rv.get("created_at").and_then(|c| {
-                            c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
-                        }).unwrap_or(now),
-                        reactions: HashMap::new(),
-                        parent_id: None,
-                        reply_to: None,
-                    }
-                }).collect()
-            }).unwrap_or_default();
+            let replies: Vec<crate::types::PostReply> = v
+                .get("replies")
+                .and_then(|r| r.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|rv| {
+                            let aid = extract(rv, "author_id");
+                            let an = extract(rv, "author_name");
+                            crate::types::PostReply {
+                                id: extract(rv, "id"),
+                                author_id: aid.clone(),
+                                author_name: an,
+                                content: extract(rv, "content"),
+                                created_at: rv
+                                    .get("created_at")
+                                    .and_then(|c| {
+                                        c.as_str().and_then(|s| {
+                                            DateTime::parse_from_rfc3339(s)
+                                                .ok()
+                                                .map(|dt| dt.with_timezone(&Utc))
+                                        })
+                                    })
+                                    .unwrap_or(now),
+                                reactions: HashMap::new(),
+                                parent_id: None,
+                                reply_to: None,
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
 
-            posts.insert(id.clone(), Post {
-                id: id.clone(),
-                title: extract(v, "title"),
-                content: extract(v, "content"),
-                author_id: extract(v, "author_id"),
-                author_name: extract(v, "author_name"),
-                tags: vec!["建议".to_string()],
-                pinned: false,
-                team_only: false,
-                emoji: None,
-                reactions: HashMap::new(),
-                replies,
-                mentioned_user_ids: vec![],
-                status: extract(v, "status"),
-                created_at,
-                updated_at,
-                visible_to: vec![],
-                editable_by: vec![],
-            });
+            posts.insert(
+                id.clone(),
+                Post {
+                    id: id.clone(),
+                    title: extract(v, "title"),
+                    content: extract(v, "content"),
+                    author_id: extract(v, "author_id"),
+                    author_name: extract(v, "author_name"),
+                    tags: vec!["建议".to_string()],
+                    pinned: false,
+                    team_only: false,
+                    emoji: None,
+                    reactions: HashMap::new(),
+                    replies,
+                    mentioned_user_ids: vec![],
+                    status: extract(v, "status"),
+                    created_at,
+                    updated_at,
+                    visible_to: vec![],
+                    editable_by: vec![],
+                },
+            );
             migrated = true;
         }
     }
@@ -126,31 +162,48 @@ fn migrate_legacy_data(
     for (id, v) in announcements {
         if !posts.contains_key(id) {
             let now = Utc::now();
-            let created_at = v.get("created_at").and_then(|c| {
-                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
-            }).unwrap_or(now);
-            let updated_at = v.get("updated_at").and_then(|c| {
-                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
-            }).unwrap_or(now);
-            posts.insert(id.clone(), Post {
-                id: id.clone(),
-                title: extract(v, "title"),
-                content: extract(v, "content"),
-                author_id: extract(v, "author_id"),
-                author_name: extract(v, "author_name"),
-                tags: vec!["公告".to_string()],
-                pinned: extract_bool(v, "pinned", false),
-                team_only: false,
-                emoji: None,
-                reactions: HashMap::new(),
-                replies: vec![],
-                mentioned_user_ids: vec![],
-                status: String::new(),
-                created_at,
-                updated_at,
-                visible_to: vec![],
-                editable_by: vec![],
-            });
+            let created_at = v
+                .get("created_at")
+                .and_then(|c| {
+                    c.as_str().and_then(|s| {
+                        DateTime::parse_from_rfc3339(s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                })
+                .unwrap_or(now);
+            let updated_at = v
+                .get("updated_at")
+                .and_then(|c| {
+                    c.as_str().and_then(|s| {
+                        DateTime::parse_from_rfc3339(s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                })
+                .unwrap_or(now);
+            posts.insert(
+                id.clone(),
+                Post {
+                    id: id.clone(),
+                    title: extract(v, "title"),
+                    content: extract(v, "content"),
+                    author_id: extract(v, "author_id"),
+                    author_name: extract(v, "author_name"),
+                    tags: vec!["公告".to_string()],
+                    pinned: extract_bool(v, "pinned", false),
+                    team_only: false,
+                    emoji: None,
+                    reactions: HashMap::new(),
+                    replies: vec![],
+                    mentioned_user_ids: vec![],
+                    status: String::new(),
+                    created_at,
+                    updated_at,
+                    visible_to: vec![],
+                    editable_by: vec![],
+                },
+            );
             migrated = true;
         }
     }
@@ -158,61 +211,105 @@ fn migrate_legacy_data(
     for (id, v) in discussions {
         if !posts.contains_key(id) {
             let now = Utc::now();
-            let created_at = v.get("created_at").and_then(|c| {
-                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
-            }).unwrap_or(now);
-            let updated_at = v.get("updated_at").and_then(|c| {
-                c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
-            }).unwrap_or(now);
-            let tags: Vec<String> = v.get("tags").and_then(|t| t.as_array()).map(|arr| {
-                arr.iter().filter_map(|t| t.as_str().map(|s| s.to_string())).collect()
-            }).unwrap_or_default();
-            let emoji: Option<String> = v.get("emoji").and_then(|e| e.as_str().map(|s| s.to_string()));
+            let created_at = v
+                .get("created_at")
+                .and_then(|c| {
+                    c.as_str().and_then(|s| {
+                        DateTime::parse_from_rfc3339(s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                })
+                .unwrap_or(now);
+            let updated_at = v
+                .get("updated_at")
+                .and_then(|c| {
+                    c.as_str().and_then(|s| {
+                        DateTime::parse_from_rfc3339(s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    })
+                })
+                .unwrap_or(now);
+            let tags: Vec<String> = v
+                .get("tags")
+                .and_then(|t| t.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|t| t.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let emoji: Option<String> = v
+                .get("emoji")
+                .and_then(|e| e.as_str().map(|s| s.to_string()));
             let team_only = extract_bool(v, "team_only", false);
             let pinned = extract_bool(v, "pinned", false);
-            let reactions: HashMap<String, Vec<String>> = v.get("reactions").and_then(|r| {
-                serde_json::from_value(r.clone()).ok()
-            }).unwrap_or_default();
-            let replies: Vec<crate::types::PostReply> = v.get("replies").and_then(|r| r.as_array()).map(|arr| {
-                arr.iter().map(|rv| {
-                    let aid = extract(rv, "author_id");
-                    let an = extract(rv, "author_name");
-                    let reactions: HashMap<String, Vec<String>> = rv.get("reactions").and_then(|r| {
-                        serde_json::from_value(r.clone()).ok()
-                    }).unwrap_or_default();
-                    crate::types::PostReply {
-                        id: extract(rv, "id"),
-                        author_id: aid.clone(),
-                        author_name: an,
-                        content: extract(rv, "content"),
-                        created_at: rv.get("created_at").and_then(|c| {
-                            c.as_str().and_then(|s| DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&Utc)))
-                        }).unwrap_or(now),
-                        reactions,
-                        parent_id: rv.get("parent_id").and_then(|p| p.as_str().map(|s| s.to_string())),
-                        reply_to: rv.get("reply_to").and_then(|p| p.as_str().map(|s| s.to_string())),
-                    }
-                }).collect()
-            }).unwrap_or_default();
-            posts.insert(id.clone(), Post {
-                id: id.clone(),
-                title: extract(v, "title"),
-                content: extract(v, "content"),
-                author_id: extract(v, "author_id"),
-                author_name: extract(v, "author_name"),
-                tags,
-                pinned,
-                team_only,
-                emoji,
-                reactions,
-                replies,
-                mentioned_user_ids: vec![],
-                status: String::new(),
-                created_at,
-                updated_at,
-                visible_to: vec![],
-                editable_by: vec![],
-            });
+            let reactions: HashMap<String, Vec<String>> = v
+                .get("reactions")
+                .and_then(|r| serde_json::from_value(r.clone()).ok())
+                .unwrap_or_default();
+            let replies: Vec<crate::types::PostReply> = v
+                .get("replies")
+                .and_then(|r| r.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|rv| {
+                            let aid = extract(rv, "author_id");
+                            let an = extract(rv, "author_name");
+                            let reactions: HashMap<String, Vec<String>> = rv
+                                .get("reactions")
+                                .and_then(|r| serde_json::from_value(r.clone()).ok())
+                                .unwrap_or_default();
+                            crate::types::PostReply {
+                                id: extract(rv, "id"),
+                                author_id: aid.clone(),
+                                author_name: an,
+                                content: extract(rv, "content"),
+                                created_at: rv
+                                    .get("created_at")
+                                    .and_then(|c| {
+                                        c.as_str().and_then(|s| {
+                                            DateTime::parse_from_rfc3339(s)
+                                                .ok()
+                                                .map(|dt| dt.with_timezone(&Utc))
+                                        })
+                                    })
+                                    .unwrap_or(now),
+                                reactions,
+                                parent_id: rv
+                                    .get("parent_id")
+                                    .and_then(|p| p.as_str().map(|s| s.to_string())),
+                                reply_to: rv
+                                    .get("reply_to")
+                                    .and_then(|p| p.as_str().map(|s| s.to_string())),
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            posts.insert(
+                id.clone(),
+                Post {
+                    id: id.clone(),
+                    title: extract(v, "title"),
+                    content: extract(v, "content"),
+                    author_id: extract(v, "author_id"),
+                    author_name: extract(v, "author_name"),
+                    tags,
+                    pinned,
+                    team_only,
+                    emoji,
+                    reactions,
+                    replies,
+                    mentioned_user_ids: vec![],
+                    status: String::new(),
+                    created_at,
+                    updated_at,
+                    visible_to: vec![],
+                    editable_by: vec![],
+                },
+            );
             migrated = true;
         }
     }
@@ -237,23 +334,34 @@ where
                 match val {
                     // Old format: "token" → "user_id" (string)
                     serde_json::Value::String(user_id) => {
-                        sessions.insert(token, SessionEntry {
-                            user_id,
-                            last_active: Utc::now(),
-                        });
+                        sessions.insert(
+                            token,
+                            SessionEntry {
+                                user_id,
+                                last_active: Utc::now(),
+                            },
+                        );
                     }
                     // New format: "token" → {"user_id": "...", "last_active": "..."}
                     serde_json::Value::Object(obj) => {
-                        let user_id = obj.get("user_id")
+                        let user_id = obj
+                            .get("user_id")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
                             .ok_or_else(|| D::Error::custom("missing user_id in session entry"))?;
-                        let last_active = obj.get("last_active")
+                        let last_active = obj
+                            .get("last_active")
                             .and_then(|v| v.as_str())
                             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                             .map(|dt| dt.with_timezone(&Utc))
                             .unwrap_or_else(Utc::now);
-                        sessions.insert(token, SessionEntry { user_id, last_active });
+                        sessions.insert(
+                            token,
+                            SessionEntry {
+                                user_id,
+                                last_active,
+                            },
+                        );
                     }
                     _ => {}
                 }
@@ -318,37 +426,40 @@ impl AppState {
         // Migration: if config.toml has no [permissions] section, write default role permissions
         {
             let raw_config = std::fs::read_to_string(CONFIG_FILE).unwrap_or_default();
-            let has_permissions_section = raw_config.contains("\n[permissions]") || raw_config.starts_with("[permissions]");
+            let has_permissions_section =
+                raw_config.contains("\n[permissions]") || raw_config.starts_with("[permissions]");
             if !has_permissions_section {
-            tracing::info!("No [permissions] section in config.toml, writing default permissions");
-            let defaults = crate::types::default_role_permissions();
-            if let Ok(raw) = std::fs::read_to_string(CONFIG_FILE) {
-                use toml_edit::{DocumentMut, Item, Value as TomlValue};
-                use std::str::FromStr;
-                if let Ok(mut doc) = DocumentMut::from_str(&raw) {
-                    // Ensure [permissions] table exists
-                    if doc.get("permissions").is_none() {
-                        doc["permissions"] = Item::Table(toml_edit::Table::new());
-                    }
-                    // Write [permissions.roles]
-                    doc["permissions"]["roles"] = Item::Table(toml_edit::Table::new());
-                    if let Some(roles_t) = doc["permissions"]["roles"].as_table_mut() {
-                        for (role, perms) in &defaults {
-                            if !perms.is_empty() {
-                                let arr = toml_edit::Array::from_iter(
-                                    perms.iter().map(|p| TomlValue::from(p.as_str()))
-                                );
-                                roles_t[role] = Item::Value(TomlValue::Array(arr));
+                tracing::info!(
+                    "No [permissions] section in config.toml, writing default permissions"
+                );
+                let defaults = crate::types::default_role_permissions();
+                if let Ok(raw) = std::fs::read_to_string(CONFIG_FILE) {
+                    use std::str::FromStr;
+                    use toml_edit::{DocumentMut, Item, Value as TomlValue};
+                    if let Ok(mut doc) = DocumentMut::from_str(&raw) {
+                        // Ensure [permissions] table exists
+                        if doc.get("permissions").is_none() {
+                            doc["permissions"] = Item::Table(toml_edit::Table::new());
+                        }
+                        // Write [permissions.roles]
+                        doc["permissions"]["roles"] = Item::Table(toml_edit::Table::new());
+                        if let Some(roles_t) = doc["permissions"]["roles"].as_table_mut() {
+                            for (role, perms) in &defaults {
+                                if !perms.is_empty() {
+                                    let arr = toml_edit::Array::from_iter(
+                                        perms.iter().map(|p| TomlValue::from(p.as_str())),
+                                    );
+                                    roles_t[role] = Item::Value(TomlValue::Array(arr));
+                                }
                             }
                         }
+                        let _ = std::fs::write(CONFIG_FILE, doc.to_string());
+                        tracing::info!("Default permissions written to config.toml");
                     }
-                    let _ = std::fs::write(CONFIG_FILE, doc.to_string());
-                    tracing::info!("Default permissions written to config.toml");
                 }
+                // Reload config to pick up the newly written defaults
+                config = load_config();
             }
-            // Reload config to pick up the newly written defaults
-            config = load_config();
-        }
         }
 
         let site_version = env!("CARGO_PKG_VERSION").to_string();
@@ -363,70 +474,134 @@ impl AppState {
         let discussion_tags = load_discussion_tags(&config);
         let discussion_emojis = load_discussion_emojis(&config);
 
-        let (mut users, sessions, refresh_tokens, mut team_members, problems, join_requests, contests, site_description, notifications, showcase_problem_ids, showcase_contest_ids, posts) =
-            if let Some(data) = saved {
-                tracing::info!("Loaded state from {}", data_file);
+        let (
+            mut users,
+            sessions,
+            refresh_tokens,
+            mut team_members,
+            problems,
+            join_requests,
+            contests,
+            site_description,
+            notifications,
+            showcase_problem_ids,
+            showcase_contest_ids,
+            posts,
+        ) = if let Some(data) = saved {
+            tracing::info!("Loaded state from {}", data_file);
 
-                // Migrate legacy data if needed
-                let mut p = data.posts;
-                let migrated = migrate_legacy_data(&mut p, &data.suggestions, &data.announcements, &data.discussions);
-                if migrated {
-                    tracing::info!("Migrated legacy data to unified posts model");
-                }
+            // Migrate legacy data if needed
+            let mut p = data.posts;
+            let migrated = migrate_legacy_data(
+                &mut p,
+                &data.suggestions,
+                &data.announcements,
+                &data.discussions,
+            );
+            if migrated {
+                tracing::info!("Migrated legacy data to unified posts model");
+            }
 
-                // Migration: if data.json has member_groups, write to config.toml
-                if !data.member_groups.is_empty() && config.permission_groups.is_empty() {
-                    tracing::info!("Migrating {} member groups from data.json to config.toml", data.member_groups.len());
-                    // Write to config.toml via the admin helper
-                    let groups_json: Vec<serde_json::Value> = data.member_groups.values().map(|g| {
+            // Migration: if data.json has member_groups, write to config.toml
+            if !data.member_groups.is_empty() && config.permission_groups.is_empty() {
+                tracing::info!(
+                    "Migrating {} member groups from data.json to config.toml",
+                    data.member_groups.len()
+                );
+                // Write to config.toml via the admin helper
+                let groups_json: Vec<serde_json::Value> = data
+                    .member_groups
+                    .values()
+                    .map(|g| {
                         serde_json::json!({
                             "id": g.id,
                             "name": g.name,
                             "permissions": g.permissions,
                         })
-                    }).collect();
-                    if let Ok(raw) = std::fs::read_to_string(CONFIG_FILE) {
-                        use toml_edit::{DocumentMut, Item, Value as TomlValue};
-                        use std::str::FromStr;
-                        if let Ok(mut doc) = DocumentMut::from_str(&raw) {
-                            if let Some(perms_root) = doc.get_mut("permissions").and_then(|s| s.as_table_mut()) {
-                                // Clear old groups section
-                                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
-                                    let keys: Vec<String> = groups_t.iter().map(|(k, _)| k.to_string()).collect();
-                                    for k in keys { groups_t.remove(&k); }
-                                } else {
-                                    // Ensure groups sub-table exists
-                                    perms_root["groups"] = Item::Table(toml_edit::Table::new());
+                    })
+                    .collect();
+                if let Ok(raw) = std::fs::read_to_string(CONFIG_FILE) {
+                    use std::str::FromStr;
+                    use toml_edit::{DocumentMut, Item, Value as TomlValue};
+                    if let Ok(mut doc) = DocumentMut::from_str(&raw) {
+                        if let Some(perms_root) =
+                            doc.get_mut("permissions").and_then(|s| s.as_table_mut())
+                        {
+                            // Clear old groups section
+                            if let Some(groups_t) =
+                                perms_root.get_mut("groups").and_then(|s| s.as_table_mut())
+                            {
+                                let keys: Vec<String> =
+                                    groups_t.iter().map(|(k, _)| k.to_string()).collect();
+                                for k in keys {
+                                    groups_t.remove(&k);
                                 }
-                                // Write migrated groups
-                                if let Some(groups_t) = perms_root.get_mut("groups").and_then(|s| s.as_table_mut()) {
-                                    for g in &groups_json {
-                                        let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                        let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                                        let perms = g.get("permissions").and_then(|v| v.as_array());
-                                        if id.is_empty() || name.is_empty() { continue; }
-                                        let mut it = toml_edit::InlineTable::new();
-                                        it.insert("name", TomlValue::from(name));
-                                        if let Some(arr) = perms {
-                                            let t_arr = toml_edit::Array::from_iter(arr.iter().filter_map(|v| v.as_str().map(TomlValue::from)));
-                                            it.insert("permissions", TomlValue::Array(t_arr));
-                                        }
-                                        groups_t[id] = Item::Value(TomlValue::InlineTable(it));
+                            } else {
+                                // Ensure groups sub-table exists
+                                perms_root["groups"] = Item::Table(toml_edit::Table::new());
+                            }
+                            // Write migrated groups
+                            if let Some(groups_t) =
+                                perms_root.get_mut("groups").and_then(|s| s.as_table_mut())
+                            {
+                                for g in &groups_json {
+                                    let id = g.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                    let name = g.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                    let perms = g.get("permissions").and_then(|v| v.as_array());
+                                    if id.is_empty() || name.is_empty() {
+                                        continue;
                                     }
+                                    let mut it = toml_edit::InlineTable::new();
+                                    it.insert("name", TomlValue::from(name));
+                                    if let Some(arr) = perms {
+                                        let t_arr = toml_edit::Array::from_iter(
+                                            arr.iter()
+                                                .filter_map(|v| v.as_str().map(TomlValue::from)),
+                                        );
+                                        it.insert("permissions", TomlValue::Array(t_arr));
+                                    }
+                                    groups_t[id] = Item::Value(TomlValue::InlineTable(it));
                                 }
                             }
-                            let _ = std::fs::write(CONFIG_FILE, doc.to_string());
                         }
+                        let _ = std::fs::write(CONFIG_FILE, doc.to_string());
                     }
-                    // Also update in-memory member_groups
-                    // (loaded from config.toml again below — handled by load_member_groups fallback)
                 }
+                // Also update in-memory member_groups
+                // (loaded from config.toml again below — handled by load_member_groups fallback)
+            }
 
-                (data.users, data.sessions, data.refresh_tokens, data.team_members, data.problems, data.join_requests, data.contests, data.site_description, data.notifications, data.showcase_problem_ids, data.showcase_contest_ids, p)
-            } else {
-                tracing::info!("No saved state, using default seed data");
-                (HashMap::new(), HashMap::new(), HashMap::new(), Self::default_team_members(), Self::default_problems(), HashMap::new(), HashMap::new(), String::new(), HashMap::new(), Vec::new(), Vec::new(), HashMap::new())
-            };
+            (
+                data.users,
+                data.sessions,
+                data.refresh_tokens,
+                data.team_members,
+                data.problems,
+                data.join_requests,
+                data.contests,
+                data.site_description,
+                data.notifications,
+                data.showcase_problem_ids,
+                data.showcase_contest_ids,
+                p,
+            )
+        } else {
+            tracing::info!("No saved state, using default seed data");
+            (
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+                Self::default_team_members(),
+                Self::default_problems(),
+                HashMap::new(),
+                HashMap::new(),
+                String::new(),
+                HashMap::new(),
+                Vec::new(),
+                Vec::new(),
+                HashMap::new(),
+            )
+        };
 
         // Member groups come from config.toml (already migrated from data.json if needed)
         // Reload config after potential migration
@@ -465,19 +640,24 @@ impl AppState {
             }
         }
         if pending_count > 0 {
-            tracing::info!("Migrated {} users from role=pending to role=guest", pending_count);
+            tracing::info!(
+                "Migrated {} users from role=pending to role=guest",
+                pending_count
+            );
         }
 
         // Always ensure superadmin is a team member AND has correct role
-        team_members.entry(ADMIN_USER_ID.to_string()).or_insert(TeamMember {
-            id: ADMIN_USER_ID.to_string(),
-            user_id: ADMIN_USER_ID.to_string(),
-            joined_at: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-                .unwrap()
-                .with_timezone(&Utc)
-                .format("%Y-%m-%d")
-                .to_string(),
-        });
+        team_members
+            .entry(ADMIN_USER_ID.to_string())
+            .or_insert(TeamMember {
+                id: ADMIN_USER_ID.to_string(),
+                user_id: ADMIN_USER_ID.to_string(),
+                joined_at: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc)
+                    .format("%Y-%m-%d")
+                    .to_string(),
+            });
 
         let redirect_uri = format!("{}/api/oauth/callback", config.server.site_url);
 
@@ -486,8 +666,14 @@ impl AppState {
             // Validate permission names in config
             for (role, perms) in &config.permissions {
                 for p in perms {
-                    if p != crate::types::PERM_WILDCARD && !crate::types::perms::ALL.contains(&p.as_str()) {
-                        tracing::warn!("配置中的权限名「{}」（角色: {}）不在已知权限列表中，将被忽略", p, role);
+                    if p != crate::types::PERM_WILDCARD
+                        && !crate::types::perms::ALL.contains(&p.as_str())
+                    {
+                        tracing::warn!(
+                            "配置中的权限名「{}」（角色: {}）不在已知权限列表中，将被忽略",
+                            p,
+                            role
+                        );
                     }
                 }
             }
@@ -508,8 +694,15 @@ impl AppState {
             cpoauth_client_secret: config.oauth.cp_client_secret,
             cpoauth_redirect_uri: redirect_uri,
             admin_password: config.admin.password,
-            site_name: config.site.name.clone().unwrap_or_else(|| "McGuffin".to_string()),
-            site_title: config.site.title.unwrap_or_else(|| config.site.name.unwrap_or_else(|| "McGuffin".to_string())),
+            site_name: config
+                .site
+                .name
+                .clone()
+                .unwrap_or_else(|| "McGuffin".to_string()),
+            site_title: config
+                .site
+                .title
+                .unwrap_or_else(|| config.site.name.unwrap_or_else(|| "McGuffin".to_string())),
             site_version,
             site_description: Arc::new(RwLock::new(site_description)),
             site_url: config.server.site_url,
@@ -524,7 +717,7 @@ impl AppState {
                     let mut keys: Vec<String> = difficulty_config.levels.keys().cloned().collect();
                     keys.sort();
                     keys
-                })
+                }),
             )),
             discussion_tags: Arc::new(RwLock::new(discussion_tags)),
             discussion_emojis: Arc::new(RwLock::new(discussion_emojis)),
@@ -590,7 +783,7 @@ impl AppState {
             .filter(|(_, e)| e.user_id == user_id)
             .map(|(token, e)| (token.clone(), e.last_active))
             .collect();
-        user_sessions.sort_by(|a, b| a.1.cmp(&b.1));
+        user_sessions.sort_by_key(|(_, t)| *t);
 
         // Evict oldest sessions beyond the limit
         while user_sessions.len() >= Self::MAX_SESSIONS_PER_USER {
@@ -599,10 +792,13 @@ impl AppState {
         }
 
         let token = uuid::Uuid::new_v4().to_string();
-        sessions.insert(token.clone(), SessionEntry {
-            user_id: user_id.to_string(),
-            last_active: Utc::now(),
-        });
+        sessions.insert(
+            token.clone(),
+            SessionEntry {
+                user_id: user_id.to_string(),
+                last_active: Utc::now(),
+            },
+        );
         token
     }
 
@@ -627,7 +823,12 @@ impl AppState {
                 *self.member_groups.write().await = load_member_groups(&reloaded_config);
 
                 let mut p = data.posts;
-                migrate_legacy_data(&mut p, &data.suggestions, &data.announcements, &data.discussions);
+                migrate_legacy_data(
+                    &mut p,
+                    &data.suggestions,
+                    &data.announcements,
+                    &data.discussions,
+                );
                 *self.posts.write().await = p;
 
                 // discussion_tags and discussion_emojis stay from config.toml
@@ -645,34 +846,56 @@ impl AppState {
     }
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Convert config.toml discussion_tags format to HashMap<String, DiscussionTag>
 fn load_discussion_tags(config: &AppConfig) -> std::collections::HashMap<String, DiscussionTag> {
     let mut map = std::collections::HashMap::new();
     for (name, fields) in &config.discussion_tags {
-        let color = fields.get("color").cloned().unwrap_or_else(|| "#888888".to_string());
+        let color = fields
+            .get("color")
+            .cloned()
+            .unwrap_or_else(|| "#888888".to_string());
         let description = fields.get("description").cloned().unwrap_or_default();
-        map.insert(name.clone(), DiscussionTag {
-            id: name.clone(),
-            name: name.clone(),
-            color,
-            description,
-            admin_only: fields.get("admin_only").and_then(|v| v.parse::<bool>().ok()).unwrap_or(false),
-        });
+        map.insert(
+            name.clone(),
+            DiscussionTag {
+                id: name.clone(),
+                name: name.clone(),
+                color,
+                description,
+                admin_only: fields
+                    .get("admin_only")
+                    .and_then(|v| v.parse::<bool>().ok())
+                    .unwrap_or(false),
+            },
+        );
     }
     map
 }
 
 /// Convert config.toml discussion_emojis format to HashMap<String, DiscussionEmoji>
-fn load_discussion_emojis(config: &AppConfig) -> std::collections::HashMap<String, DiscussionEmoji> {
+fn load_discussion_emojis(
+    config: &AppConfig,
+) -> std::collections::HashMap<String, DiscussionEmoji> {
     let mut map = std::collections::HashMap::new();
     for (name, fields) in &config.discussion_emojis {
         let char = fields.get("char").cloned().unwrap_or_default();
-        if char.is_empty() { continue; }
-        map.insert(name.clone(), DiscussionEmoji {
-            id: name.clone(),
-            name: name.clone(),
-            char,
-        });
+        if char.is_empty() {
+            continue;
+        }
+        map.insert(
+            name.clone(),
+            DiscussionEmoji {
+                id: name.clone(),
+                name: name.clone(),
+                char,
+            },
+        );
     }
     map
 }
@@ -682,20 +905,29 @@ fn load_discussion_emojis(config: &AppConfig) -> std::collections::HashMap<Strin
 fn load_member_groups(config: &AppConfig) -> HashMap<String, MemberGroup> {
     let mut map = HashMap::new();
     for (id, fields) in &config.permission_groups {
-        let name = fields.get("name")
+        let name = fields
+            .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let perms: Vec<String> = fields.get("permissions")
+        let perms: Vec<String> = fields
+            .get("permissions")
             .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
         if !id.is_empty() && !name.is_empty() {
-            map.insert(id.clone(), MemberGroup {
-                id: id.clone(),
-                name,
-                permissions: perms,
-            });
+            map.insert(
+                id.clone(),
+                MemberGroup {
+                    id: id.clone(),
+                    name,
+                    permissions: perms,
+                },
+            );
         }
     }
     map
@@ -706,10 +938,16 @@ fn load_difficulty_config(config: &AppConfig) -> crate::types::DifficultyConfig 
     if !config.difficulty.is_empty() {
         let mut levels = std::collections::HashMap::new();
         for (name, fields) in &config.difficulty {
-            levels.insert(name.clone(), crate::types::DifficultyLevel {
-                label: fields.get("label").cloned().unwrap_or_else(|| name.clone()),
-                color: fields.get("color").cloned().unwrap_or_else(|| "#888888".to_string()),
-            });
+            levels.insert(
+                name.clone(),
+                crate::types::DifficultyLevel {
+                    label: fields.get("label").cloned().unwrap_or_else(|| name.clone()),
+                    color: fields
+                        .get("color")
+                        .cloned()
+                        .unwrap_or_else(|| "#888888".to_string()),
+                },
+            );
         }
         if !levels.is_empty() {
             return crate::types::DifficultyConfig { levels };
@@ -741,7 +979,12 @@ fn load_config() -> AppConfig {
             std::fs::read_to_string("mcguffin.toml")
                 .ok()
                 .and_then(|c| toml::from_str::<serde_json::Value>(&c).ok())
-                .and_then(|v| v.get("admin")?.get("password")?.as_str().map(|s| s.to_string()))
+                .and_then(|v| {
+                    v.get("admin")?
+                        .get("password")?
+                        .as_str()
+                        .map(|s| s.to_string())
+                })
                 .unwrap_or_else(|| "admin123".to_string())
         }
     };
@@ -754,9 +997,11 @@ fn load_config() -> AppConfig {
         },
         admin: crate::types::AdminConfig {
             password: admin_password,
-            display_name: std::env::var("ADMIN_DISPLAY_NAME").unwrap_or_else(|_| "管理员".to_string()),
+            display_name: std::env::var("ADMIN_DISPLAY_NAME")
+                .unwrap_or_else(|_| "管理员".to_string()),
         },
-        site: crate::types::SiteConfig { title: None,
+        site: crate::types::SiteConfig {
+            title: None,
             name: std::env::var("SITE_NAME").ok(),
             ..Default::default()
         },
@@ -779,7 +1024,7 @@ fn load_config() -> AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ServerConfig, AdminConfig, SiteConfig, OAuthConfig};
+    use crate::types::{AdminConfig, OAuthConfig, ServerConfig, SiteConfig};
     use std::collections::HashMap;
 
     #[test]
@@ -794,7 +1039,11 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None, title: None, ..Default::default() },
+            site: SiteConfig {
+                name: None,
+                title: None,
+                ..Default::default()
+            },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),
@@ -828,7 +1077,11 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None, title: None, ..Default::default() },
+            site: SiteConfig {
+                name: None,
+                title: None,
+                ..Default::default()
+            },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),
@@ -862,7 +1115,11 @@ mod tests {
                 password: "pass".to_string(),
                 display_name: "Admin".to_string(),
             },
-            site: SiteConfig { name: None, title: None, ..Default::default() },
+            site: SiteConfig {
+                name: None,
+                title: None,
+                ..Default::default()
+            },
             oauth: OAuthConfig {
                 cp_client_id: "id".to_string(),
                 cp_client_secret: "secret".to_string(),

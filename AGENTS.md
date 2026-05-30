@@ -19,32 +19,32 @@
 
 ### 2.1 项目根目录
 
-| 文件 | 用途 |
-|------|------|
-| `DEMAND.md` | 需求文档（功能定义、UI 规范） |
+| 文件             | 用途                                |
+| ---------------- | ----------------------------------- |
+| `DEMAND.md`      | 需求文档（功能定义、UI 规范）       |
 | `DEVELOPMENT.md` | 详细开发文档（数据模型、API、架构） |
-| `GUIDE.md` | 面向人类开发者的指南 |
-| `README.md` | 项目主页（面向用户） |
+| `GUIDE.md`       | 面向人类开发者的指南                |
+| `README.md`      | 项目主页（面向用户）                |
 
 ### 2.2 前端（`web/`）
 
-| 文件 | 用途 |
-|------|------|
-| `web/src/App.tsx` | **核心文件**：所有页面组件、路由、权限逻辑集中在此 |
-| `web/src/main.tsx` | 应用入口 |
-| `web/src/oauthConfig.ts` | OAuth 配置、PKCE 工具函数、token 管理 |
-| `web/package.json` | 依赖与脚本 |
-| `web/vite.config.ts` | Vite 构建配置 |
-| `web/tailwind.config.js` | Tailwind CSS 配置 |
-| `web/tsconfig.json` | TypeScript 配置 |
+| 文件                     | 用途                                               |
+| ------------------------ | -------------------------------------------------- |
+| `web/src/App.tsx`        | **核心文件**：所有页面组件、路由、权限逻辑集中在此 |
+| `web/src/main.tsx`       | 应用入口                                           |
+| `web/src/oauthConfig.ts` | OAuth 配置、PKCE 工具函数、token 管理              |
+| `web/package.json`       | 依赖与脚本                                         |
+| `web/vite.config.ts`     | Vite 构建配置                                      |
+| `web/tailwind.config.js` | Tailwind CSS 配置                                  |
+| `web/tsconfig.json`      | TypeScript 配置                                    |
 
 ### 2.3 后端（`server/`）
 
-| 文件 | 用途 |
-|------|------|
-| `server/src/main.rs` | 服务入口：路由注册、中间件配置、启动逻辑 |
-| `server/src/lib.rs` | **核心文件**：数据模型定义、AppState、所有 API handler |
-| `server/Cargo.toml` | Rust 依赖配置 |
+| 文件                 | 用途                                                   |
+| -------------------- | ------------------------------------------------------ |
+| `server/src/main.rs` | 服务入口：路由注册、中间件配置、启动逻辑               |
+| `server/src/lib.rs`  | **核心文件**：数据模型定义、AppState、所有 API handler |
+| `server/Cargo.toml`  | Rust 依赖配置                                          |
 
 ---
 
@@ -187,17 +187,29 @@ POST /api/problems/review/:id/:action  → 审核题目 (action: approve|reject)
 
 ### 6.1 安装与启动
 
+`just` 是推荐的构建工具，安装方式：`brew install just`（macOS）或 `cargo install just`。
+
 ```bash
-# 前端
+# 全部构建
+just build
+
+# 安装到系统（sudo）
+sudo just install
+
+# 安装到用户目录
+just install-user
+
+# 前端开发
 cd web && bun install && bun run dev
 
-# 后端
+# 后端开发
 cd server && cargo run
 
 # 生产构建
-cd web && bun run build          # → dist/
-cd server && cargo build --release  # → target/release/mcguffin-server
+just release
 ```
+
+tip: 运行 `just` 查看所有可用命令。
 
 ### 6.2 运行测试
 
@@ -299,11 +311,11 @@ cd web && bun run build  # 包含 tsc --noEmit
 
 当 CP OAuth 未配置或请求失败时，系统回退到演示模式：
 
-| 输入的 token | 模拟身份 |
-|-------------|---------|
-| `admin_token` | 张三，admin，已加入团队 |
-| `member_token` | 赵六，member，已加入团队 |
-| `pending_token` | 申请者，pending，待审核 |
+| 输入的 token     | 模拟身份                  |
+| ---------------- | ------------------------- |
+| `admin_token`    | 张三，admin，已加入团队   |
+| `member_token`   | 赵六，member，已加入团队  |
+| `pending_token`  | 申请者，pending，待审核   |
 | `new_user_token` | 新用户，guest，未加入团队 |
 
 其他任意 token 也会创建 guest 用户。
@@ -319,12 +331,14 @@ cd web && bun run build  # 包含 tsc --noEmit
 系统提示词是每轮对话中最先加载、最常重复的部分。
 
 **关键原则：**
+
 - **去掉废话** —— 删除"你是一个优秀的助手"、"尽力帮助用户"等无信息量的套话
 - **提炼为极简指令** —— 用最少的词传达完整的约束
 - **优先使用 context files（AGENTS.md）** —— 项目结构和约定写在 AGENTS.md 中，代理会自动读取，无需塞入系统提示词
 - **技能按需加载** —— 不要一次性加载所有技能，只用 `/skill name` 按需注入
 
 **Hermes 实践参考：**
+
 ```python
 # prompt_builder.py 中的系统提示词拼装逻辑：
 # - 身份描述 + 平台提示 → ~200 tokens
@@ -348,24 +362,29 @@ cd web && bun run build  # 包含 tsc --noEmit
 **核心策略：**
 
 **1. 摘要压缩（Hermes 的 ContextCompressor）**
+
 ```
 [CONTEXT COMPACTION — REFERENCE ONLY]
 Earlier turns were compacted into the summary below...
 ```
+
 - 使用辅助模型（便宜/快速）对历史回合做摘要，替代原文
 - 保护上下文窗口的头（系统提示词）和尾（最新消息）
 - 压缩比例为 20%（摘要 token 数 = 被压缩内容 × 0.20）
 - 摘要上限 12,000 tokens，下限 2,000 tokens
 
 **2. 工具输出裁剪**
+
 - 旧的工具结果替换为占位符：`[Old tool output cleared to save context space]`
 - 长文件读取结果如果已过时，优先裁剪
 
 **3. 迭代式摘要更新**
+
 - 多次压缩场景下，每次都复用上次的摘要并追加新内容
 - 避免每次压缩丢失累积信息
 
 **操作建议：**
+
 ```bash
 # 手动触发压缩（Hermes）
 /compress
@@ -380,11 +399,13 @@ hermes config set compression.target_ratio 0.20 # 压缩后保留 20%
 工具调用是 token 消耗的大头 —— 每次调用都有工具定义 + 参数 + 结果。
 
 **1. 批量工具调用**
+
 - 一次性返回多个工具调用，减少 LLM 往返次数
 - 每轮往返 = 工具定义 tokens + 参数 tokens + 结果 tokens
 - 合并独立操作为单次调用
 
 **2. 只启用必要工具**
+
 ```bash
 # 查看已启用的工具集
 hermes tools list
@@ -396,17 +417,19 @@ hermes tools disable vision   # 非图片处理不需要视觉
 ```
 
 **3. 简化工具定义**
+
 - 工具 schema 中的 `description` 字段每次调用都会被发送
 - 精简描述文本，去掉冗长的示例
 - 不加代理不认识的语言注释
 
 **4. 工具结果裁剪**
+
 - 读取文件时只取需要的部分（`head -50` / `offset + limit`）
 - `ls` 只列出需要的目录，用 `grep` 过滤
 - 长命令结果用 `tail` 截断
 
 **对比：**
-| 优化 | 每轮消耗 | 
+| 优化 | 每轮消耗 |
 |------|---------|
 | 12 个工具集（全开） | ~5000 tokens |
 | 5 个必要工具集 | ~2000 tokens |
@@ -421,17 +444,20 @@ hermes tools disable vision   # 非图片处理不需要视觉
 **最佳实践：**
 
 **1. 稳定系统提示词**
+
 - 系统提示词放在消息列表最前面
 - 避免在会话中动态修改系统提示词（破坏缓存）
 - 技能描述等变化的内容放到系统提示词后面
 
 **2. 缓存友好排序**
+
 ```
 [缓存命中区域]          → 不变的：系统提示词 + AGENTS.md + skill 索引
 [缓存不命中区域]         → 变化的：当前轮 user message + 最新 tool results
 ```
 
 **3. 长上下文复用**
+
 - 频繁切换会话会丢弃缓存
 - 尽量在同一个会话中完成相关任务序列
 
@@ -446,11 +472,13 @@ hermes tools disable vision   # 非图片处理不需要视觉
 ### 11.5 消息序列优化
 
 **不要做的事：**
+
 - ❌ 连续发送空消息或纯标点消息
 - ❌ 在同一轮中同时发送多条相同意图的消息
 - ❌ 用多条消息分段发送同一个问题
 
 **要做的：**
+
 - ✅ 一次性发送完整的上下文和需求
 - ✅ 需要修正时，用 /undo + 重发，避免累积无用的修正轮
 - ✅ 阶段性完成后主动 `/compress` 压缩历史
@@ -462,11 +490,12 @@ hermes tools disable vision   # 非图片处理不需要视觉
 ```yaml
 # Hermes config
 agent:
-  max_turns: 90              # 最大迭代轮次（默认 90）
-  iteration_budget: 30       # 单任务预算（超过则从摘要模式继续）
+  max_turns: 90 # 最大迭代轮次（默认 90）
+  iteration_budget: 30 # 单任务预算（超过则从摘要模式继续）
 ```
 
 **策略：**
+
 - 简单任务设置 `max_turns: 10-20`
 - 复杂任务设置 `max_turns: 50-90`
 - 使用 `delegate_task`（Hermes 子代理）将大任务拆分为多个小会话 —— 每个子代理独立清理上下文
@@ -476,6 +505,7 @@ agent:
 将大任务拆分为子代理可以有效分摊上下文开销：
 
 **Hermes delegate_task 的 token 优势：**
+
 - 子代理有独立的上下文窗口，不共享父代理的历史
 - 子代理可以只启用特定工具集（如 `['terminal', 'file']`）
 - 每个子代理结束时只返回摘要，父代理上下文不会被中间结果污染
@@ -490,14 +520,15 @@ delegate_task(goal="实现X功能", toolsets=['terminal', 'file'])
 
 不同模型的价格差异可达 100 倍：
 
-| 模型 | 输入价格（每百万 token） | 适合场景 |
-|------|-----------------------|---------|
-| Claude Sonnet 4 | $3 | 日常编码、代码审查 |
-| DeepSeek V4 | $0.5 | 简单重构、文档生成 |
-| Gemini 2.5 Flash | $0.15 | 摘要、分类、简单查询 |
-| Claude Haiku 3.5 | $0.80 | 快速迭代的简单任务 |
+| 模型             | 输入价格（每百万 token） | 适合场景             |
+| ---------------- | ------------------------ | -------------------- |
+| Claude Sonnet 4  | $3                       | 日常编码、代码审查   |
+| DeepSeek V4      | $0.5                     | 简单重构、文档生成   |
+| Gemini 2.5 Flash | $0.15                    | 摘要、分类、简单查询 |
+| Claude Haiku 3.5 | $0.80                    | 快速迭代的简单任务   |
 
 **策略：**
+
 - 复杂任务用强模型（Sonnet/Opus）
 - 简单重复任务用便宜模型（Haiku/Gemini Flash/DeepSeek）
 - 使用 `hermes model` 在会话中切换模型
@@ -535,9 +566,9 @@ hermes insights --days 7      # 查看 7 天用量
 
 对于 McGuffin 项目日常开发（Rust + TypeScript），采用上述优化后：
 
-| 场景 | 优化前（每轮） | 优化后（每轮） |
-|------|--------------|--------------|
-| 简单代码修改 | ~8000 tokens | ~3000 tokens |
-| 新增功能（5-10 轮） | ~80K tokens | ~25K tokens |
-| 跨文件重构 | ~200K tokens | ~50K tokens |
-| **预估节省** | — | **~60-70%** |
+| 场景                | 优化前（每轮） | 优化后（每轮） |
+| ------------------- | -------------- | -------------- |
+| 简单代码修改        | ~8000 tokens   | ~3000 tokens   |
+| 新增功能（5-10 轮） | ~80K tokens    | ~25K tokens    |
+| 跨文件重构          | ~200K tokens   | ~50K tokens    |
+| **预估节省**        | —              | **~60-70%**    |

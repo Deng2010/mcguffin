@@ -25,6 +25,10 @@ pub mod perms {
 
     // ── Contests ──
     pub const MANAGE_CONTESTS: &str = "manage_contests";
+    /// View all contests including drafts
+    pub const VIEW_ALL_CONTESTS: &str = "view_all_contests";
+    /// View only public contests
+    pub const VIEW_PUBLIC_CONTESTS: &str = "view_public_contests";
 
     // ── Site ──
     pub const MANAGE_SITE: &str = "manage_site";
@@ -45,14 +49,26 @@ pub mod perms {
 
     /// All defined permissions (used for config validation)
     pub const ALL: &[&str] = &[
-        VIEW_SHOWCASE, APPLY_JOIN,
-        VIEW_TEAM, MANAGE_TEAM, MANAGE_MEMBERS,
-        SUBMIT_PROBLEM, VIEW_PROBLEMS, APPROVE_PROBLEM,
+        VIEW_SHOWCASE,
+        APPLY_JOIN,
+        VIEW_TEAM,
+        MANAGE_TEAM,
+        MANAGE_MEMBERS,
+        SUBMIT_PROBLEM,
+        VIEW_PROBLEMS,
+        APPROVE_PROBLEM,
         MANAGE_CONTESTS,
+        VIEW_ALL_CONTESTS,
+        VIEW_PUBLIC_CONTESTS,
         MANAGE_SITE,
         EDIT_SHOWCASE,
-        VIEW_DISCUSSIONS, MANAGE_DISCUSSIONS, MANAGE_TAGS,
-        MANAGE_NOTIFICATIONS, MANAGE_BACKUPS, VIEW_STATS, MANAGE_POSTS,
+        VIEW_DISCUSSIONS,
+        MANAGE_DISCUSSIONS,
+        MANAGE_TAGS,
+        MANAGE_NOTIFICATIONS,
+        MANAGE_BACKUPS,
+        VIEW_STATS,
+        MANAGE_POSTS,
     ];
 }
 
@@ -94,34 +110,48 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
     let mut superadmin_perms = vec![PERM_WILDCARD.to_string()];
     superadmin_perms.extend(all_perms);
     m.insert("superadmin".to_string(), superadmin_perms);
-    m.insert("admin".to_string(), vec![
-        perms::VIEW_TEAM.to_string(),
-        perms::MANAGE_TEAM.to_string(),
-        perms::MANAGE_MEMBERS.to_string(),
-        perms::SUBMIT_PROBLEM.to_string(),
-        perms::VIEW_PROBLEMS.to_string(),
-        perms::APPROVE_PROBLEM.to_string(),
-        perms::MANAGE_CONTESTS.to_string(),
-        perms::MANAGE_SITE.to_string(),
-        perms::EDIT_SHOWCASE.to_string(),
-        perms::VIEW_DISCUSSIONS.to_string(),
-        perms::MANAGE_POSTS.to_string(),
-        perms::MANAGE_TAGS.to_string(),
-        perms::MANAGE_NOTIFICATIONS.to_string(),
-        perms::VIEW_STATS.to_string(),
-    ]);
-    m.insert("member".to_string(), vec![
-        perms::VIEW_SHOWCASE.to_string(),
-        perms::VIEW_TEAM.to_string(),
-        perms::SUBMIT_PROBLEM.to_string(),
-        perms::VIEW_PROBLEMS.to_string(),
-        perms::VIEW_DISCUSSIONS.to_string(),
-    ]);
-    m.insert("guest".to_string(), vec![
-        perms::VIEW_SHOWCASE.to_string(),
-        perms::APPLY_JOIN.to_string(),
-        perms::VIEW_DISCUSSIONS.to_string(),
-    ]);
+    m.insert(
+        "admin".to_string(),
+        vec![
+            perms::VIEW_TEAM.to_string(),
+            perms::MANAGE_TEAM.to_string(),
+            perms::MANAGE_MEMBERS.to_string(),
+            perms::SUBMIT_PROBLEM.to_string(),
+            perms::VIEW_PROBLEMS.to_string(),
+            perms::APPROVE_PROBLEM.to_string(),
+            perms::MANAGE_CONTESTS.to_string(),
+            perms::VIEW_ALL_CONTESTS.to_string(),
+            perms::VIEW_PUBLIC_CONTESTS.to_string(),
+            perms::MANAGE_SITE.to_string(),
+            perms::EDIT_SHOWCASE.to_string(),
+            perms::VIEW_DISCUSSIONS.to_string(),
+            perms::MANAGE_POSTS.to_string(),
+            perms::MANAGE_TAGS.to_string(),
+            perms::MANAGE_NOTIFICATIONS.to_string(),
+            perms::VIEW_STATS.to_string(),
+        ],
+    );
+    m.insert(
+        "member".to_string(),
+        vec![
+            perms::VIEW_SHOWCASE.to_string(),
+            perms::VIEW_TEAM.to_string(),
+            perms::SUBMIT_PROBLEM.to_string(),
+            perms::VIEW_PROBLEMS.to_string(),
+            perms::VIEW_ALL_CONTESTS.to_string(),
+            perms::VIEW_PUBLIC_CONTESTS.to_string(),
+            perms::VIEW_DISCUSSIONS.to_string(),
+        ],
+    );
+    m.insert(
+        "guest".to_string(),
+        vec![
+            perms::VIEW_SHOWCASE.to_string(),
+            perms::APPLY_JOIN.to_string(),
+            perms::VIEW_PUBLIC_CONTESTS.to_string(),
+            perms::VIEW_DISCUSSIONS.to_string(),
+        ],
+    );
     m
 }
 
@@ -340,13 +370,13 @@ pub struct Problem {
     pub contest_id: Option<String>,
     pub difficulty: String,
     pub content: String,
-    pub solution: Option<String>,            // author's solution (markdown)
-    pub status: String,                       // pending | approved | published | rejected
+    pub solution: Option<String>, // author's solution (markdown)
+    pub status: String,           // pending | approved | published | rejected
     pub created_at: DateTime<Utc>,
     pub public_at: Option<DateTime<Utc>>,
-    pub claimed_by: Option<String>,           // user_id of verifier who claimed this
-    pub verifier_solution: Option<String>,    // verifier's solution (markdown)
-    pub visible_to: Vec<String>,              // user_ids who can see pending problem content
+    pub claimed_by: Option<String>, // user_id of verifier who claimed this
+    pub verifier_solution: Option<String>, // verifier's solution (markdown)
+    pub visible_to: Vec<String>,    // user_ids who can see pending problem content
     #[serde(default)]
     pub link: Option<String>,
     #[serde(default)]
@@ -577,10 +607,12 @@ pub struct AppConfig {
     pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     /// Discussion tags: name → { color, description }
     #[serde(default)]
-    pub discussion_tags: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub discussion_tags:
+        std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     /// Discussion emojis: name → { char }
     #[serde(default)]
-    pub discussion_emojis: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    pub discussion_emojis:
+        std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     /// Role→permissions mapping. Overrides the hardcoded defaults.
     /// superadmin = ["*"] means all permissions.
     /// Example: [permissions.roles.admin] = ["view_team", "manage_team", ...]
@@ -589,10 +621,8 @@ pub struct AppConfig {
     /// Group permissions: uuid → { name, permissions }
     /// Example: [permissions.groups."uuid"] = { name = "出题组", permissions = ["submit_problem"] }
     #[serde(default, deserialize_with = "deserialize_permission_groups")]
-    pub permission_groups: std::collections::HashMap<
-        String,
-        std::collections::HashMap<String, serde_json::Value>,
-    >,
+    pub permission_groups:
+        std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>>,
 }
 
 /// Custom deserializer for role permissions that gracefully handles nested [permissions.roles] format
@@ -603,8 +633,7 @@ where
     D: serde::Deserializer<'de>,
 {
     use std::collections::HashMap;
-    <HashMap<String, Vec<String>>>::deserialize(deserializer)
-        .or_else(|_| Ok(HashMap::new()))
+    <HashMap<String, Vec<String>>>::deserialize(deserializer).or_else(|_| Ok(HashMap::new()))
 }
 
 /// Custom deserializer for permission_groups that gracefully handles TOML inline tables
@@ -631,8 +660,12 @@ pub struct ServerConfig {
     pub data_file: String,
 }
 
-fn default_port() -> u16 { 3000 }
-fn default_data_file() -> String { "mcguffin_data.json".to_string() }
+fn default_port() -> u16 {
+    3000
+}
+fn default_data_file() -> String {
+    "mcguffin_data.json".to_string()
+}
 
 #[derive(Deserialize)]
 pub struct AdminConfig {
@@ -641,21 +674,17 @@ pub struct AdminConfig {
     pub display_name: String,
 }
 
-fn default_admin_display_name() -> String { "管理员".to_string() }
+fn default_admin_display_name() -> String {
+    "管理员".to_string()
+}
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct SiteConfig {
     pub name: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
     pub difficulty_order: Option<Vec<String>>,
-}
-
-impl Default for SiteConfig {
-    fn default() -> Self {
-        Self { name: None, title: None, difficulty_order: None }
-    }
 }
 
 #[derive(Deserialize)]
@@ -686,9 +715,27 @@ pub struct DifficultyConfig {
 impl Default for DifficultyConfig {
     fn default() -> Self {
         let mut levels = std::collections::HashMap::new();
-        levels.insert("Easy".to_string(), DifficultyLevel { label: "简单".to_string(), color: "#22c55e".to_string() });
-        levels.insert("Medium".to_string(), DifficultyLevel { label: "中等".to_string(), color: "#f59e0b".to_string() });
-        levels.insert("Hard".to_string(), DifficultyLevel { label: "困难".to_string(), color: "#ef4444".to_string() });
+        levels.insert(
+            "Easy".to_string(),
+            DifficultyLevel {
+                label: "简单".to_string(),
+                color: "#22c55e".to_string(),
+            },
+        );
+        levels.insert(
+            "Medium".to_string(),
+            DifficultyLevel {
+                label: "中等".to_string(),
+                color: "#f59e0b".to_string(),
+            },
+        );
+        levels.insert(
+            "Hard".to_string(),
+            DifficultyLevel {
+                label: "困难".to_string(),
+                color: "#ef4444".to_string(),
+            },
+        );
         Self { levels }
     }
 }
@@ -925,9 +972,9 @@ pub struct PostListItem {
 #[derive(Deserialize)]
 pub struct CommunityQuery {
     #[serde(default)]
-    pub tags: Option<String>,            // comma-separated tag IDs
+    pub tags: Option<String>, // comma-separated tag IDs
     #[serde(default)]
-    pub tag: Option<String>,             // single tag (backward compat)
+    pub tag: Option<String>, // single tag (backward compat)
 }
 
 // ============== Tests ==============
@@ -994,7 +1041,10 @@ color = "#ef4444"
 "##;
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.difficulty.len(), 2);
-        assert_eq!(config.difficulty.get("Easy").unwrap().get("label").unwrap(), "简单");
+        assert_eq!(
+            config.difficulty.get("Easy").unwrap().get("label").unwrap(),
+            "简单"
+        );
     }
 
     #[test]

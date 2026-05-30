@@ -1,14 +1,14 @@
+use axum::http::HeaderMap;
 use axum::{
     extract::{Path, State},
     Json,
 };
-use axum::http::HeaderMap;
 
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{get_token_from_headers, resolve_user};
-use std::collections::HashMap;
 use axum::extract::Query;
+use std::collections::HashMap;
 
 // ============== Get Current User ==============
 
@@ -84,7 +84,9 @@ pub async fn update_profile(
     };
 
     // Pre-check display_name uniqueness before write lock
-    let name_change = payload.display_name.as_ref()
+    let name_change = payload
+        .display_name
+        .as_ref()
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty());
 
@@ -99,15 +101,17 @@ pub async fn update_profile(
             let users = state.users.read().await;
             match users.get(&user_id) {
                 Some(u) => u.display_name.clone(),
-                None => return Json(serde_json::json!({"success": false, "message": "用户不存在"})),
+                None => {
+                    return Json(serde_json::json!({"success": false, "message": "用户不存在"}))
+                }
             }
         };
         if *name != current_display_name {
             let is_taken = {
                 let users = state.users.read().await;
-                users.values().any(|u| {
-                    u.id != user_id && (u.display_name == *name || u.username == *name)
-                })
+                users
+                    .values()
+                    .any(|u| u.id != user_id && (u.display_name == *name || u.username == *name))
             };
             if is_taken {
                 return Json(serde_json::json!({
@@ -200,7 +204,9 @@ pub async fn check_name_available(
     };
 
     let users = state.users.read().await;
-    let taken = users.values().any(|u| u.id != user_id && (u.display_name == name || u.username == name));
+    let taken = users
+        .values()
+        .any(|u| u.id != user_id && (u.display_name == name || u.username == name));
 
     Json(serde_json::json!({"available": !taken}))
 }
@@ -214,18 +220,21 @@ pub async fn verify_token(
     if let Some(token) = get_token_from_headers(&headers) {
         let sessions = state.sessions.read().await;
         if let Some(entry) = sessions.get(&token) {
-            return Json(VerifyResponse { valid: true, user_id: entry.user_id.clone() });
+            return Json(VerifyResponse {
+                valid: true,
+                user_id: entry.user_id.clone(),
+            });
         }
     }
-    Json(VerifyResponse { valid: false, user_id: String::new() })
+    Json(VerifyResponse {
+        valid: false,
+        user_id: String::new(),
+    })
 }
 
 // ============== Logout ==============
 
-pub async fn logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Json<LogoutResponse> {
+pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Json<LogoutResponse> {
     if let Some(token) = get_token_from_headers(&headers) {
         state.sessions.write().await.remove(&token);
         state.save().await;
