@@ -145,7 +145,7 @@ export default function CommunityPage() {
 
       {/* ── Create form ── */}
       {showCreateForm && (
-        <div className="mb-6 p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700">
+        <div className="mb-6 p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">发布帖子</h2>
           </div>
@@ -213,7 +213,7 @@ export default function CommunityPage() {
           {filteredPosts.map(p => (
             <div
               key={p.id}
-              className={`bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 border-l-4 cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors ${p.pinned ? 'border-yellow-400 border-l-4' : 'border-l-gray-300 dark:border-l-gray-700'}`}
+              className={`bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow border-l-4 cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors ${p.pinned ? 'border-yellow-400 border-l-4' : 'border-l-gray-300 dark:border-l-gray-700'}`}
               onClick={() => goToDetail(p)}
             >
               <div className="p-4">

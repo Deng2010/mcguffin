@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
+use crate::state::resolve_config_path;
 use crate::state::AppState;
 use crate::types::{
     AuditEntry, ChangeRolePayload, CreateGroupPayload, DifficultyLevel, SetAclPayload,
@@ -15,8 +16,6 @@ use crate::types::{
     UpdateGroupPayload, PERM_WILDCARD,
 };
 use crate::utils::AuthUser;
-
-const CONFIG_PATH: &str = "/usr/share/mcguffin/config.toml";
 
 // ============== Config Schema ==============
 
@@ -89,14 +88,39 @@ pub struct UpdateConfigPayload {
 }
 
 fn read_config_raw() -> Result<String, String> {
-    std::fs::read_to_string(CONFIG_PATH).map_err(|e| format!("无法读取配置文件: {}", e))
+    let path = resolve_config_path();
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(s),
+        Err(_) => {
+            // 文件不存在时返回最小默认配置，而不是报错
+            Ok(r#"[server]
+site_url = "http://localhost:3000"
+port = 3000
+data_file = "mcguffin_data.json"
+
+[admin]
+password = "admin123"
+display_name = "管理员"
+
+[oauth]
+cp_client_id = ""
+cp_client_secret = ""
+"#
+            .to_string())
+        }
+    }
 }
 
 fn write_config_raw(content: &str) -> Result<(), String> {
+    let path = resolve_config_path();
+    // 确保目录存在
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("无法创建配置目录: {}", e))?;
+    }
     // Write to temp file first, then atomically rename
-    let tmp = format!("{}.tmp", CONFIG_PATH);
+    let tmp = format!("{}.tmp", path.display());
     std::fs::write(&tmp, content).map_err(|e| format!("无法写入配置文件: {}", e))?;
-    std::fs::rename(&tmp, CONFIG_PATH).map_err(|e| format!("无法更新配置文件: {}", e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("无法更新配置文件: {}", e))?;
     Ok(())
 }
 
@@ -492,6 +516,10 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
     }
 
     // Write discussion_tags — remove old, add new
+    // 确保段存在（默认配置模板可能没有此段）
+    if !doc.contains_key("discussion_tags") {
+        doc["discussion_tags"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
     if let Some(t) = doc
         .get_mut("discussion_tags")
         .and_then(|s| s.as_table_mut())
@@ -518,6 +546,10 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
     }
 
     // Write discussion_emojis — remove old, add new
+    // 确保段存在
+    if !doc.contains_key("discussion_emojis") {
+        doc["discussion_emojis"] = toml_edit::Item::Table(toml_edit::Table::new());
+    }
     if let Some(t) = doc
         .get_mut("discussion_emojis")
         .and_then(|s| s.as_table_mut())
@@ -1063,7 +1095,7 @@ pub async fn export_config(
     auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
         .await?;
 
-    match std::fs::read_to_string(CONFIG_PATH) {
+    match std::fs::read_to_string(resolve_config_path()) {
         Ok(content) => {
             let filename = format!("config_{}.toml", Local::now().format("%Y%m%d_%H%M%S"));
             Ok(Json(serde_json::json!({

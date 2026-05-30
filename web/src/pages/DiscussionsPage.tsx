@@ -171,7 +171,7 @@ export default function DiscussionsPage() {
 
       {/* Create form */}
       {showForm && (
-        <div className="mb-6 p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700">
+        <div className="mb-6 p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow">
           {/* Title */}
           <div className="mb-3">
             <input
@@ -314,7 +314,7 @@ export default function DiscussionsPage() {
           pagedDiscussions.map(d => (
             <div
               key={d.id}
-              className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 border-l-4 border-l-gray-300"
+              className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow border-l-4 border-l-gray-300"
             >
               <div className="p-4">
                 {/* Title row */}

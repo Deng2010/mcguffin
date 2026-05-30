@@ -212,7 +212,7 @@ export default function DiscussionDetailPage() {
       </button>
 
       {/* Discussion card */}
-      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-6 mb-6">
+      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-6 mb-6">
         {/* Emoji + Title + Delete */}
         <div className="flex items-start gap-3 mb-3">
           {discussion.emoji && (
@@ -493,7 +493,7 @@ export default function DiscussionDetailPage() {
       </div>
 
       {/* Top-level reply form */}
-      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4 relative">
+      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-4 relative">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">回复</h3>
         <div className="relative">
           <MarkdownEditor

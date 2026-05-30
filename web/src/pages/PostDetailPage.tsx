@@ -646,7 +646,7 @@ export default function PostDetailPage() {
 
       {/* Top-level reply form */}
       {isAuthenticated ? (
-      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4 relative">
+      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-4 relative">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">回复</h3>
         <div className="relative">
           <MarkdownEditor
@@ -679,7 +679,7 @@ export default function PostDetailPage() {
         </div>
       </div>
       ) : (
-        <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-6 text-center text-gray-400 dark:text-gray-500">
+        <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-6 text-center text-gray-400 dark:text-gray-500">
           <p className="text-sm">请<a href="/login" className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 underline">登录</a>后参与回复</p>
         </div>
       )}

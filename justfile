@@ -22,6 +22,7 @@ build-backend:
 # 仅构建前端
 build-frontend:
     @echo "── 构建前端 ──"
+    rm -rf web/dist
     cd web && bun install && bun run build
     @echo "✓ 前端构建完成: web/dist/"
 
@@ -107,13 +108,14 @@ install: build
     cp server/target/release/mcguffin-server {{ lib_dir }}/
     cp server/target/release/mcguffin {{ bin_dir }}/
     cp -r web/dist/* {{ web_dist_dir }}/dist/
+    test -f {{ lib_dir }}/mcguffin_data.json && echo "  保留现有数据文件" || (test -f mcguffin_data.json && cp mcguffin_data.json {{ lib_dir }}/ && echo "  已复制数据文件" || echo "  （无数据文件，将创建新数据）")
     @echo "✓ 安装完成"
     @echo "  二进制:   {{ lib_dir }}/mcguffin-server"
     @echo "  CLI:      {{ bin_dir }}/mcguffin"
     @echo "  Web 静态: {{ web_dist_dir }}/dist/"
     @echo ""
     @echo "启动服务:  cd {{ lib_dir }} && ./mcguffin-server"
-    @echo "配置:      mcguffin --config <path> init"
+    @echo "配置:      mcguffin config set server.site_url <url>"
 
 # 安装到用户目录（无需 root，仅 Linux/macOS）
 install-user: build

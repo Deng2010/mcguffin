@@ -118,7 +118,7 @@ export default function SuggestionDetailPage() {
         返回社区
       </button>
 
-      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-6">
+      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-6">
         {/* Header */}
         <div className="flex items-start gap-3 mb-3">
           <div className="min-w-0 flex-1">

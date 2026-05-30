@@ -69,7 +69,7 @@ pub async fn get_problems(
             } else if is_member {
                 // Members see: published, approved, pending, problems they authored,
                 // and problems where they're in visible_to
-                let is_author = current_uid.as_ref().is_some_and(|uid| p.author_id == *uid);
+                let is_author = current_uid.as_ref().is_some_and(|uid| p.is_author(uid));
                 let ok = p.status == "published"
                     || p.status == "approved"
                     || p.status == "pending"
@@ -133,8 +133,7 @@ pub async fn get_problems(
                 has_verifier_solution: p.verifier_solution.is_some(),
                 link: p.link.clone(),
                 remark: if p.status == "pending"
-                    && (is_admin_user
-                        || current_uid.as_ref().is_some_and(|uid| p.author_id == *uid))
+                    && (is_admin_user || current_uid.as_ref().is_some_and(|uid| p.is_author(uid)))
                 {
                     p.remark.clone()
                 } else {
@@ -186,7 +185,7 @@ pub async fn get_problem_detail(
     };
     let is_author = current_user
         .as_ref()
-        .is_some_and(|(uid, _)| problem.author_id == *uid);
+        .is_some_and(|(uid, _)| problem.is_author(uid));
 
     // Permission check
     let can_view = match problem.status.as_str() {
@@ -570,7 +569,7 @@ pub async fn claim_problem(
             })
         }
     };
-    if problem.author_id == user_id {
+    if problem.is_author(&user_id) {
         return Json(ClaimResponse {
             success: false,
             message: "不能认领自己的题目".to_string(),
@@ -880,7 +879,7 @@ pub async fn update_problem(
     };
 
     // Check permission: author or admin
-    if problem.author_id != user_id && !is_admin_user {
+    if !problem.is_author(&user_id) && !is_admin_user {
         return Json(ReviewResponse {
             success: false,
             message: "权限不足".to_string(),
@@ -985,7 +984,7 @@ pub async fn delete_problem(
     };
 
     // Author can delete their own pending problem; admin can delete anything
-    if problem.author_id != user_id && !is_admin_user {
+    if !problem.is_author(&user_id) && !is_admin_user {
         return Json(ReviewResponse {
             success: false,
             message: "权限不足".to_string(),

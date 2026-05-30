@@ -28,7 +28,7 @@ export default function ReplyCard({
   hideReplyButton,
 }: Props) {
   return (
-    <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-4">
+    <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-4">
       <div className="flex items-start gap-3">
         {/* Avatar */}
         {reply.author_avatar_url ? (

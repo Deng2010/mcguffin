@@ -126,7 +126,7 @@ export default function AdminGroupsPage() {
       {groups.length === 0 && <p className="text-center py-8 text-gray-400 dark:text-gray-500">暂无成员组</p>}
       <div className="space-y-4">
         {groups.map(g => (
-          <div key={g.id} className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div key={g.id} className="border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 shadow">
             {editingId === g.id ? (
               <div className="p-4">
                 <div className="flex items-center gap-2 mb-3">

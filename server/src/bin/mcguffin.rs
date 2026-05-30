@@ -176,6 +176,30 @@ fn find_server_binary() -> PathBuf {
     PathBuf::from("mcguffin-server")
 }
 
+/// 推断 mcguffin-server 的正确运行目录。
+/// server 的 main.rs 硬编码 `../web/dist` 作为前端静态资源路径，
+/// 因此运行目录必须是 `server/`（开发）或与 web/dist/ 同级（生产）。
+fn server_work_dir(server_path: &Path) -> PathBuf {
+    // 开发场景：二进制在 target/release/ 或 target/debug/ 下
+    if let Some(parent) = server_path.parent() {
+        if parent.ends_with("target/release") || parent.ends_with("target/debug") {
+            if let Some(project_root) = parent.parent().and_then(|p| p.parent()) {
+                // project_root 是 server/ 目录，server 从这儿运行可以找到 ../web/dist
+                if project_root.join("../web/dist").exists()
+                    || project_root.join("Cargo.toml").exists()
+                {
+                    return project_root.to_path_buf();
+                }
+            }
+        }
+    }
+    // 生产场景：二进制所在目录即运行目录（如 /usr/local/lib/mcguffin/）
+    server_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 fn server_pid_path(config_path: &Path) -> PathBuf {
     runtime_dir(config_path).join("mcguffin.pid")
 }
@@ -379,11 +403,11 @@ fn cmd_init(config_path: &Path) {
     println!("--- 服务器配置 [server] ---");
 
     let site_url = prompt_required(
-        "  公开访问地址（用于 OAuth 回调、CORS）",
-        "例如 https://mcguffin.example.com",
+        "  公开访问地址（含端口，如 https://example.com:3000）",
+        "例如 https://mcguffin.example.com:3000",
     );
 
-    let port = prompt_default("  监听端口", "3000");
+    let port = prompt_default("  监听端口（若与URL中相同可回车跳过）", "3000");
 
     let data_file = prompt_default("  数据文件路径（相对服务工作目录）", "mcguffin_data.json");
 
@@ -650,9 +674,9 @@ fn build_config_toml(
         toml.push('\n');
     }
 
-    // [discussion_tags]
+    // [discussion_tags] — 默认标签
     if !tags.is_empty() {
-        toml.push_str("# 讨论标签\n");
+        toml.push_str("# 讨论标签（用户自定义）\n");
         for (id, color, desc) in tags {
             toml.push_str(&format!("\n[discussion_tags.{}]\n", id));
             toml.push_str(&format!("color = {}\n", toml_string(color)));
@@ -660,8 +684,20 @@ fn build_config_toml(
                 toml.push_str(&format!("description = {}\n", toml_string(desc)));
             }
         }
-        toml.push('\n');
+    } else {
+        // 默认标签
+        toml.push_str("# 默认讨论标签\n");
+        toml.push_str("\n[discussion_tags.公告]\n");
+        toml.push_str(&format!("color = {}\n", toml_string("#ef4444")));
+        toml.push_str(&format!("description = {}\n", toml_string("官方公告")));
+        toml.push_str("\n[discussion_tags.建议]\n");
+        toml.push_str(&format!("color = {}\n", toml_string("#3b82f6")));
+        toml.push_str(&format!("description = {}\n", toml_string("功能建议")));
+        toml.push_str("\n[discussion_tags.标签]\n");
+        toml.push_str(&format!("color = {}\n", toml_string("#22c55e")));
+        toml.push_str(&format!("description = {}\n", toml_string("一般讨论")));
     }
+    toml.push('\n');
 
     // [discussion_emojis]
     if !emojis.is_empty() {
@@ -673,17 +709,27 @@ fn build_config_toml(
         toml.push('\n');
     }
 
+    // [permissions.roles] — 默认角色权限（注释掉 = 使用代码内置默认值）
+    toml.push_str("# =====================\n");
+    toml.push_str("# 权限配置 [permissions]\n");
+    toml.push_str("# 取消注释即可覆盖默认角色权限\n");
+    toml.push_str("# =====================\n");
+    toml.push_str("# [permissions]\n");
+    toml.push_str("# admin = [\"view_team\", \"manage_team\", \"manage_members\", \"submit_problem\", \"view_problems\", \"approve_problem\", \"manage_contests\", \"view_all_contests\", \"view_public_contests\", \"manage_site\", \"edit_showcase\", \"view_discussions\", \"manage_posts\", \"manage_tags\", \"manage_notifications\", \"view_stats\"]\n");
+    toml.push_str("# member = [\"view_showcase\", \"view_team\", \"submit_problem\", \"view_problems\", \"view_all_contests\", \"view_public_contests\", \"view_discussions\"]\n");
+    toml.push_str("# guest = [\"view_showcase\", \"apply_join\", \"view_public_contests\", \"view_discussions\"]\n");
+    toml.push('\n');
+
     // [permissions.groups]
     if !groups.is_empty() {
         toml.push_str("# 权限组（通过 UUID 标识）\n");
-        toml.push_str("[permissions]\n");
         for (id, gname, perms) in groups {
-            toml.push_str(&format!("\n  [permissions.groups.\"{}\"]\n", id));
-            toml.push_str(&format!("  name = {}\n", toml_string(gname)));
+            toml.push_str(&format!("[permissions.groups.\"{}\"]\n", id));
+            toml.push_str(&format!("name = {}\n", toml_string(gname)));
             let perms_str: Vec<String> = perms.iter().map(|p| toml_string(p)).collect();
-            toml.push_str(&format!("  permissions = [{}]\n", perms_str.join(", ")));
+            toml.push_str(&format!("permissions = [{}]\n", perms_str.join(", ")));
+            toml.push('\n');
         }
-        toml.push('\n');
     }
 
     toml
@@ -953,7 +999,7 @@ fn cmd_service_start(config_path: &Path) {
     }
 
     let server_path = std::path::absolute(&server_bin).unwrap_or(server_bin.clone());
-    let work_dir = server_path.parent().unwrap_or(Path::new("."));
+    let work_dir = server_work_dir(&server_path);
     let log_path = runtime_dir(config_path).join("mcguffin.log");
 
     if let Some(log_parent) = log_path.parent() {
@@ -995,10 +1041,18 @@ fn cmd_service_start(config_path: &Path) {
         std::process::exit(1);
     });
 
-    println!("✓ 服务已启动 (PID: {})", pid);
-    println!("  二进制: {}", server_path.display());
+    let doc = read_config(config_path);
+    let site_url = doc
+        .get("server")
+        .and_then(|s| s.get("site_url"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("http://localhost:3000")
+        .to_string();
+
+    println!("✓ 服务已启动");
+    println!("  地址:   {}", site_url);
+    println!("  PID:    {}", pid);
     println!("  日志:   {}", log_path.display());
-    println!("  PID:    {}", pid_path.display());
 }
 
 fn cmd_service_stop(config_path: &Path) {

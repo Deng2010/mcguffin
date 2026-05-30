@@ -113,6 +113,7 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
     m.insert(
         "admin".to_string(),
         vec![
+            perms::VIEW_SHOWCASE.to_string(),
             perms::VIEW_TEAM.to_string(),
             perms::MANAGE_TEAM.to_string(),
             perms::MANAGE_MEMBERS.to_string(),
@@ -454,6 +455,13 @@ pub struct ClaimPayload {}
 pub struct ClaimResponse {
     pub success: bool,
     pub message: String,
+}
+
+impl Problem {
+    /// Check if a given user_id is the author of this problem
+    pub fn is_author(&self, user_id: &str) -> bool {
+        self.author_id == user_id
+    }
 }
 
 /// Stripped-down problem view for listing (no solutions, no content for unauthorized)

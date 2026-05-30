@@ -220,7 +220,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
 
   if (loading) return (
     <div>
-      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-5 mb-6">
+      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-5 mb-6">
         <div className="text-center py-8 text-gray-400 dark:text-gray-500">加载配置中...</div>
       </div>
     </div>
@@ -246,7 +246,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
         </div>
       )}
 
-      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 p-5 mb-6">
+      <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-5 mb-6">
         {tabContent()}
       </div>
 

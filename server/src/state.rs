@@ -5,13 +5,63 @@ use crate::types::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub const ADMIN_USER_ID: &str = "admin";
 
-/// System-wide config file path
-const CONFIG_FILE: &str = "/usr/share/mcguffin/config.toml";
+/// Resolve the config file path with platform awareness.
+/// Priority: CWD 的 mcguffin.toml/config.toml > 平台默认路径。
+pub fn resolve_config_path() -> PathBuf {
+    // 1. CWD 探索（开发环境便利）
+    for name in &["mcguffin.toml", "config.toml"] {
+        let cwd_path = PathBuf::from(name);
+        if cwd_path.exists() {
+            return cwd_path;
+        }
+    }
+    // 2. 平台默认
+    default_config_path()
+}
+
+/// 平台默认配置文件路径
+fn default_config_path() -> PathBuf {
+    #[cfg(target_os = "linux")]
+    {
+        let system = PathBuf::from("/usr/share/mcguffin/config.toml");
+        if system.exists() {
+            return system;
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            let user = PathBuf::from(home).join(".config/mcguffin/config.toml");
+            if user.exists() {
+                return user;
+            }
+        }
+        system
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            PathBuf::from(home).join("Library/Application Support/mcguffin/config.toml")
+        } else {
+            PathBuf::from("/usr/share/mcguffin/config.toml")
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            PathBuf::from(appdata).join("mcguffin/config.toml")
+        } else {
+            PathBuf::from("C:/ProgramData/mcguffin/config.toml")
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        PathBuf::from("/usr/share/mcguffin/config.toml")
+    }
+}
 
 // ============== Persistence Format ==============
 
@@ -425,7 +475,7 @@ impl AppState {
 
         // Migration: if config.toml has no [permissions] section, write default role permissions
         {
-            let raw_config = std::fs::read_to_string(CONFIG_FILE).unwrap_or_default();
+            let raw_config = std::fs::read_to_string(resolve_config_path()).unwrap_or_default();
             let has_permissions_section =
                 raw_config.contains("\n[permissions]") || raw_config.starts_with("[permissions]");
             if !has_permissions_section {
@@ -433,7 +483,7 @@ impl AppState {
                     "No [permissions] section in config.toml, writing default permissions"
                 );
                 let defaults = crate::types::default_role_permissions();
-                if let Ok(raw) = std::fs::read_to_string(CONFIG_FILE) {
+                if let Ok(raw) = std::fs::read_to_string(resolve_config_path()) {
                     use std::str::FromStr;
                     use toml_edit::{DocumentMut, Item, Value as TomlValue};
                     if let Ok(mut doc) = DocumentMut::from_str(&raw) {
@@ -453,7 +503,7 @@ impl AppState {
                                 }
                             }
                         }
-                        let _ = std::fs::write(CONFIG_FILE, doc.to_string());
+                        let _ = std::fs::write(resolve_config_path(), doc.to_string());
                         tracing::info!("Default permissions written to config.toml");
                     }
                 }
@@ -520,7 +570,7 @@ impl AppState {
                         })
                     })
                     .collect();
-                if let Ok(raw) = std::fs::read_to_string(CONFIG_FILE) {
+                if let Ok(raw) = std::fs::read_to_string(resolve_config_path()) {
                     use std::str::FromStr;
                     use toml_edit::{DocumentMut, Item, Value as TomlValue};
                     if let Ok(mut doc) = DocumentMut::from_str(&raw) {
@@ -564,7 +614,7 @@ impl AppState {
                                 }
                             }
                         }
-                        let _ = std::fs::write(CONFIG_FILE, doc.to_string());
+                        let _ = std::fs::write(resolve_config_path(), doc.to_string());
                     }
                 }
                 // Also update in-memory member_groups
@@ -959,15 +1009,22 @@ fn load_difficulty_config(config: &AppConfig) -> crate::types::DifficultyConfig 
 /// Load application config from /usr/share/mcguffin/config.toml,
 /// with fallback to environment variables and then hardcoded defaults.
 fn load_config() -> AppConfig {
+    let config_path = resolve_config_path();
     // Try reading the system config file first
-    if let Ok(content) = std::fs::read_to_string(CONFIG_FILE) {
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
         if let Ok(config) = toml::from_str::<AppConfig>(&content) {
-            tracing::info!("Loaded config from {}", CONFIG_FILE);
+            tracing::info!("Loaded config from {}", config_path.display());
             return config;
         }
-        tracing::warn!("Failed to parse {}, falling back to env vars", CONFIG_FILE);
+        tracing::warn!(
+            "Failed to parse {}, falling back to env vars",
+            config_path.display()
+        );
     } else {
-        tracing::warn!("{} not found, falling back to env vars", CONFIG_FILE);
+        tracing::warn!(
+            "{} not found, falling back to env vars",
+            config_path.display()
+        );
     }
 
     // Fallback: read from environment variables with defaults

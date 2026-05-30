@@ -293,8 +293,8 @@ export default function ProblemsPage() {
   )
 
   // Card wrapper — clickable to navigate to problem detail
-  const cardClass = "p-4 bg-white border border-gray-300 cursor-pointer hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:border-gray-700 dark:hover:bg-gray-800/50"
-  const guestCardClass = "p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700"
+  const cardClass = "p-4 bg-white border border-gray-300 cursor-pointer hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:border-gray-700 shadow dark:hover:bg-gray-800/50"
+  const guestCardClass = "p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow"
   const goDetail = (problemId: string) => (e: React.MouseEvent) => {
     navigate(`/problems/${problemId}`)
   }
@@ -331,7 +331,7 @@ export default function ProblemsPage() {
   const renderFilterBar = () => {
     const hasActiveFilters = searchText || filterDifficulty || filterAuthor
     return (
-      <div className="bg-white border border-gray-300 p-4 mb-4 space-y-3 dark:bg-gray-900 dark:border-gray-700">
+      <div className="bg-white border border-gray-300 p-4 mb-4 space-y-3 dark:bg-gray-900 dark:border-gray-700 shadow">
         {/* Search row */}
         <div className="flex items-center gap-2">
           <svg className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -128,7 +128,7 @@ export default function SuggestionsPage() {
       </div>
 
       {showForm && (
-        <div className="mb-6 p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700">
+        <div className="mb-6 p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow">
           <div className="mb-3">
             <input
               type="text"
@@ -190,7 +190,7 @@ export default function SuggestionsPage() {
           <div className="text-center py-12 text-gray-400 dark:text-gray-500">暂无建议</div>
         ) : (
           filteredSuggestions.map(s => (
-            <div key={s.id} className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700">
+            <div key={s.id} className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow">
               <div className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">

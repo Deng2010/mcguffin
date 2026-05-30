@@ -280,7 +280,7 @@ export default function ContestManagePage() {
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-700 text-sm dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">{error}</div>}
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white border border-gray-300 p-6 mb-6 dark:bg-gray-900 dark:border-gray-700">
+        <form onSubmit={handleCreate} className="bg-white border border-gray-300 p-6 mb-6 dark:bg-gray-900 dark:border-gray-700 shadow">
           <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">创建新比赛</h2>
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
@@ -365,7 +365,7 @@ export default function ContestManagePage() {
       ) : (
         <div className="space-y-3">
           {filteredContests.map(c => (
-            <div key={c.id} className="bg-white border border-gray-300 p-4 dark:bg-gray-900 dark:border-gray-700">
+            <div key={c.id} className="bg-white border border-gray-300 p-4 dark:bg-gray-900 dark:border-gray-700 shadow">
               {editingId === c.id ? (
                 <div>
                   <h3 className="font-semibold text-gray-800 mb-4 dark:text-gray-100">编辑比赛 — {c.name}</h3>

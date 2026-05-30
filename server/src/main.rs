@@ -40,15 +40,30 @@ async fn main() {
         ])
         .allow_credentials(true);
 
-    // Frontend dist path (relative to the server working directory)
-    let dist_path = std::path::PathBuf::from("../web/dist");
+    // Frontend dist path — try multiple locations relative to CWD
+    let dist_path = ["../web/dist", "web/dist", "../dist"]
+        .iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.join("index.html").exists())
+        .unwrap_or_else(|| {
+            eprintln!("错误: 找不到前端构建产物 dist/index.html");
+            eprintln!("  请先运行 'bun run build'（web 目录下）或 'just build-frontend'");
+            std::process::exit(1);
+        })
+        .canonicalize()
+        .unwrap_or_else(|e| {
+            eprintln!("错误: 无法解析前端路径: {}", e);
+            std::process::exit(1);
+        });
+    let assets_path = dist_path.join("assets");
+    if !assets_path.exists() {
+        eprintln!("错误: 前端资产目录不存在: {:?}", assets_path);
+        std::process::exit(1);
+    }
     let spa_index = std::fs::read_to_string(dist_path.join("index.html"))
-        .expect("Failed to read dist/index.html — run 'bun run build' in web first");
+        .expect("Failed to read dist/index.html");
 
-    println!(
-        "Serving frontend SPA from: {:?}",
-        dist_path.canonicalize().unwrap_or(dist_path.clone())
-    );
+    println!("Serving frontend SPA from: {:?}", dist_path);
     println!("McGuffin Server running on http://0.0.0.0:3000");
     println!("Public URL: {}", state.site_url);
 
@@ -69,7 +84,7 @@ async fn main() {
             }),
         )
         // Static assets
-        .nest_service("/assets", ServeDir::new("../web/dist/assets"))
+        .nest_service("/assets", ServeDir::new(dist_path.join("assets")))
         // Server-rendered pages (backward compatible)
         .route("/login", get(login_page))
         .route("/portfolio", get(portfolio_page))

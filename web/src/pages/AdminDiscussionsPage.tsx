@@ -104,11 +104,11 @@ export default function AdminDiscussionsPage() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-5 mb-6">
+      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-5 mb-6">
         <section className="mb-10">
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">标签管理</h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">添加或删除讨论区标签。保存后立即生效。</p>
-          <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+          <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow">
             <div>
               <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">名称</label>
               <input type="text" value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="标签名" className="w-28 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm" onKeyDown={e => e.key === 'Enter' && addTag()} />
@@ -126,7 +126,7 @@ export default function AdminDiscussionsPage() {
           <div className="space-y-1">
             {Object.keys(discussionTags).length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">暂无标签</p>}
             {Object.entries(discussionTags).map(([name, fields]) => (
-              <div key={name} className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+              <div key={name} className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow">
                 <span className="w-2.5 h-2.5 inline-block shrink-0" style={{ backgroundColor: fields.color }} />
                 <span className="text-sm text-gray-800 dark:text-gray-100 w-24">{name}</span>
                 <span className="text-xs text-gray-400 dark:text-gray-500 flex-1">{fields.description}</span>
@@ -138,7 +138,7 @@ export default function AdminDiscussionsPage() {
 
         <section>
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">表情管理</h2>
-          <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+          <div className="flex flex-wrap items-end gap-3 mb-4 p-3 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow">
             <div>
               <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">标识</label>
               <input type="text" value={newEmojiName} onChange={e => setNewEmojiName(e.target.value)} placeholder="如：fire" className="w-24 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 px-2 py-1.5 text-sm" onKeyDown={e => e.key === 'Enter' && addEmoji()} />
@@ -153,7 +153,7 @@ export default function AdminDiscussionsPage() {
           <div className="space-y-1">
             {Object.keys(discussionEmojis).length === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">暂无表情</p>}
             {Object.entries(discussionEmojis).map(([name, fields]) => (
-              <div key={name} className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700">
+              <div key={name} className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow">
                 <span className="text-xl w-8 text-center shrink-0">{fields.char}</span>
                 <span className="text-sm text-gray-800 dark:text-gray-100 flex-1">{name}</span>
                 <button onClick={() => removeEmoji(name)} className="text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">删除</button>
