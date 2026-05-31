@@ -10,6 +10,17 @@ use crate::state::AppState;
 use crate::types::*;
 use crate::utils::resolve_user;
 
+#[derive(sqlx::FromRow)]
+struct NotificationRow {
+    id: String,
+    user_id: String,
+    title: String,
+    body: String,
+    read: i32,
+    created_at: String,
+    link: Option<String>,
+}
+
 // ============== Get Notifications ==============
 
 pub async fn get_notifications(
@@ -21,45 +32,82 @@ pub async fn get_notifications(
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
 
-    let notifications = state.notifications.read().await;
-    let mut user_notifications: Vec<&Notification> = notifications
-        .values()
-        .filter(|n| n.user_id == user_id)
-        .collect();
-    user_notifications.sort_by_key(|b| std::cmp::Reverse(b.created_at));
+    let result: Result<Vec<NotificationRow>, _> = sqlx::query_as(
+        "SELECT id, user_id, title, body, read, created_at, link \
+         FROM notifications WHERE user_id = ? ORDER BY created_at DESC",
+    )
+    .bind(&user_id)
+    .fetch_all(&state.db)
+    .await;
 
-    let unread_count = user_notifications.iter().filter(|n| !n.read).count();
-
-    Json(serde_json::json!(NotificationResponse {
-        notifications: user_notifications.into_iter().cloned().collect(),
-        unread_count,
-    }))
+    match result {
+        Ok(rows) => {
+            let unread_count = rows.iter().filter(|n| n.read == 0).count();
+            let notifications: Vec<serde_json::Value> = rows
+                .into_iter()
+                .map(|n| {
+                    serde_json::json!({
+                        "id": n.id,
+                        "user_id": n.user_id,
+                        "title": n.title,
+                        "body": n.body,
+                        "read": n.read != 0,
+                        "created_at": n.created_at,
+                        "link": n.link,
+                    })
+                })
+                .collect();
+            Json(serde_json::json!({
+                "notifications": notifications,
+                "unread_count": unread_count,
+            }))
+        }
+        Err(_) => {
+            // Fallback to HashMap read
+            let notifications = state.notifications.read().await;
+            let mut user_notifications: Vec<&Notification> = notifications
+                .values()
+                .filter(|n| n.user_id == user_id)
+                .collect();
+            user_notifications.sort_by_key(|b| std::cmp::Reverse(b.created_at));
+            let unread_count = user_notifications.iter().filter(|n| !n.read).count();
+            Json(serde_json::json!(NotificationResponse {
+                notifications: user_notifications.into_iter().cloned().collect(),
+                unread_count,
+            }))
+        }
+    }
 }
 
 // ============== Mark Notification as Read ==============
 
 pub async fn mark_notification_read(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Path(notification_id): Path<String>,
+    headers: HeaderMap,
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
 
-    let mut notifications = state.notifications.write().await;
-    if let Some(n) = notifications.get_mut(&notification_id) {
-        if n.user_id != user_id {
-            return Json(serde_json::json!({"success": false, "message": "无权操作"}));
-        }
-        n.read = true;
-        drop(notifications);
-        state.save().await;
-        Json(serde_json::json!({"success": true, "message": "已标记为已读"}))
-    } else {
-        Json(serde_json::json!({"success": false, "message": "通知不存在"}))
+    // 验证所有权
+    let owned = {
+        let n = state
+            .notifications
+            .read()
+            .await
+            .get(&notification_id)
+            .cloned();
+        n.map(|n| n.user_id == user_id).unwrap_or(false)
+    };
+    if !owned {
+        return Json(serde_json::json!({"success": false, "message": "通知不存在或无权操作"}));
     }
+
+    state.mark_notification_read(&notification_id).await;
+    state.save().await;
+    Json(serde_json::json!({"success": true, "message": "已标记为已读"}))
 }
 
 // ============== Mark All Notifications as Read ==============
@@ -73,19 +121,10 @@ pub async fn mark_all_notifications_read(
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
 
-    let mut notifications = state.notifications.write().await;
-    let mut changed = false;
-    for n in notifications.values_mut() {
-        if n.user_id == user_id && !n.read {
-            n.read = true;
-            changed = true;
-        }
-    }
-    drop(notifications);
-    if changed {
-        state.save().await;
-    }
-    Json(serde_json::json!({"success": true, "message": "已全部标记为已读"}))
+    state.mark_all_user_notifications_read(&user_id).await;
+    state.save().await;
+
+    Json(serde_json::json!({"success": true, "message": "已标记所有通知为已读"}))
 }
 
 // ============== Helper: Create a Notification ==============
@@ -106,10 +145,6 @@ pub async fn create_notification(
         created_at: Utc::now(),
         link: link.map(|l| l.to_string()),
     };
-    state
-        .notifications
-        .write()
-        .await
-        .insert(notification.id.clone(), notification);
+    state.insert_notification(&notification).await;
     state.save().await;
 }

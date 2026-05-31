@@ -9,12 +9,69 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{check_permission, resolve_user, AuthUser};
+
+// ============== SQLite Row Types ==============
+
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct PostRow {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub tags: String,
+    pub pinned: i32,
+    pub team_only: i32,
+    pub emoji: Option<String>,
+    pub reactions: String,
+    pub replies: String,
+    pub mentioned_user_ids: String,
+    pub status: String,
+    pub visible_to: String,
+    pub editable_by: String,
+}
+
+fn row_to_post(row: PostRow) -> Option<Post> {
+    let tags: Vec<String> = serde_json::from_str(&row.tags).unwrap_or_default();
+    let reactions: std::collections::HashMap<String, Vec<String>> =
+        serde_json::from_str(&row.reactions).unwrap_or_default();
+    let replies: Vec<PostReply> = serde_json::from_str(&row.replies).unwrap_or_default();
+    let mentioned_user_ids: Vec<String> =
+        serde_json::from_str(&row.mentioned_user_ids).unwrap_or_default();
+    let visible_to: Vec<String> = serde_json::from_str(&row.visible_to).unwrap_or_default();
+    let editable_by: Vec<String> = serde_json::from_str(&row.editable_by).unwrap_or_default();
+    let created_at: DateTime<Utc> = row.created_at.parse().ok()?;
+    let updated_at: DateTime<Utc> = row.updated_at.parse().unwrap_or_else(|_| Utc::now());
+
+    Some(Post {
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        author_id: row.author_id,
+        author_name: row.author_name,
+        created_at,
+        updated_at,
+        tags,
+        pinned: row.pinned != 0,
+        team_only: row.team_only != 0,
+        emoji: row.emoji,
+        reactions,
+        replies,
+        mentioned_user_ids,
+        status: row.status,
+        visible_to,
+        editable_by,
+    })
+}
 
 // ============== List Announcements (backward compat) ==============
 
@@ -28,13 +85,26 @@ pub async fn get_announcements(
     } else {
         false
     };
-    let posts = state.posts.read().await;
+
+    // Try SQLite first, fallback to HashMap
+    let posts: Vec<Post> = if let Ok(rows) =
+        sqlx::query_as::<_, PostRow>("SELECT * FROM posts WHERE tags LIKE '%\"公告\"%'")
+            .fetch_all(&state.db)
+            .await
+    {
+        rows.into_iter().filter_map(row_to_post).collect()
+    } else {
+        let map = state.posts.read().await;
+        map.values()
+            .filter(|p| p.tags.contains(&"公告".to_string()))
+            .cloned()
+            .collect()
+    };
+
     let users = state.users.read().await;
+
     let mut result: Vec<serde_json::Value> = Vec::new();
-    for p in posts.values() {
-        if !p.tags.contains(&"公告".to_string()) {
-            continue;
-        }
+    for p in &posts {
         if !can_see_all && p.team_only {
             continue;
         }
@@ -118,9 +188,7 @@ pub async fn create_announcement(
         visible_to: vec![],
         editable_by: vec![],
     };
-    let post_id = post.id.clone();
-    state.posts.write().await.insert(post_id, post);
-    state.save().await;
+    state.upsert_post(&post).await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "公告已发布"}),
     ))
@@ -180,8 +248,11 @@ pub async fn update_announcement(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
         .await?;
-    let mut posts = state.posts.write().await;
-    if let Some(p) = posts.get_mut(&id) {
+    let p_opt = {
+        let posts = state.posts.read().await;
+        posts.get(&id).cloned()
+    };
+    if let Some(mut p) = p_opt {
         if let Some(title) = payload.get("title").and_then(|v| v.as_str()) {
             if title.trim().is_empty() {
                 return Ok(Json(
@@ -200,8 +271,7 @@ pub async fn update_announcement(
             p.team_only = !is_public;
         }
         p.updated_at = Utc::now();
-        drop(posts);
-        state.save().await;
+        state.upsert_post(&p).await;
         return Ok(Json(
             serde_json::json!({"success": true, "message": "公告已更新"}),
         ));
@@ -220,11 +290,9 @@ pub async fn delete_announcement(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
         .await?;
-    let mut posts = state.posts.write().await;
-    if posts.contains_key(&id) {
-        posts.remove(&id);
-        drop(posts);
-        state.save().await;
+    let exists = { state.posts.read().await.contains_key(&id) };
+    if exists {
+        state.delete_post_by_id(&id).await;
         return Ok(Json(
             serde_json::json!({"success": true, "message": "公告已删除"}),
         ));

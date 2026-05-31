@@ -3,10 +3,68 @@ use axum::{
     extract::{Query, State},
     Json,
 };
+use chrono::{DateTime, Utc};
 
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::resolve_user;
+
+// ============== SQLite Row Types ==============
+
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct PostRow {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub author_id: String,
+    pub author_name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub tags: String,
+    pub pinned: i32,
+    pub team_only: i32,
+    pub emoji: Option<String>,
+    pub reactions: String,
+    pub replies: String,
+    pub mentioned_user_ids: String,
+    pub status: String,
+    pub visible_to: String,
+    pub editable_by: String,
+}
+
+fn row_to_post(row: PostRow) -> Option<Post> {
+    let tags: Vec<String> = serde_json::from_str(&row.tags).unwrap_or_default();
+    let reactions: std::collections::HashMap<String, Vec<String>> =
+        serde_json::from_str(&row.reactions).unwrap_or_default();
+    let replies: Vec<PostReply> = serde_json::from_str(&row.replies).unwrap_or_default();
+    let mentioned_user_ids: Vec<String> =
+        serde_json::from_str(&row.mentioned_user_ids).unwrap_or_default();
+    let visible_to: Vec<String> = serde_json::from_str(&row.visible_to).unwrap_or_default();
+    let editable_by: Vec<String> = serde_json::from_str(&row.editable_by).unwrap_or_default();
+    let created_at: DateTime<Utc> = row.created_at.parse().ok()?;
+    let updated_at: DateTime<Utc> = row.updated_at.parse().unwrap_or_else(|_| Utc::now());
+
+    Some(Post {
+        id: row.id,
+        title: row.title,
+        content: row.content,
+        author_id: row.author_id,
+        author_name: row.author_name,
+        created_at,
+        updated_at,
+        tags,
+        pinned: row.pinned != 0,
+        team_only: row.team_only != 0,
+        emoji: row.emoji,
+        reactions,
+        replies,
+        mentioned_user_ids,
+        status: row.status,
+        visible_to,
+        editable_by,
+    })
+}
 
 // ============== Unified Community Feed ==============
 
@@ -38,17 +96,26 @@ pub async fn get_community_posts(
         vec![]
     };
 
-    let posts = state.posts.read().await;
+    // Try SQLite first, fallback to HashMap
+    let posts = if let Ok(rows) =
+        sqlx::query_as::<_, PostRow>("SELECT * FROM posts WHERE (? = 1 OR team_only = 0)")
+            .bind(is_team as i32)
+            .fetch_all(&state.db)
+            .await
+    {
+        rows.into_iter()
+            .filter_map(row_to_post)
+            .collect::<Vec<Post>>()
+    } else {
+        let map = state.posts.read().await;
+        map.values().cloned().collect()
+    };
+
     let users = state.users.read().await;
 
     let mut result: Vec<PostListItem> = Vec::new();
 
-    for p in posts.values() {
-        // ── Visibility ──
-        if p.team_only && !is_team {
-            continue;
-        }
-
+    for p in &posts {
         // ── Tag filter ──
         if !filter_tags.is_empty() && !p.tags.iter().any(|t| filter_tags.contains(t)) {
             continue;

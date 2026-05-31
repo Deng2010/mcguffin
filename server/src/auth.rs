@@ -11,6 +11,44 @@ use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::*;
 use crate::utils::url_encode;
 
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct UserRow {
+    id: String,
+    username: String,
+    display_name: String,
+    avatar_url: Option<String>,
+    email: Option<String>,
+    role: String,
+    team_status: String,
+    created_at: String,
+    bio: String,
+    password_hash: Option<String>,
+    effective_role: String,
+    group_ids: String,
+    user_permissions: String,
+}
+
+impl UserRow {
+    fn into_user(self) -> User {
+        User {
+            id: self.id,
+            username: self.username,
+            display_name: self.display_name,
+            avatar_url: self.avatar_url,
+            email: self.email,
+            role: self.role,
+            team_status: self.team_status,
+            created_at: self.created_at.parse().unwrap_or_else(|_| Utc::now()),
+            bio: self.bio,
+            password_hash: self.password_hash,
+            effective_role: self.effective_role,
+            group_ids: serde_json::from_str(&self.group_ids).unwrap_or_default(),
+            user_permissions: serde_json::from_str(&self.user_permissions).unwrap_or_default(),
+        }
+    }
+}
+
 // ============== Permissions (GET) ==============
 
 /// GET /api/auth/permissions
@@ -38,13 +76,27 @@ pub async fn login(
             });
         }
 
-        let users = state.users.read().await;
-        // Find user by username or display_name
-        let found = users
-            .values()
-            .find(|u| u.username == identifier || u.display_name == identifier)
-            .cloned();
-        drop(users);
+        // Try SQLite first, then fallback to HashMap
+        let found = match sqlx::query_as::<_, UserRow>(
+            "SELECT id, username, display_name, avatar_url, email, role, team_status, \
+             created_at, bio, password_hash, effective_role, group_ids, user_permissions \
+             FROM users WHERE username = ? OR display_name = ?",
+        )
+        .bind(identifier)
+        .bind(identifier)
+        .fetch_optional(&state.db)
+        .await
+        {
+            Ok(Some(row)) => Some(row.into_user()),
+            _ => {
+                // Fallback to HashMap
+                let users = state.users.read().await;
+                users
+                    .values()
+                    .find(|u| u.username == *identifier || u.display_name == *identifier)
+                    .cloned()
+            }
+        };
 
         match found {
             Some(user) => {
@@ -262,8 +314,7 @@ pub async fn oauth_callback(
                         userinfo.username
                     };
 
-                    let mut users = state.users.write().await;
-                    if let Some(existing) = users.get_mut(&user_id) {
+                    if let Some(mut existing) = state.users.read().await.get(&user_id).cloned() {
                         // User already exists — preserve custom fields (display_name, avatar_url, bio, created_at)
                         // Only update OAuth-provided fields and computed role/status
                         existing.username = username.clone();
@@ -272,6 +323,7 @@ pub async fn oauth_callback(
                         }
                         existing.role = role;
                         existing.team_status = team_status;
+                        state.upsert_user(&existing).await;
                     } else {
                         // New user — use OAuth data, truncate display_name to 30 chars
                         let display_name = if userinfo.display_name.is_empty() {
@@ -310,17 +362,15 @@ pub async fn oauth_callback(
                             group_ids: Vec::new(),
                             user_permissions: Vec::new(),
                         };
-                        users.insert(user.id.clone(), user);
+                        state.upsert_user(&user).await;
                     }
-                    drop(users);
 
                     let session_token = state.create_session(&user_id).await;
                     // Remove old refresh tokens for this user to prevent accumulation
-                    {
-                        let mut rts = state.refresh_tokens.write().await;
-                        rts.retain(|_, uid| uid != &user_id);
-                        rts.insert(token_resp.refresh_token.clone(), user_id);
-                    }
+                    state.clear_user_refresh_tokens(&user_id).await;
+                    state
+                        .set_refresh_token(token_resp.refresh_token.clone(), user_id)
+                        .await;
 
                     state.save().await;
 
@@ -409,24 +459,17 @@ pub async fn refresh_token(
     State(state): State<AppState>,
     Json(payload): Json<RefreshTokenPayload>,
 ) -> Json<serde_json::Value> {
-    let refresh_token = payload.refresh_token.clone();
-    let user_id = state
-        .refresh_tokens
-        .read()
-        .await
-        .get(&refresh_token)
-        .cloned();
+    let old_token = payload.refresh_token.clone();
+    let user_id = state.refresh_tokens.read().await.get(&old_token).cloned();
 
     if let Some(uid) = user_id {
         let access_token = format!("access_{}", Uuid::new_v4());
         let new_refresh_token = format!("refresh_{}", Uuid::new_v4());
 
-        state.refresh_tokens.write().await.remove(&refresh_token);
+        state.remove_refresh_token(&old_token).await;
         state
-            .refresh_tokens
-            .write()
-            .await
-            .insert(new_refresh_token.clone(), uid);
+            .set_refresh_token(new_refresh_token.clone(), uid)
+            .await;
 
         state.save().await;
 

@@ -1,4 +1,26 @@
 use axum::http::StatusCode;
+
+#[derive(sqlx::FromRow)]
+struct TeamMemberRow {
+    id: String,
+    user_id: String,
+    joined_at: String,
+    display_name: Option<String>,
+    avatar_url: Option<String>,
+    username: Option<String>,
+    role: Option<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct JoinRequestRow {
+    id: String,
+    user_id: String,
+    user_name: String,
+    user_email: Option<String>,
+    reason: String,
+    status: String,
+    created_at: String,
+}
 use axum::{
     extract::{Path, State},
     http::HeaderMap,
@@ -22,44 +44,87 @@ pub async fn get_team_members(
     let is_admin_user =
         check_permission(&state, &auth.user, crate::types::perms::MANAGE_TEAM).await;
     let is_superadmin_user = check_permission(&state, &auth.user, PERM_WILDCARD).await;
-    let members = state.team_members.read().await;
-    let users = state.users.read().await;
-    let result: Vec<serde_json::Value> = members
-        .values()
-        .filter(|m| {
-            // Superadmin visibility: derive role from users
-            let member_role = users.get(&m.user_id).map(|u| u.role.as_str()).unwrap_or("");
-            // Non-superadmin cannot see superadmin in member list
-            if !is_superadmin_user && member_role == "superadmin" {
-                return false;
-            }
-            is_admin_user || m.user_id != ADMIN_USER_ID
-        })
-        .map(|m| {
-            let user_info = users.get(&m.user_id);
-            let current_name = user_info
-                .map(|u| u.display_name.clone())
-                .unwrap_or_default();
-            let current_avatar_url = user_info.and_then(|u| u.avatar_url.clone());
-            let user_username = user_info.map(|u| u.username.clone()).unwrap_or_default();
-            let user_role = user_info.map(|u| u.role.clone()).unwrap_or_default();
-            let current_avatar = current_name
-                .chars()
-                .next()
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "U".to_string());
-            serde_json::json!({
-                "id": m.id,
-                "user_id": m.user_id,
-                "name": current_name,
-                "username": user_username,
-                "avatar": current_avatar,
-                "avatar_url": current_avatar_url,
-                "role": user_role,
-                "joined_at": m.joined_at,
+
+    // 尝试从 SQLite 查询（含 LEFT JOIN），失败时回退到 HashMap
+    let sql_result = sqlx::query_as::<_, TeamMemberRow>(
+        "SELECT tm.id, tm.user_id, tm.joined_at, \
+         u.display_name, u.avatar_url, u.username, u.role \
+         FROM team_members tm \
+         LEFT JOIN users u ON tm.user_id = u.id",
+    )
+    .fetch_all(&state.db)
+    .await;
+
+    let result: Vec<serde_json::Value> = if let Ok(rows) = sql_result {
+        rows.into_iter()
+            .filter(|r| {
+                let member_role = r.role.as_deref().unwrap_or("");
+                if !is_superadmin_user && member_role == "superadmin" {
+                    return false;
+                }
+                is_admin_user || r.user_id != ADMIN_USER_ID
             })
-        })
-        .collect();
+            .map(|r| {
+                let current_name = r.display_name.unwrap_or_default();
+                let current_avatar_url = r.avatar_url;
+                let user_username = r.username.unwrap_or_default();
+                let user_role = r.role.unwrap_or_default();
+                let current_avatar = current_name
+                    .chars()
+                    .next()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "U".to_string());
+                serde_json::json!({
+                    "id": r.id,
+                    "user_id": r.user_id,
+                    "name": current_name,
+                    "username": user_username,
+                    "avatar": current_avatar,
+                    "avatar_url": current_avatar_url,
+                    "role": user_role,
+                    "joined_at": r.joined_at,
+                })
+            })
+            .collect()
+    } else {
+        // 回退：HashMap 模式
+        let members = state.team_members.read().await;
+        let users = state.users.read().await;
+        members
+            .values()
+            .filter(|m| {
+                let member_role = users.get(&m.user_id).map(|u| u.role.as_str()).unwrap_or("");
+                if !is_superadmin_user && member_role == "superadmin" {
+                    return false;
+                }
+                is_admin_user || m.user_id != ADMIN_USER_ID
+            })
+            .map(|m| {
+                let user_info = users.get(&m.user_id);
+                let current_name = user_info
+                    .map(|u| u.display_name.clone())
+                    .unwrap_or_default();
+                let current_avatar_url = user_info.and_then(|u| u.avatar_url.clone());
+                let user_username = user_info.map(|u| u.username.clone()).unwrap_or_default();
+                let user_role = user_info.map(|u| u.role.clone()).unwrap_or_default();
+                let current_avatar = current_name
+                    .chars()
+                    .next()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "U".to_string());
+                serde_json::json!({
+                    "id": m.id,
+                    "user_id": m.user_id,
+                    "name": current_name,
+                    "username": user_username,
+                    "avatar": current_avatar,
+                    "avatar_url": current_avatar_url,
+                    "role": user_role,
+                    "joined_at": m.joined_at,
+                })
+            })
+            .collect()
+    };
     Ok(Json(serde_json::json!(result)))
 }
 
@@ -71,12 +136,36 @@ pub async fn get_pending_requests(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, crate::types::perms::MANAGE_TEAM)
         .await?;
-    let requests = state.join_requests.read().await;
-    Ok(Json(serde_json::json!(requests
-        .values()
-        .filter(|r| r.status == "pending")
-        .cloned()
-        .collect::<Vec<JoinRequest>>())))
+
+    let rows = sqlx::query_as::<_, JoinRequestRow>(
+        "SELECT id, user_id, user_name, user_email, reason, status, created_at \
+         FROM join_requests WHERE status = 'pending' ORDER BY created_at DESC",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "数据库查询失败"})),
+        )
+    })?;
+
+    let requests: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                "user_id": r.user_id,
+                "user_name": r.user_name,
+                "user_email": r.user_email,
+                "reason": r.reason,
+                "status": r.status,
+                "created_at": r.created_at,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!(requests)))
 }
 
 // ============== Apply to Join ==============
@@ -128,11 +217,7 @@ pub async fn apply_to_join(
                     created_at: Utc::now(),
                 };
 
-                state
-                    .join_requests
-                    .write()
-                    .await
-                    .insert(request.id.clone(), request);
+                state.insert_join_request(&request).await;
 
                 // Don't change team_status — user stays as "guest"
                 state.save().await;
@@ -166,57 +251,54 @@ pub async fn review_application(
 
     let action_clone = action.clone();
     let (target_user_id, new_status) = {
-        let mut requests = state.join_requests.write().await;
-        if let Some(request) = requests.get_mut(&request_id) {
-            let uid = request.user_id.clone();
-            let new_status = if action_clone == "approve" {
-                request.status = "approved".to_string();
-                // Prevent duplicate: check if already a team member
-                let already_member = state
-                    .team_members
-                    .read()
-                    .await
-                    .values()
-                    .any(|m| m.user_id == request.user_id);
-                if !already_member {
-                    let member = TeamMember {
-                        id: Uuid::new_v4().to_string(),
-                        user_id: request.user_id.clone(),
-                        joined_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-                    };
-                    state
-                        .team_members
-                        .write()
-                        .await
-                        .insert(member.id.clone(), member);
-                }
-                "joined"
-            } else if action_clone == "reject" {
-                request.status = "rejected".to_string();
-                "none"
-            } else {
-                return Json(ReviewResponse {
-                    success: false,
-                    message: "无效操作".to_string(),
-                });
-            };
-            (uid, new_status.to_string())
-        } else {
+        // 先读取当前申请信息
+        let pending_request = state.join_requests.read().await.get(&request_id).cloned();
+        let Some(request) = pending_request else {
             return Json(ReviewResponse {
                 success: false,
                 message: "申请不存在".to_string(),
             });
+        };
+        let uid = request.user_id.clone();
+
+        if action_clone == "approve" {
+            state
+                .update_join_request_status(&request_id, "approved")
+                .await;
+            // 检查是否已是团队成员
+            if !state.is_team_member(&request.user_id).await {
+                let member = TeamMember {
+                    id: Uuid::new_v4().to_string(),
+                    user_id: request.user_id.clone(),
+                    joined_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+                };
+                state.insert_team_member(&member).await;
+            }
+            (uid, "joined".to_string())
+        } else if action_clone == "reject" {
+            state
+                .update_join_request_status(&request_id, "rejected")
+                .await;
+            (uid, "none".to_string())
+        } else {
+            return Json(ReviewResponse {
+                success: false,
+                message: "无效操作".to_string(),
+            });
         }
     };
 
-    if let Some(u) = state.users.write().await.get_mut(&target_user_id) {
-        u.team_status = new_status.clone();
-        u.role = if new_status == "joined" {
-            "member".to_string()
-        } else {
-            "guest".to_string()
-        };
-    }
+    state
+        .update_user_field(&target_user_id, "team_status", new_status.clone())
+        .await;
+    let role = if new_status == "joined" {
+        "member"
+    } else {
+        "guest"
+    };
+    state
+        .update_user_field(&target_user_id, "role", role.to_string())
+        .await;
 
     state.save().await;
 
@@ -294,9 +376,9 @@ pub async fn change_member_role(
         });
     }
     drop(users);
-    if let Some(u) = state.users.write().await.get_mut(&user_id) {
-        u.role = payload.role.clone();
-    }
+    state
+        .update_user_field(&user_id, "role", payload.role.clone())
+        .await;
     state.save().await;
     Json(ReviewResponse {
         success: true,
@@ -339,28 +421,25 @@ pub async fn remove_member(
             message: "权限不足：仅限系统管理员操作".to_string(),
         });
     }
-    let mut members = state.team_members.write().await;
-    let member_id = members
-        .values()
-        .find(|m| m.user_id == user_id)
-        .map(|m| m.id.clone());
-    if let Some(mid) = member_id {
-        members.remove(&mid);
-        drop(members);
-        drop(users);
-        if let Some(u) = state.users.write().await.get_mut(&user_id) {
-            u.team_status = "none".to_string();
-            u.role = "guest".to_string();
-        }
-        state.save().await;
-        Json(ReviewResponse {
-            success: true,
-            message: "已移除团队成员".to_string(),
-        })
-    } else {
-        Json(ReviewResponse {
+    let is_member = state.is_team_member(&user_id).await;
+    if !is_member {
+        return Json(ReviewResponse {
             success: false,
             message: "团队成员不存在".to_string(),
-        })
+        });
     }
+
+    state.remove_team_member_by_user(&user_id).await;
+    drop(users);
+    state
+        .update_user_field(&user_id, "team_status", "none".to_string())
+        .await;
+    state
+        .update_user_field(&user_id, "role", "guest".to_string())
+        .await;
+    state.save().await;
+    Json(ReviewResponse {
+        success: true,
+        message: "已移除团队成员".to_string(),
+    })
 }

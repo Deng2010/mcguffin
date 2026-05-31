@@ -11,9 +11,9 @@ use toml_edit::{DocumentMut, Item, Value as TomlValue};
 use crate::state::resolve_config_path;
 use crate::state::AppState;
 use crate::types::{
-    AuditEntry, ChangeRolePayload, CreateGroupPayload, DifficultyLevel, SetAclPayload,
-    SetProblemAclPayload, SetUserGroupsPayload, SetUserPermissionsPayload, ShowcaseConfigPayload,
-    UpdateGroupPayload, PERM_WILDCARD,
+    ChangeRolePayload, CreateGroupPayload, DifficultyLevel, SetAclPayload, SetProblemAclPayload,
+    SetUserGroupsPayload, SetUserPermissionsPayload, ShowcaseConfigPayload, UpdateGroupPayload,
+    PERM_WILDCARD,
 };
 use crate::utils::AuthUser;
 
@@ -850,16 +850,23 @@ pub async fn restart_service(
 
 // ============== Data Backup / Restore ==============
 
-/// Get the backup directory path (same parent as data_file)
+/// 获取备份目录（与 data_file 同目录下的 backups/）
 fn backup_dir(state: &AppState) -> PathBuf {
-    let data_path = PathBuf::from(&state.data_file);
-    let parent = data_path
+    // Use db_path for backup dir derivation
+    let db_path = std::path::Path::new(&state.data_file).with_extension("db");
+    let parent = db_path
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."));
     parent.join("backups")
 }
 
-/// Get backup file entries sorted by name (newest first)
+/// 获取 SQLite 数据库文件路径（由 data_file 路径推导）
+fn db_path_from_state(state: &AppState) -> PathBuf {
+    std::path::Path::new(&state.data_file).with_extension("db")
+}
+
+/// 获取备份文件列表，按名称降序（最新的在前）
+/// 同时支持 .db（SQLite 完整备份）和 .json（JSON 导出）
 fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
     let dir = match std::fs::read_dir(dir) {
         Ok(d) => d,
@@ -870,15 +877,17 @@ fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
         .filter(|e| {
             e.path()
                 .extension()
-                .map(|ext| ext == "json")
+                .map(|ext| ext == "json" || ext == "db")
                 .unwrap_or(false)
         })
         .filter_map(|e| {
             let meta = e.metadata().ok()?;
             let name = e.file_name().to_string_lossy().to_string();
+            let ext = e.path().extension()?.to_str()?.to_string();
             Some(serde_json::json!({
                 "name": name,
                 "size": meta.len(),
+                "type": if ext == "db" { "sqlite" } else { "json" },
                 "modified": chrono::DateTime::<chrono::Utc>::from(meta.modified().ok()?)
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
@@ -895,23 +904,13 @@ fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
 }
 
 /// POST /api/admin/backup
-/// manage_backups permission required — creates a timestamped backup of the current data file
+/// manage_backups permission required — creates timestamped backups (JSON + SQLite)
 pub async fn create_backup(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
         .await?;
-
-    // Save current state to disk first so we back up the latest data
-    state.save().await;
-
-    let data_path = PathBuf::from(&state.data_file);
-    if !data_path.exists() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "数据文件不存在，无法备份"}),
-        ));
-    }
 
     let dir = backup_dir(&state);
     if std::fs::create_dir_all(&dir).is_err() {
@@ -921,19 +920,83 @@ pub async fn create_backup(
     }
 
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-    let backup_name = format!("mcguffin_data_{}.json", timestamp);
-    let backup_path = dir.join(&backup_name);
 
-    match std::fs::copy(&data_path, &backup_path) {
-        Ok(_) => {
-            tracing::info!("Backup created: {:?}", backup_path);
-            Ok(Json(
-                serde_json::json!({"success": true, "message": "备份已创建", "backup": backup_name}),
-            ))
+    // 1. 将 HashMaps 刷到 JSON 文件（双写模式下 JSON 是源）
+    state.save().await;
+
+    // 2. 从 JSON 文件同步到 SQLite
+    let data_file = &state.data_file;
+    if let Ok(json) = std::fs::read_to_string(data_file) {
+        if let Ok(saved) = serde_json::from_str::<crate::state::SavedData>(&json) {
+            let _ = crate::db::import_saved_data(&state.db, &saved).await;
         }
-        Err(e) => Ok(Json(
-            serde_json::json!({"success": false, "message": format!("备份失败: {}", e)}),
-        )),
+    }
+
+    // 3. 创建 SQLite 在线备份（一致性快照）
+    let db_path = db_path_from_state(&state);
+    let db_backup_name = format!("mcguffin_data_{}.db", timestamp);
+    let db_backup_path = dir.join(&db_backup_name);
+
+    let db_result = if db_path.exists() {
+        match crate::db::create_consistent_backup(
+            &db_path.to_string_lossy(),
+            &db_backup_path.to_string_lossy(),
+        ) {
+            Ok(()) => {
+                tracing::info!("SQLite backup created: {:?}", db_backup_path);
+                Some(db_backup_name)
+            }
+            Err(e) => {
+                tracing::warn!("SQLite backup failed (可忽略，JSON 备份仍可用): {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // 4. 创建 JSON 备份（人类可读 + 跨版本兼容）
+    let json_data_path = PathBuf::from(&state.data_file);
+    let json_backup_name = format!("mcguffin_data_{}.json", timestamp);
+    let json_backup_path = dir.join(&json_backup_name);
+
+    let json_result = if json_data_path.exists() {
+        match std::fs::copy(&json_data_path, &json_backup_path) {
+            Ok(_) => {
+                tracing::info!("JSON backup created: {:?}", json_backup_path);
+                Some(json_backup_name)
+            }
+            Err(e) => {
+                tracing::warn!("JSON backup failed: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // 5. 返回结果
+    let results: Vec<serde_json::Value> = [db_result, json_result]
+        .into_iter()
+        .flatten()
+        .map(|name| {
+            serde_json::json!({
+                "name": name,
+                "type": if name.ends_with(".db") { "sqlite" } else { "json" }
+            })
+        })
+        .collect();
+
+    if results.is_empty() {
+        Ok(Json(
+            serde_json::json!({"success": false, "message": "备份失败：数据文件和数据库均不可用"}),
+        ))
+    } else {
+        Ok(Json(serde_json::json!({
+            "success": true,
+            "message": format!("已创建 {} 个备份", results.len()),
+            "backups": results,
+        })))
     }
 }
 
@@ -955,9 +1018,9 @@ pub async fn list_backups(
 }
 
 /// POST /api/admin/backup/restore/:name
-/// manage_backups permission required — restores data from a named backup
+/// manage_backups permission required — restores from a named backup (supports .db and .json)
 pub async fn restore_backup(
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
     auth: AuthUser,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
@@ -975,9 +1038,9 @@ pub async fn restore_backup(
             serde_json::json!({"success": false, "message": "无效的备份文件名"}),
         ));
     }
-    if !name_clean.ends_with(".json") {
+    if !name_clean.ends_with(".json") && !name_clean.ends_with(".db") {
         return Ok(Json(
-            serde_json::json!({"success": false, "message": "无效的备份文件格式"}),
+            serde_json::json!({"success": false, "message": "无效的备份文件格式，仅支持 .db 或 .json"}),
         ));
     }
 
@@ -989,31 +1052,179 @@ pub async fn restore_backup(
         ));
     }
 
-    let data_path = PathBuf::from(&state.data_file);
+    let is_db_backup = name_clean.ends_with(".db");
+    let safety_timestamp = Local::now().format("%Y%m%d_%H%M%S");
 
-    // Create a safety backup of current data before overwriting
-    let safety_name = format!("pre_restore_{}.json", Local::now().format("%Y%m%d_%H%M%S"));
-    let safety_path = dir.join(&safety_name);
-    let _ = std::fs::copy(&data_path, &safety_path);
+    if is_db_backup {
+        // ── 从 SQLite .db 文件恢复 ──
+        let db_path = db_path_from_state(&state);
 
-    // Restore by copying backup -> data file
-    match std::fs::copy(&backup_path, &data_path) {
-        Ok(_) => {
-            tracing::info!("Restored from backup: {:?}", backup_path);
-            // Reload state from the restored file
-            state.reload().await;
-            Ok(Json(
-                serde_json::json!({"success": true, "message": "数据已恢复，安全备份已创建"}),
-            ))
+        // 1. 创建 SQLite 安全备份
+        let safety_name = format!("pre_restore_{}.db", safety_timestamp);
+        let safety_path = dir.join(&safety_name);
+        if let Err(e) = crate::db::create_consistent_backup(
+            &db_path.to_string_lossy(),
+            &safety_path.to_string_lossy(),
+        ) {
+            tracing::warn!("创建安全备份失败: {}", e);
         }
-        Err(e) => Ok(Json(
-            serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}),
-        )),
+
+        // 2. 关闭连接池
+        state.db.close().await;
+
+        // 3. 用备份文件覆盖主数据库
+        if let Err(e) = std::fs::copy(&backup_path, &db_path) {
+            match crate::db::init_db(&db_path.to_string_lossy()).await {
+                Ok(pool) => state.db = pool,
+                Err(_) => {
+                    // 文件失败且无法重建连接，只能 panic
+                    panic!("恢复失败且无法重建连接");
+                }
+            }
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": format!("文件复制失败: {}", e)}),
+            ));
+        }
+
+        // 清理残留 WAL/SHM 文件
+        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+
+        // 4. 重建连接池
+        match crate::db::init_db(&db_path.to_string_lossy()).await {
+            Ok(pool) => state.db = pool,
+            Err(e) => {
+                tracing::error!("重建数据库连接失败: {}", e);
+                // 回退到 :memory:
+                state.db = crate::db::init_db(":memory:")
+                    .await
+                    .expect("内存数据库也无法创建");
+            }
+        }
+
+        // 5. 验证完整性
+        let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+            .fetch_one(&state.db)
+            .await
+            .unwrap_or_else(|_| "error".to_string());
+
+        if integrity != "ok" {
+            tracing::error!("恢复后完整性检查失败: {}", integrity);
+            return Ok(Json(
+                serde_json::json!({"success": false, "message": format!("数据完整性检查失败: {}，建议手动恢复安全备份 {}", integrity, safety_name)}),
+            ));
+        }
+
+        // 6. 将 SQLite 数据导出到 JSON 以同步 HashMap
+        state.export_sqlite_to_json().await;
+        state.reload().await;
+
+        tracing::info!("Restored from SQLite backup: {:?}", backup_path);
+        Ok(Json(serde_json::json!({
+            "success": true,
+            "message": "SQLite 备份已恢复，安全备份已创建",
+            "safety_backup": safety_name,
+        })))
+    } else {
+        // ── 从 JSON .json 文件恢复（旧格式兼容） ──
+        let data_path = PathBuf::from(&state.data_file);
+
+        // 创建 JSON 安全备份
+        let safety_name = format!("pre_restore_{}.json", safety_timestamp);
+        let safety_path = dir.join(&safety_name);
+        let _ = std::fs::copy(&data_path, &safety_path);
+
+        match std::fs::copy(&backup_path, &data_path) {
+            Ok(_) => {
+                tracing::info!("Restored from JSON backup: {:?}", backup_path);
+                // 重新导入 SQLite（同步到数据库）
+                if let Ok(json) = std::fs::read_to_string(data_path) {
+                    if let Ok(saved) = serde_json::from_str::<crate::state::SavedData>(&json) {
+                        // 清空 SQLite 并重新导入
+                        if let Err(e) = crate::db::reimport_all_data(&state.db, &saved).await {
+                            tracing::warn!("JSON 恢复到 SQLite 失败: {}", e);
+                        }
+                    }
+                }
+                state.reload().await;
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "message": "JSON 备份已恢复，安全备份已创建",
+                    "safety_backup": safety_name,
+                })))
+            }
+            Err(e) => Ok(Json(
+                serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}),
+            )),
+        }
+    }
+}
+
+/// GET /api/admin/backup/download/{name}
+/// 下载备份文件。.json 直接返回文本，.db 返回 base64 编码。
+pub async fn download_backup(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
+        .await?;
+
+    let name_clean = name.trim();
+    if name_clean.is_empty()
+        || name_clean.contains('/')
+        || name_clean.contains('\\')
+        || name_clean.contains("..")
+    {
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "无效的备份文件名"}),
+        ));
+    }
+
+    let backup_path = backup_dir(&state).join(name_clean);
+    if !backup_path.exists() {
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "备份文件不存在"}),
+        ));
+    }
+
+    let is_json = name_clean.ends_with(".json");
+
+    if is_json {
+        // JSON 文件直接返回文本
+        match std::fs::read_to_string(&backup_path) {
+            Ok(content) => Ok(Json(serde_json::json!({
+                "success": true,
+                "content": content,
+                "filename": name_clean,
+                "mime": "application/json",
+            }))),
+            Err(e) => Ok(Json(
+                serde_json::json!({"success": false, "message": format!("读取备份失败: {}", e)}),
+            )),
+        }
+    } else {
+        // .db 文件是二进制，返回 base64 编码
+        match std::fs::read(&backup_path) {
+            Ok(bytes) => {
+                use base64::Engine;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                Ok(Json(serde_json::json!({
+                    "success": true,
+                    "content": encoded,
+                    "filename": name_clean,
+                    "mime": "application/octet-stream",
+                    "encoding": "base64",
+                })))
+            }
+            Err(e) => Ok(Json(
+                serde_json::json!({"success": false, "message": format!("读取备份失败: {}", e)}),
+            )),
+        }
     }
 }
 
 /// DELETE /api/admin/backup/:name
-/// manage_backups permission required — deletes a named backup
 pub async fn delete_backup(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -1022,7 +1233,6 @@ pub async fn delete_backup(
     auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
         .await?;
 
-    // Validate filename
     let name_clean = name.trim();
     if name_clean.is_empty()
         || name_clean.contains('/')
@@ -1058,7 +1268,8 @@ pub async fn delete_backup(
 // ============== Data / Config Export ==============
 
 /// GET /api/admin/export/data
-/// manage_site permission required — exports the data file (JSON) as download
+/// manage_site permission required — exports all data as JSON download.
+/// 直接从 SQLite 读取并序列化为 JSON，不依赖本地文件。
 pub async fn export_data(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -1066,24 +1277,29 @@ pub async fn export_data(
     auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
         .await?;
 
-    let data_path = PathBuf::from(&state.data_file);
-    match std::fs::read_to_string(&data_path) {
-        Ok(content) => {
-            let filename = format!(
-                "mcguffin_data_{}.json",
-                Local::now().format("%Y%m%d_%H%M%S")
-            );
-            Ok(Json(serde_json::json!({
-                "success": true,
-                "content": content,
-                "filename": filename,
-                "mime": "application/json",
-            })))
-        }
-        Err(e) => Ok(Json(
-            serde_json::json!({"success": false, "message": format!("读取数据文件失败: {}", e)}),
-        )),
-    }
+    // 直接从 SQLite 导出，不依赖本地 JSON 文件
+    let content = crate::db::export_db_to_json_string(&state.db)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("导出数据失败: {}", e),
+                })),
+            )
+        })?;
+
+    let filename = format!(
+        "mcguffin_data_{}.json",
+        Local::now().format("%Y%m%d_%H%M%S")
+    );
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "content": content,
+        "filename": filename,
+        "mime": "application/json",
+    })))
 }
 
 /// GET /api/admin/export/config
@@ -1109,6 +1325,135 @@ pub async fn export_config(
             serde_json::json!({"success": false, "message": format!("读取配置文件失败: {}", e)}),
         )),
     }
+}
+
+// ============== Data / Config Import ==============
+
+/// POST /api/admin/import/data
+/// manage_backups permission required — imports data from a JSON string (replaces all data)
+pub async fn import_data(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
+        .await?;
+
+    let content = payload
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false, "message": "缺少 content 字段"
+                })),
+            )
+        })?;
+
+    let saved: crate::state::SavedData = serde_json::from_str(content).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false, "message": format!("JSON 解析失败: {}", e)
+            })),
+        )
+    })?;
+
+    // 先创建安全备份
+    state.save().await;
+    let safety_filename = format!(
+        "pre_import_{}.json",
+        chrono::Local::now().format("%Y%m%d_%H%M%S")
+    );
+    if let Ok(json) = std::fs::read_to_string(&state.data_file) {
+        let backup_dir = std::path::Path::new(&state.data_file)
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("backups");
+        let _ = std::fs::create_dir_all(&backup_dir);
+        let _ = std::fs::write(backup_dir.join(&safety_filename), &json);
+    }
+
+    // 清空 SQLite 并重新导入
+    crate::db::reimport_all_data(&state.db, &saved)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false, "message": format!("数据导入失败: {}", e)
+                })),
+            )
+        })?;
+
+    // 同步到 JSON 文件和 HashMap
+    state.export_sqlite_to_json().await;
+    state.reload().await;
+    state.save().await;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "数据已导入，当前数据的备份已保存到 backups/ 目录",
+        "safety_backup": safety_filename,
+    })))
+}
+
+/// POST /api/admin/import/config
+/// manage_site permission required — imports config from a TOML string
+pub async fn import_config(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+        .await?;
+
+    let content = payload
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false, "message": "缺少 content 字段"
+                })),
+            )
+        })?;
+
+    // 验证 TOML 格式
+    let _: toml::Value = toml::from_str(content).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "success": false, "message": format!("TOML 解析失败: {}", e)
+            })),
+        )
+    })?;
+
+    // 创建配置文件的备份
+    let config_path = crate::state::resolve_config_path();
+    if config_path.exists() {
+        let backup_path = config_path.with_extension("toml.bak");
+        let _ = std::fs::copy(&config_path, &backup_path);
+    }
+
+    // 写入新配置
+    std::fs::write(&config_path, content).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false, "message": format!("写入配置文件失败: {}", e)
+            })),
+        )
+    })?;
+
+    tracing::info!("配置文件已更新: {:?}", config_path);
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "配置文件已更新，将在服务重启后生效",
+        "config_file": config_path.to_string_lossy().to_string(),
+    })))
 }
 
 // ============== Showcase Configuration ==============
@@ -1152,6 +1497,18 @@ pub async fn update_showcase_config(
 
 /// GET /api/admin/audit-log
 /// view_stats permission required — returns recent permission audit entries
+/// Row type for sqlx query_as when reading from audit_log table
+#[derive(sqlx::FromRow)]
+struct AuditLogRow {
+    timestamp: String,
+    user_id: String,
+    user_name: String,
+    action: String,
+    resource: String,
+    result: String,
+    reason: Option<String>,
+}
+
 pub async fn get_audit_log(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -1159,8 +1516,34 @@ pub async fn get_audit_log(
     auth.require_perm(&state, crate::types::perms::VIEW_STATS)
         .await?;
 
-    let log = state.audit_log.read().await;
-    let entries: Vec<&AuditEntry> = log.iter().rev().take(200).collect();
+    let rows = sqlx::query_as::<_, AuditLogRow>(
+        "SELECT timestamp, user_id, user_name, action, resource, result, reason \
+         FROM audit_log ORDER BY id DESC LIMIT 200",
+    )
+    .fetch_all(&state.db)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "数据库查询失败"})),
+        )
+    })?;
+
+    let entries: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "timestamp": r.timestamp,
+                "user_id": r.user_id,
+                "user_name": r.user_name,
+                "action": r.action,
+                "resource": r.resource,
+                "result": r.result,
+                "reason": r.reason,
+            })
+        })
+        .collect();
+
     Ok(Json(serde_json::json!(entries)))
 }
 
@@ -1169,32 +1552,87 @@ pub async fn get_audit_log(
 use crate::state::ADMIN_USER_ID;
 /// GET /api/admin/users
 /// List all users (superadmin only)
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct AdminUserRow {
+    id: String,
+    username: String,
+    display_name: String,
+    avatar_url: Option<String>,
+    email: Option<String>,
+    role: String,
+    team_status: String,
+    created_at: String,
+    bio: String,
+    group_ids: String,
+    user_permissions: String,
+    is_team_member: bool,
+}
+
 pub async fn admin_list_users(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
-    let users = state.users.read().await;
-    let members = state.team_members.read().await;
-    let result: Vec<serde_json::Value> = users
-        .values()
-        .map(|u| {
-            let is_team_member = members.values().any(|m| m.user_id == u.id);
-            serde_json::json!({
-                "id": u.id,
-                "username": u.username,
-                "display_name": u.display_name,
-                "email": u.email,
-                "role": u.role,
-                "team_status": u.team_status,
-                "is_team_member": is_team_member,
-                "group_ids": u.group_ids,
-                "user_permissions": u.user_permissions,
-                "created_at": u.created_at,
-            })
-        })
-        .collect();
-    Ok(Json(serde_json::json!(result)))
+
+    // Try SQLite first, then fallback to HashMap
+    let sql_result = sqlx::query_as::<_, AdminUserRow>(
+        "SELECT u.id, u.username, u.display_name, u.avatar_url, u.email, u.role, \
+         u.team_status, u.created_at, u.bio, u.group_ids, u.user_permissions, \
+         CASE WHEN tm.user_id IS NOT NULL THEN 1 ELSE 0 END as is_team_member \
+         FROM users u \
+         LEFT JOIN team_members tm ON u.id = tm.user_id \
+         ORDER BY u.created_at DESC",
+    )
+    .fetch_all(&state.db)
+    .await;
+
+    match sql_result {
+        Ok(rows) => {
+            let result: Vec<serde_json::Value> = rows
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "id": r.id,
+                        "username": r.username,
+                        "display_name": r.display_name,
+                        "email": r.email,
+                        "role": r.role,
+                        "team_status": r.team_status,
+                        "is_team_member": r.is_team_member,
+                        "group_ids": serde_json::from_str::<Vec<String>>(&r.group_ids).unwrap_or_default(),
+                        "user_permissions": serde_json::from_str::<Vec<String>>(&r.user_permissions).unwrap_or_default(),
+                        "created_at": r.created_at,
+                    })
+                })
+                .collect();
+            Ok(Json(serde_json::json!(result)))
+        }
+        Err(_) => {
+            // Fallback to HashMap
+            let users = state.users.read().await;
+            let members = state.team_members.read().await;
+            let result: Vec<serde_json::Value> = users
+                .values()
+                .map(|u| {
+                    let is_team_member = members.values().any(|m| m.user_id == u.id);
+                    serde_json::json!({
+                        "id": u.id,
+                        "username": u.username,
+                        "display_name": u.display_name,
+                        "email": u.email,
+                        "role": u.role,
+                        "team_status": u.team_status,
+                        "is_team_member": is_team_member,
+                        "group_ids": u.group_ids,
+                        "user_permissions": u.user_permissions,
+                        "created_at": u.created_at,
+                    })
+                })
+                .collect();
+            Ok(Json(serde_json::json!(result)))
+        }
+    }
 }
 
 /// POST /api/admin/users/{user_id}/role
@@ -1216,11 +1654,10 @@ pub async fn admin_change_user_role(
             serde_json::json!({"success": false, "message": "无效角色"}),
         ));
     }
-    let mut users = state.users.write().await;
-    if let Some(u) = users.get_mut(&user_id) {
-        u.role = payload.role.clone();
-        drop(users);
-        state.save().await;
+    if state.users.read().await.contains_key(&user_id) {
+        state
+            .update_user_field(&user_id, "role", payload.role.clone())
+            .await;
         Ok(Json(
             serde_json::json!({"success": true, "message": "角色已更新"}),
         ))
@@ -1249,12 +1686,8 @@ pub async fn admin_remove_user(
             serde_json::json!({"success": false, "message": "不能删除自己"}),
         ));
     }
-    state.users.write().await.remove(&user_id);
-    state
-        .team_members
-        .write()
-        .await
-        .retain(|_, m| m.user_id != user_id);
+    state.delete_user(&user_id).await;
+    state.remove_team_member_by_user(&user_id).await;
     state.save().await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "用户已删除"}),
@@ -1357,13 +1790,7 @@ pub async fn delete_group(
     groups.remove(&group_id);
     drop(groups);
 
-    // Clean up references to this group from all users
-    let mut users = state.users.write().await;
-    for user in users.values_mut() {
-        user.group_ids.retain(|gid| gid != &group_id);
-    }
-    drop(users);
-    state.save().await;
+    state.remove_group_from_all_users(&group_id).await;
     sync_groups_to_config(&state).await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "成员组已删除"}),
@@ -1380,18 +1807,17 @@ pub async fn set_user_groups(
     Json(payload): Json<SetUserGroupsPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
-    let mut users = state.users.write().await;
-    let user = match users.get_mut(&user_id) {
-        Some(u) => u,
+    let user = match state.users.read().await.get(&user_id) {
+        Some(u) => u.clone(),
         None => {
             return Ok(Json(
                 serde_json::json!({"success": false, "message": "用户不存在"}),
             ))
         }
     };
+    let mut user = user;
     user.group_ids = payload.group_ids;
-    drop(users);
-    state.save().await;
+    state.upsert_user(&user).await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "用户组已更新"}),
     ))
@@ -1407,18 +1833,17 @@ pub async fn set_user_permissions(
     Json(payload): Json<SetUserPermissionsPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
-    let mut users = state.users.write().await;
-    let user = match users.get_mut(&user_id) {
-        Some(u) => u,
+    let user = match state.users.read().await.get(&user_id) {
+        Some(u) => u.clone(),
         None => {
             return Ok(Json(
                 serde_json::json!({"success": false, "message": "用户不存在"}),
             ))
         }
     };
+    let mut user = user;
     user.user_permissions = payload.permissions;
-    drop(users);
-    state.save().await;
+    state.upsert_user(&user).await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "用户权限已更新"}),
     ))
@@ -1434,9 +1859,8 @@ pub async fn set_problem_acl(
     Json(payload): Json<SetProblemAclPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
-    let mut problems = state.problems.write().await;
-    let problem = match problems.get_mut(&problem_id) {
-        Some(p) => p,
+    let mut problem = match state.problems.read().await.get(&problem_id) {
+        Some(p) => p.clone(),
         None => {
             return Ok(Json(
                 serde_json::json!({"success": false, "message": "题目不存在"}),
@@ -1444,7 +1868,7 @@ pub async fn set_problem_acl(
         }
     };
     problem.editable_by = payload.editable_by;
-    drop(problems);
+    state.insert_problem(&problem).await;
     state.save().await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "题目访问控制已更新"}),
@@ -1467,23 +1891,26 @@ pub async fn set_resource_acl(
         let mut found = false;
         match resource_type.as_str() {
             "problem" => {
-                if let Some(p) = state.problems.write().await.get_mut(&resource_id) {
+                if let Some(mut p) = state.problems.read().await.get(&resource_id).cloned() {
                     p.visible_to = payload.visible_to.clone();
                     p.editable_by = payload.editable_by.clone();
+                    state.insert_problem(&p).await;
                     found = true;
                 }
             }
             "contest" => {
-                if let Some(c) = state.contests.write().await.get_mut(&resource_id) {
+                if let Some(mut c) = state.contests.read().await.get(&resource_id).cloned() {
                     c.visible_to = payload.visible_to.clone();
                     c.editable_by = payload.editable_by.clone();
+                    state.insert_contest(&c).await;
                     found = true;
                 }
             }
             "post" | "discussion" => {
-                if let Some(p) = state.posts.write().await.get_mut(&resource_id) {
+                if let Some(mut p) = state.posts.read().await.get(&resource_id).cloned() {
                     p.visible_to = payload.visible_to.clone();
                     p.editable_by = payload.editable_by.clone();
+                    state.upsert_post(&p).await;
                     found = true;
                 }
             }

@@ -10,6 +10,49 @@ use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{check_permission, get_token_from_headers, AuthUser};
 
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct ContestRow {
+    id: String,
+    name: String,
+    start_time: String,
+    end_time: String,
+    description: String,
+    created_by: String,
+    created_at: String,
+    status: String,
+    link: Option<String>,
+    problem_order: String,
+    visible_to: String,
+    editable_by: String,
+}
+
+/// Row type for reading problems from SQLite.
+/// All fields mirror the `problems` table columns; some are unused in this
+/// endpoint but required for `sqlx::FromRow` to match the SELECT list.
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct ProblemRow {
+    id: String,
+    title: String,
+    author_id: String,
+    author_name: String,
+    contest: Option<String>,
+    contest_id: Option<String>,
+    difficulty: String,
+    content: String,
+    solution: Option<String>,
+    status: String,
+    created_at: String,
+    public_at: Option<String>,
+    claimed_by: Option<String>,
+    verifier_solution: Option<String>,
+    visible_to: String,
+    link: Option<String>,
+    remark: Option<String>,
+    editable_by: String,
+}
+
 /// Resolve user from token; returns (user_id, user)
 async fn resolve_user(state: &AppState, headers: &HeaderMap) -> Option<(String, User)> {
     let token = get_token_from_headers(headers)?;
@@ -19,7 +62,7 @@ async fn resolve_user(state: &AppState, headers: &HeaderMap) -> Option<(String, 
     Some((user_id, user))
 }
 
-fn to_list_item(c: &Contest) -> ContestListItem {
+pub(crate) fn to_list_item(c: &Contest) -> ContestListItem {
     ContestListItem {
         id: c.id.clone(),
         name: c.name.clone(),
@@ -41,7 +84,7 @@ fn to_list_item(c: &Contest) -> ContestListItem {
 /// GET /api/contests
 /// Anyone can list contests.
 /// - Non-admin: only "public" contests
-/// - Admin: all contests (or with ?public=true to see only public)
+/// - Admin: all contests
 pub async fn get_contests(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -54,26 +97,82 @@ pub async fn get_contests(
             check_permission(&state, user, crate::types::perms::VIEW_PUBLIC_CONTESTS).await,
         )
     } else {
-        // Unauthenticated users can still see public contests
         (false, true)
     };
 
-    let contests = state.contests.read().await;
-    let mut list: Vec<ContestListItem> = contests
-        .values()
-        .filter(|c| {
-            if can_view_all {
-                true
-            } else if can_view_public {
-                c.status == "public"
-            } else {
-                false
-            }
-        })
-        .map(to_list_item)
-        .collect();
-    list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    Json(list)
+    // Try SQLite first
+    let status_filter = if can_view_all {
+        None
+    } else if can_view_public {
+        Some("public")
+    } else {
+        None // will return empty
+    };
+
+    // Build query
+    let sql_result = if let Some(status) = status_filter {
+        sqlx::query_as::<_, ContestRow>(
+            "SELECT id, name, start_time, end_time, description, created_by, \
+             created_at, status, link, problem_order, visible_to, editable_by \
+             FROM contests WHERE status = ? ORDER BY created_at DESC",
+        )
+        .bind(status)
+        .fetch_all(&state.db)
+        .await
+    } else if can_view_all {
+        sqlx::query_as::<_, ContestRow>(
+            "SELECT id, name, start_time, end_time, description, created_by, \
+             created_at, status, link, problem_order, visible_to, editable_by \
+             FROM contests ORDER BY created_at DESC",
+        )
+        .fetch_all(&state.db)
+        .await
+    } else {
+        // No permission — return empty
+        return Json(Vec::new());
+    };
+
+    match sql_result {
+        Ok(rows) => {
+            let list: Vec<ContestListItem> = rows
+                .into_iter()
+                .map(|r| ContestListItem {
+                    id: r.id,
+                    name: r.name,
+                    start_time: r.start_time,
+                    end_time: r.end_time,
+                    description: r.description,
+                    created_by: r.created_by,
+                    created_at: r.created_at,
+                    status: r.status,
+                    link: r.link,
+                    problem_order: serde_json::from_str(&r.problem_order).unwrap_or_default(),
+                    visible_to: serde_json::from_str(&r.visible_to).unwrap_or_default(),
+                    editable_by: serde_json::from_str(&r.editable_by).unwrap_or_default(),
+                })
+                .collect();
+            Json(list)
+        }
+        Err(_) => {
+            // Fallback to HashMap
+            let contests = state.contests.read().await;
+            let mut list: Vec<ContestListItem> = contests
+                .values()
+                .filter(|c| {
+                    if can_view_all {
+                        true
+                    } else if can_view_public {
+                        c.status == "public"
+                    } else {
+                        false
+                    }
+                })
+                .map(|c| crate::contests::to_list_item(c))
+                .collect();
+            list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+            Json(list)
+        }
+    }
 }
 
 // ============== Create Contest ==============
@@ -104,11 +203,7 @@ pub async fn create_contest(
     };
 
     let cid = contest.id.clone();
-    state
-        .contests
-        .write()
-        .await
-        .insert(contest.id.clone(), contest);
+    state.insert_contest(&contest).await;
     state.save().await;
 
     Ok(Json(
@@ -128,17 +223,11 @@ pub async fn delete_contest(
     auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
         .await?;
 
-    let mut contests = state.contests.write().await;
-    if contests.remove(&contest_id).is_some() {
-        drop(contests);
-        // Also clear contest_id from any problems referencing this contest
-        let mut problems = state.problems.write().await;
-        for p in problems.values_mut() {
-            if p.contest_id.as_deref() == Some(&contest_id) {
-                p.contest_id = None;
-            }
-        }
-        drop(problems);
+    // Check existence first without write lock
+    let exists = state.contests.read().await.contains_key(&contest_id);
+    if exists {
+        state.clear_contest_from_problems(&contest_id).await;
+        state.delete_contest_by_id(&contest_id).await;
         state.save().await;
         Ok(Json(
             serde_json::json!({"success": true, "message": "比赛已删除"}),
@@ -163,9 +252,8 @@ pub async fn update_contest(
     auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
         .await?;
 
-    let mut contests = state.contests.write().await;
-    let contest = match contests.get_mut(&contest_id) {
-        Some(c) => c,
+    let mut contest = match state.contests.read().await.get(&contest_id) {
+        Some(c) => c.clone(),
         None => {
             return Ok(Json(
                 serde_json::json!({"success": false, "message": "比赛不存在"}),
@@ -180,7 +268,7 @@ pub async fn update_contest(
     if let Some(link) = payload.link {
         contest.link = if link.is_empty() { None } else { Some(link) };
     }
-    drop(contests);
+    state.insert_contest(&contest).await;
 
     state.save().await;
     Ok(Json(
@@ -207,9 +295,8 @@ pub async fn set_contest_status(
         ));
     }
 
-    let mut contests = state.contests.write().await;
-    let contest = match contests.get_mut(&contest_id) {
-        Some(c) => c,
+    let mut contest = match state.contests.read().await.get(&contest_id) {
+        Some(c) => c.clone(),
         None => {
             return Ok(Json(
                 serde_json::json!({"success": false, "message": "比赛不存在"}),
@@ -233,7 +320,7 @@ pub async fn set_contest_status(
     }
 
     contest.status = payload.status;
-    drop(contests);
+    state.insert_contest(&contest).await;
     state.save().await;
 
     Ok(Json(
@@ -254,9 +341,8 @@ pub async fn set_problem_order(
     auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
         .await?;
 
-    let mut contests = state.contests.write().await;
-    let contest = match contests.get_mut(&contest_id) {
-        Some(c) => c,
+    let mut contest = match state.contests.read().await.get(&contest_id) {
+        Some(c) => c.clone(),
         None => {
             return Ok(Json(
                 serde_json::json!({"success": false, "message": "比赛不存在"}),
@@ -280,7 +366,7 @@ pub async fn set_problem_order(
     drop(problems);
 
     contest.problem_order = payload.problem_ids;
-    drop(contests);
+    state.insert_contest(&contest).await;
     state.save().await;
 
     Ok(Json(
@@ -310,27 +396,53 @@ pub async fn get_contest_problems(
         false
     };
 
-    let problems = state.problems.read().await;
+    // ── Try SQLite first ──
+    let sql_result: Result<Vec<ProblemRow>, _> = sqlx::query_as::<_, ProblemRow>(
+        "SELECT id, title, author_id, author_name, contest, contest_id, difficulty, \
+         content, solution, status, created_at, public_at, claimed_by, \
+         verifier_solution, visible_to, link, remark, editable_by \
+         FROM problems WHERE contest_id = ?",
+    )
+    .bind(&contest_id)
+    .fetch_all(&state.db)
+    .await;
+
+    let mut contest_problems: Vec<serde_json::Value> = if let Ok(rows) = sql_result {
+        rows.iter()
+            .map(|p| {
+                serde_json::json!({
+                    "id": p.id,
+                    "title": p.title,
+                    "author_name": p.author_name,
+                    "difficulty": p.difficulty,
+                    "status": p.status,
+                })
+            })
+            .collect()
+    } else {
+        // ── Fallback to HashMap ──
+        let problems = state.problems.read().await;
+        problems
+            .values()
+            .filter(|p| p.contest_id.as_deref() == Some(&contest_id))
+            .map(|p| {
+                serde_json::json!({
+                    "id": p.id,
+                    "title": p.title,
+                    "author_name": p.author_name,
+                    "difficulty": p.difficulty,
+                    "status": p.status,
+                })
+            })
+            .collect()
+    };
+
+    // Contest info is still read from HashMap for sorting / metadata
     let contests = state.contests.read().await;
     let contest = match contests.get(&contest_id) {
         Some(c) => c.clone(),
         None => return Json(vec![]),
     };
-
-    // Collect problems that belong to this contest
-    let mut contest_problems: Vec<serde_json::Value> = problems
-        .values()
-        .filter(|p| p.contest_id.as_deref() == Some(&contest_id))
-        .map(|p| {
-            serde_json::json!({
-                "id": p.id,
-                "title": p.title,
-                "author_name": p.author_name,
-                "difficulty": p.difficulty,
-                "status": p.status,
-            })
-        })
-        .collect();
 
     // Sort by problem_order if set
     if !contest.problem_order.is_empty() {

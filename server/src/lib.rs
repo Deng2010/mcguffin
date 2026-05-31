@@ -5,6 +5,7 @@ pub mod announcements;
 pub mod auth;
 pub mod community;
 pub mod contests;
+pub mod db;
 pub mod info;
 pub mod notifications;
 pub mod pages;

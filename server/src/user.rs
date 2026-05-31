@@ -4,11 +4,30 @@ use axum::{
     Json,
 };
 
+use axum::extract::Query;
+use std::collections::HashMap;
+
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{get_token_from_headers, resolve_user};
-use axum::extract::Query;
-use std::collections::HashMap;
+
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct UserRow {
+    id: String,
+    username: String,
+    display_name: String,
+    avatar_url: Option<String>,
+    email: Option<String>,
+    role: String,
+    team_status: String,
+    created_at: String,
+    bio: String,
+    password_hash: Option<String>,
+    effective_role: String,
+    group_ids: String,
+    user_permissions: String,
+}
 
 // ============== Get Current User ==============
 
@@ -32,16 +51,49 @@ pub async fn get_public_profile(
     State(state): State<AppState>,
     Path(username): Path<String>,
 ) -> Json<serde_json::Value> {
+    // Try SQLite first
+    if let Ok(Some(row)) = sqlx::query_as::<_, UserRow>(
+        "SELECT id, username, display_name, avatar_url, email, role, team_status, \
+         created_at, bio, password_hash, effective_role, group_ids, user_permissions \
+         FROM users WHERE username = ?",
+    )
+    .bind(&username)
+    .fetch_optional(&state.db)
+    .await
+    {
+        let is_team_member =
+            sqlx::query_scalar::<_, i32>("SELECT COUNT(*) FROM team_members WHERE user_id = ?")
+                .bind(&row.id)
+                .fetch_one(&state.db)
+                .await
+                .unwrap_or(0)
+                > 0;
+
+        return Json(serde_json::json!({
+            "exists": true,
+            "username": row.username,
+            "display_name": row.display_name,
+            "avatar_url": row.avatar_url,
+            "bio": row.bio,
+            "role": row.role,
+            "is_team_member": is_team_member,
+            "created_at": row.created_at,
+        }));
+    }
+
+    // Fallback to HashMap
     let users = state.users.read().await;
     let user = users.values().find(|u| u.username == username).cloned();
     drop(users);
 
     match user {
         Some(u) => {
-            // Also check if user is a team member
-            let members = state.team_members.read().await;
-            let is_team_member = members.values().any(|m| m.user_id == u.id);
-            drop(members);
+            let is_team_member = state
+                .team_members
+                .read()
+                .await
+                .values()
+                .any(|m| m.user_id == u.id);
             Json(serde_json::json!({
                 "exists": true,
                 "username": u.username,
@@ -50,7 +102,6 @@ pub async fn get_public_profile(
                 "bio": u.bio,
                 "role": u.role,
                 "is_team_member": is_team_member,
-                "team_role": u.role,
                 "created_at": u.created_at,
             }))
         }
@@ -133,8 +184,8 @@ pub async fn update_profile(
         }
     }
 
-    let mut users = state.users.write().await;
-    let user = match users.get_mut(&user_id) {
+    // Read current user, then modify and dual-write via update_user
+    let mut user = match state.users.read().await.get(&user_id).cloned() {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "用户不存在"})),
     };
@@ -174,8 +225,7 @@ pub async fn update_profile(
     }
 
     let updated_user = user.clone();
-    drop(users);
-    state.save().await;
+    state.update_user(&user).await;
 
     Json(serde_json::json!({
         "success": true,
@@ -214,10 +264,25 @@ pub async fn check_name_available(
         }
     };
 
-    let users = state.users.read().await;
-    let taken = users
-        .values()
-        .any(|u| u.id != user_id && (u.display_name == name || u.username == name));
+    // Try SQLite first
+    let taken = match sqlx::query_scalar::<_, i32>(
+        "SELECT COUNT(*) FROM users WHERE id != ? AND (display_name = ? OR username = ?)",
+    )
+    .bind(&user_id)
+    .bind(&name)
+    .bind(&name)
+    .fetch_one(&state.db)
+    .await
+    {
+        Ok(count) => count > 0,
+        Err(_) => {
+            // Fallback to HashMap
+            let users = state.users.read().await;
+            users
+                .values()
+                .any(|u| u.id != user_id && (u.display_name == name || u.username == name))
+        }
+    };
 
     Json(serde_json::json!({"available": !taken}))
 }

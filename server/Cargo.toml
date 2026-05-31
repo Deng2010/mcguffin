@@ -23,6 +23,10 @@ toml_edit = "0.25"
 bcrypt = "0.19"
 clap = { version = "4", features = ["derive"] }
 
+# SQLite storage
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono", "uuid", "migrate"] }
+rusqlite = { version = "0.32", features = ["backup", "bundled"] }
+
 [lib]
 name = "mcguffin_server_lib"
 path = "src/lib.rs"

@@ -13,7 +13,12 @@ use tower_http::services::ServeDir;
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let state = AppState::new();
+    let state = AppState::new().await;
+
+    // Start auto-backup (hourly, keep 48 backups)
+    let state_for_backup = std::sync::Arc::new(state.clone());
+    state_for_backup.start_auto_backup(3600, 48);
+
     crate::discussions::truncate_existing_posts(&state).await;
     crate::discussions::cleanup_orphan_reactions(&state).await;
 
@@ -246,6 +251,7 @@ async fn main() {
         .route("/api/admin/backup", post(create_backup))
         .route("/api/admin/backups", get(list_backups))
         .route("/api/admin/backup/restore/{name}", post(restore_backup))
+        .route("/api/admin/backup/download/{name}", get(download_backup))
         .route("/api/admin/backup/{name}", delete(delete_backup))
         // Admin showcase
         .route(
@@ -255,6 +261,9 @@ async fn main() {
         // Admin export
         .route("/api/admin/export/data", get(export_data))
         .route("/api/admin/export/config", get(export_config))
+        // Admin import
+        .route("/api/admin/import/data", post(import_data))
+        .route("/api/admin/import/config", post(import_config))
         // Admin audit log
         .route("/api/admin/audit-log", get(get_audit_log))
         // Admin user management

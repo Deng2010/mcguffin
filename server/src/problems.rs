@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -12,6 +12,30 @@ use crate::notifications::create_notification;
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{check_permission, resolve_user, AuthUser};
+
+// ── ProblemRow for SQLite deserialization ──
+#[derive(sqlx::FromRow)]
+#[allow(dead_code)]
+struct ProblemRow {
+    id: String,
+    title: String,
+    author_id: String,
+    author_name: String,
+    contest: Option<String>,
+    contest_id: Option<String>,
+    difficulty: String,
+    content: String,
+    solution: Option<String>,
+    status: String,
+    created_at: String,
+    public_at: Option<String>,
+    claimed_by: Option<String>,
+    verifier_solution: Option<String>,
+    visible_to: String,
+    link: Option<String>,
+    remark: Option<String>,
+    editable_by: String,
+}
 
 // ============== List Problems ==============
 
@@ -36,7 +60,6 @@ pub async fn get_problems(
     };
     let current_uid = current_user.as_ref().map(|(id, _)| id.clone());
 
-    let all_problems = state.problems.read().await;
     let show_all = params.get("all").map(|v| v == "true").unwrap_or(false);
 
     // Search/filter query params
@@ -51,107 +74,247 @@ pub async fn get_problems(
         .map(|v| v.to_lowercase())
         .filter(|v| !v.is_empty());
 
-    let contests = state.contests.read().await;
+    let skip_all_filters = is_admin_user && show_all;
+
+    // ── Pre-compute values needed for fallback ──
     let difficulty_order = state.difficulty_order.read().await.clone();
 
-    let problems: Vec<ProblemListItem> = all_problems
-        .values()
-        .filter(|p| {
-            // Always exclude rejected problems (reject = delete, but guard against stale data)
-            if p.status == "rejected" {
-                return false;
-            }
-            if is_admin_user {
-                // Admin sees all by default
-                if show_all {
-                    return true;
-                }
-            } else if is_member {
+    // ── Build dynamic SQL query ──
+    // Use a dynamic SQL string with ? placeholders and a Vec of bind values.
+    // COALESCE(c.name, p.contest) resolves the contest name: if a contest record
+    // exists by contest_id, use its current name; otherwise fall back to the
+    // originally stored contest name (handles contest renames).
+    let mut sql = String::from(
+        "SELECT p.id, p.title, p.author_id, p.author_name, \
+         COALESCE(c.name, p.contest) AS contest, p.contest_id, \
+         p.difficulty, p.content, p.solution, p.status, \
+         p.created_at, p.public_at, p.claimed_by, \
+         p.verifier_solution, p.visible_to, p.link, p.remark, p.editable_by \
+         FROM problems p \
+         LEFT JOIN contests c ON p.contest_id = c.id \
+         WHERE p.status != 'rejected'",
+    );
+    let mut binds: Vec<String> = Vec::new();
+
+    // Filter 1-4: Role-based access control
+    if !skip_all_filters {
+        if let Some(uid) = &current_uid {
+            if is_member {
                 // Members see: published, approved, pending, problems they authored,
                 // and problems where they're in visible_to
-                let is_author = current_uid.as_ref().is_some_and(|uid| p.is_author(uid));
-                let ok = p.status == "published"
-                    || p.status == "approved"
-                    || p.status == "pending"
-                    || is_author
-                    || current_uid
-                        .as_ref()
-                        .is_some_and(|uid| p.visible_to.contains(uid));
-                if !ok {
-                    return false;
-                }
+                sql.push_str(
+                    " AND (p.status IN ('published','approved','pending')\
+                     OR p.author_id = ?\
+                     OR EXISTS (SELECT 1 FROM json_each(p.visible_to) WHERE value = ?))",
+                );
+                binds.push(uid.clone()); // for p.author_id = ?
+                binds.push(uid.clone()); // for json_each visible_to
             } else {
-                // Guests (including unauthenticated): only published
-                if p.status != "published" {
-                    return false;
-                }
+                // Logged-in non-members (guests): only published
+                sql.push_str(" AND p.status = 'published'");
             }
+        } else {
+            // Unauthenticated users: only published
+            sql.push_str(" AND p.status = 'published'");
+        }
+    }
 
-            // Apply search/filter query params
-            if let Some(q) = &search_q {
-                if !p.title.to_lowercase().contains(q) {
-                    return false;
-                }
-            }
-            if let Some(d) = diff_filter.as_deref() {
-                if p.difficulty != d {
-                    return false;
-                }
-            }
-            if let Some(s) = status_filter.as_deref() {
-                if p.status != s {
-                    return false;
-                }
-            }
-            if let Some(a) = &author_filter {
-                if !p.author_name.to_lowercase().contains(a) {
-                    return false;
-                }
-            }
-            true
-        })
-        .map(|p| {
-            // Derive contest name from contest_id if available (handles contest rename)
-            let contest_name = p
-                .contest_id
-                .as_ref()
-                .and_then(|cid| contests.get(cid))
-                .map(|c| c.name.clone())
-                .unwrap_or_else(|| p.contest.clone());
-            ProblemListItem {
-                id: p.id.clone(),
-                title: p.title.clone(),
-                author_id: p.author_id.clone(),
-                author_name: p.author_name.clone(),
-                contest: contest_name,
-                contest_id: p.contest_id.clone(),
-                difficulty: p.difficulty.clone(),
-                status: p.status.clone(),
-                created_at: p.created_at,
-                public_at: p.public_at,
-                claimed_by: p.claimed_by.clone(),
-                has_verifier_solution: p.verifier_solution.is_some(),
-                link: p.link.clone(),
-                remark: if p.status == "pending"
-                    && (is_admin_user || current_uid.as_ref().is_some_and(|uid| p.is_author(uid)))
-                {
-                    p.remark.clone()
-                } else {
-                    None
-                },
-            }
-        })
-        .collect::<Vec<_>>();
+    // Filter 5: search filter on title (case-insensitive contains)
+    if !skip_all_filters {
+        if let Some(q) = &search_q {
+            sql.push_str(" AND LOWER(p.title) LIKE ?");
+            binds.push(format!("%{}%", q));
+        }
+    }
 
-    // Sort by difficulty_order so configured order is reflected in the list
-    let mut problems = problems;
-    problems.sort_by(|a, b| {
-        let ai = difficulty_order.iter().position(|d| d == &a.difficulty);
-        let bi = difficulty_order.iter().position(|d| d == &b.difficulty);
-        ai.unwrap_or(999).cmp(&bi.unwrap_or(999))
-    });
+    // Filter 6: difficulty filter (exact match)
+    if !skip_all_filters {
+        if let Some(d) = &diff_filter {
+            sql.push_str(" AND p.difficulty = ?");
+            binds.push(d.clone());
+        }
+    }
 
-    Json(problems)
+    // Filter 7: status filter (exact match)
+    if !skip_all_filters {
+        if let Some(s) = &status_filter {
+            sql.push_str(" AND p.status = ?");
+            binds.push(s.clone());
+        }
+    }
+
+    // Filter 8: author filter (case-insensitive contains on author_name)
+    if !skip_all_filters {
+        if let Some(a) = &author_filter {
+            sql.push_str(" AND LOWER(p.author_name) LIKE ?");
+            binds.push(format!("%{}%", a));
+        }
+    }
+
+    // ── Execute SQLite query ──
+    let sql_result: Result<Vec<ProblemRow>, _> = {
+        let mut query = sqlx::query_as::<_, ProblemRow>(&sql);
+        for b in &binds {
+            query = query.bind(b.as_str());
+        }
+        query.fetch_all(&state.db).await
+    };
+
+    match sql_result {
+        Ok(rows) => {
+            // Map rows to ProblemListItem (Filter 9: contest name already resolved via COALESCE)
+            let mut problems: Vec<ProblemListItem> = rows
+                .into_iter()
+                .map(|row| ProblemListItem {
+                    id: row.id,
+                    title: row.title,
+                    author_id: row.author_id.clone(),
+                    author_name: row.author_name.clone(),
+                    contest: row.contest.unwrap_or_default(),
+                    contest_id: row.contest_id,
+                    difficulty: row.difficulty,
+                    status: row.status.clone(),
+                    created_at: DateTime::parse_from_rfc3339(&row.created_at)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or(Utc::now()),
+                    public_at: row.public_at.and_then(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    }),
+                    claimed_by: row.claimed_by,
+                    has_verifier_solution: row.verifier_solution.is_some(),
+                    link: row.link,
+                    remark: if row.status == "pending"
+                        && (is_admin_user
+                            || current_uid
+                                .as_ref()
+                                .is_some_and(|uid| row.author_id == *uid))
+                    {
+                        row.remark.clone()
+                    } else {
+                        None
+                    },
+                })
+                .collect();
+
+            // Filter 10: Custom sort by difficulty_order
+            problems.sort_by(|a, b| {
+                let ai = difficulty_order.iter().position(|d| d == &a.difficulty);
+                let bi = difficulty_order.iter().position(|d| d == &b.difficulty);
+                ai.unwrap_or(999).cmp(&bi.unwrap_or(999))
+            });
+
+            Json(problems)
+        }
+        Err(e) => {
+            // ── Fallback to HashMap ──
+            tracing::warn!("SQLite query failed, falling back to HashMap: {}", e);
+
+            let all_problems = state.problems.read().await;
+            let contests = state.contests.read().await;
+
+            let problems: Vec<ProblemListItem> = all_problems
+                .values()
+                .filter(|p| {
+                    // Always exclude rejected problems
+                    if p.status == "rejected" {
+                        return false;
+                    }
+                    if skip_all_filters {
+                        return true;
+                    }
+                    // Role-based access (filters 1-4)
+                    if is_member {
+                        let is_author = current_uid.as_ref().is_some_and(|uid| p.is_author(uid));
+                        let ok = p.status == "published"
+                            || p.status == "approved"
+                            || p.status == "pending"
+                            || is_author
+                            || current_uid
+                                .as_ref()
+                                .is_some_and(|uid| p.visible_to.contains(uid));
+                        if !ok {
+                            return false;
+                        }
+                    } else {
+                        // Guests (including unauthenticated): only published
+                        // This also covers logged-in non-members
+                        if p.status != "published" {
+                            return false;
+                        }
+                    }
+                    // Filter 5: search on title
+                    if let Some(q) = &search_q {
+                        if !p.title.to_lowercase().contains(q) {
+                            return false;
+                        }
+                    }
+                    // Filter 6: difficulty filter
+                    if let Some(d) = diff_filter.as_deref() {
+                        if p.difficulty != d {
+                            return false;
+                        }
+                    }
+                    // Filter 7: status filter
+                    if let Some(s) = status_filter.as_deref() {
+                        if p.status != s {
+                            return false;
+                        }
+                    }
+                    // Filter 8: author filter
+                    if let Some(a) = &author_filter {
+                        if !p.author_name.to_lowercase().contains(a) {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .map(|p| {
+                    // Filter 9: Contest name resolution
+                    let contest_name = p
+                        .contest_id
+                        .as_ref()
+                        .and_then(|cid| contests.get(cid))
+                        .map(|c| c.name.clone())
+                        .unwrap_or_else(|| p.contest.clone());
+                    ProblemListItem {
+                        id: p.id.clone(),
+                        title: p.title.clone(),
+                        author_id: p.author_id.clone(),
+                        author_name: p.author_name.clone(),
+                        contest: contest_name,
+                        contest_id: p.contest_id.clone(),
+                        difficulty: p.difficulty.clone(),
+                        status: p.status.clone(),
+                        created_at: p.created_at,
+                        public_at: p.public_at,
+                        claimed_by: p.claimed_by.clone(),
+                        has_verifier_solution: p.verifier_solution.is_some(),
+                        link: p.link.clone(),
+                        remark: if p.status == "pending"
+                            && (is_admin_user
+                                || current_uid.as_ref().is_some_and(|uid| p.is_author(uid)))
+                        {
+                            p.remark.clone()
+                        } else {
+                            None
+                        },
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            // Filter 10: Sort by difficulty_order
+            let mut problems = problems;
+            problems.sort_by(|a, b| {
+                let ai = difficulty_order.iter().position(|d| d == &a.difficulty);
+                let bi = difficulty_order.iter().position(|d| d == &b.difficulty);
+                ai.unwrap_or(999).cmp(&bi.unwrap_or(999))
+            });
+
+            Json(problems)
+        }
+    }
 }
 
 // ============== Get Problem Detail ==============
@@ -165,9 +328,38 @@ pub async fn get_problem_detail(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let current_user = resolve_user(&state, &headers).await;
 
-    let problems = state.problems.read().await;
-    let problem = match problems.get(&problem_id) {
-        Some(p) => p.clone(),
+    let problem = if let Ok(Some(row)) =
+        sqlx::query_as::<_, ProblemRow>("SELECT * FROM problems WHERE id = ?")
+            .bind(&problem_id)
+            .fetch_optional(&state.db)
+            .await
+    {
+        Some(Problem {
+            id: row.id,
+            title: row.title,
+            author_id: row.author_id,
+            author_name: row.author_name,
+            contest: row.contest.unwrap_or_default(),
+            contest_id: row.contest_id,
+            difficulty: row.difficulty,
+            content: row.content,
+            solution: row.solution,
+            status: row.status,
+            created_at: row.created_at.parse().unwrap_or_else(|_| Utc::now()),
+            public_at: row.public_at.and_then(|s| s.parse().ok()),
+            claimed_by: row.claimed_by,
+            verifier_solution: row.verifier_solution,
+            visible_to: serde_json::from_str(&row.visible_to).unwrap_or_default(),
+            link: row.link,
+            remark: row.remark,
+            editable_by: serde_json::from_str(&row.editable_by).unwrap_or_default(),
+        })
+    } else {
+        // Fallback to HashMap
+        state.problems.read().await.get(&problem_id).cloned()
+    };
+    let problem = match problem {
+        Some(p) => p,
         None => {
             return Err((
                 StatusCode::NOT_FOUND,
@@ -175,7 +367,6 @@ pub async fn get_problem_detail(
             ))
         }
     };
-    drop(problems);
 
     // Check admin status properly
     let is_admin_user = if let Some((_, ref user)) = &current_user {
@@ -348,11 +539,7 @@ pub async fn submit_problem(
     };
 
     let pid = problem.id.clone();
-    state
-        .problems
-        .write()
-        .await
-        .insert(problem.id.clone(), problem);
+    state.insert_problem(&problem).await;
     state.save().await;
 
     Json(SubmitResponse {
@@ -409,7 +596,7 @@ pub async fn review_problem(
         let problem_title = problem.title.clone();
         drop(problems);
 
-        state.problems.write().await.remove(&problem_id);
+        state.delete_problem_by_id(&problem_id).await;
         state.save().await;
 
         create_notification(
@@ -427,18 +614,19 @@ pub async fn review_problem(
         });
     }
 
-    let mut problems = state.problems.write().await;
-    let problem = match problems.get_mut(&problem_id) {
-        Some(p) => p,
-        None => {
-            return Json(ReviewResponse {
-                success: false,
-                message: "题目不存在".to_string(),
-            })
+    // Read problem to validate and capture info for notifications
+    let problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
         }
     };
-
-    // Capture info for notification before modifying
     let author_id = problem.author_id.clone();
     let problem_title = problem.title.clone();
 
@@ -450,7 +638,9 @@ pub async fn review_problem(
                     message: "只能审核待审核题目".to_string(),
                 });
             }
-            problem.status = "approved".to_string();
+            state
+                .update_problem_field(&problem_id, "status", "approved")
+                .await;
             Json(ReviewResponse {
                 success: true,
                 message: "已批准题目".to_string(),
@@ -469,8 +659,17 @@ pub async fn review_problem(
                     message: "发布前请先设置题目链接".to_string(),
                 });
             }
-            problem.status = "published".to_string();
-            problem.public_at = Some(Utc::now());
+            // public_at is Option<DateTime>, use read-modify-write via insert_problem
+            let mut p = state
+                .problems
+                .read()
+                .await
+                .get(&problem_id)
+                .cloned()
+                .unwrap();
+            p.status = "published".to_string();
+            p.public_at = Some(Utc::now());
+            state.insert_problem(&p).await;
             Json(ReviewResponse {
                 success: true,
                 message: "已发布题目".to_string(),
@@ -483,10 +682,15 @@ pub async fn review_problem(
                     message: "只能退回已批准题目".to_string(),
                 });
             }
-            problem.status = "pending".to_string();
-            // Clear claim info since only approved problems can be claimed
-            problem.claimed_by = None;
-            problem.verifier_solution = None;
+            state
+                .update_problem_field(&problem_id, "status", "pending")
+                .await;
+            state
+                .update_problem_field(&problem_id, "claimed_by", "")
+                .await;
+            state
+                .update_problem_field(&problem_id, "verifier_solution", "")
+                .await;
             Json(ReviewResponse {
                 success: true,
                 message: "已退回至待审核".to_string(),
@@ -499,8 +703,17 @@ pub async fn review_problem(
                     message: "只能取消发布已发布题目".to_string(),
                 });
             }
-            problem.status = "approved".to_string();
-            problem.public_at = None;
+            // public_at is Option<DateTime>, use read-modify-write via insert_problem
+            let mut p = state
+                .problems
+                .read()
+                .await
+                .get(&problem_id)
+                .cloned()
+                .unwrap();
+            p.status = "approved".to_string();
+            p.public_at = None;
+            state.insert_problem(&p).await;
             Json(ReviewResponse {
                 success: true,
                 message: "已取消发布".to_string(),
@@ -512,7 +725,6 @@ pub async fn review_problem(
         }),
     };
 
-    drop(problems);
     state.save().await;
 
     // Send notification to the problem author
@@ -597,11 +809,9 @@ pub async fn claim_problem(
     }
     drop(problems);
 
-    let mut problems = state.problems.write().await;
-    if let Some(p) = problems.get_mut(&problem_id) {
-        p.claimed_by = Some(user_id);
-    }
-    drop(problems);
+    state
+        .update_problem_field(&problem_id, "claimed_by", &user_id)
+        .await;
     state.save().await;
 
     Json(ClaimResponse {
@@ -628,14 +838,16 @@ pub async fn unclaim_problem(
         }
     };
 
-    let mut problems = state.problems.write().await;
-    let problem = match problems.get_mut(&problem_id) {
-        Some(p) => p,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "题目不存在".to_string(),
-            })
+    let problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ClaimResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
         }
     };
     if problem.claimed_by.as_deref() != Some(&user_id) {
@@ -644,9 +856,12 @@ pub async fn unclaim_problem(
             message: "您不是该题目的验题人".to_string(),
         });
     }
-    problem.claimed_by = None;
-    problem.verifier_solution = None;
-    drop(problems);
+    state
+        .update_problem_field(&problem_id, "claimed_by", "")
+        .await;
+    state
+        .update_problem_field(&problem_id, "verifier_solution", "")
+        .await;
     state.save().await;
 
     Json(ClaimResponse {
@@ -674,14 +889,16 @@ pub async fn submit_verifier_solution(
         }
     };
 
-    let mut problems = state.problems.write().await;
-    let problem = match problems.get_mut(&problem_id) {
-        Some(p) => p,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "题目不存在".to_string(),
-            })
+    let problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ClaimResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
         }
     };
     if problem.claimed_by.as_deref() != Some(&user_id) {
@@ -690,8 +907,9 @@ pub async fn submit_verifier_solution(
             message: "您不是该题目的验题人".to_string(),
         });
     }
-    problem.verifier_solution = Some(payload.solution);
-    drop(problems);
+    state
+        .update_problem_field(&problem_id, "verifier_solution", &payload.solution)
+        .await;
     state.save().await;
 
     Json(ClaimResponse {
@@ -726,39 +944,50 @@ pub async fn set_problem_visibility(
         });
     }
 
-    let mut problems = state.problems.write().await;
-    let problem = match problems.get_mut(&problem_id) {
-        Some(p) => p,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "题目不存在".to_string(),
-            })
+    // Validate the problem exists and is pending
+    {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) if p.status == "pending" => {}
+            Some(_) => {
+                return Json(ClaimResponse {
+                    success: false,
+                    message: "只能设置待审核题目的可见性".to_string(),
+                })
+            }
+            None => {
+                return Json(ClaimResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
         }
-    };
-    if problem.status != "pending" {
-        return Json(ClaimResponse {
-            success: false,
-            message: "只能设置待审核题目的可见性".to_string(),
-        });
     }
 
     // Only allow setting for actual 普通成员 (users.role == "member")
-    let members = state.team_members.read().await;
-    let users = state.users.read().await;
-    let valid_ids: Vec<String> = payload
-        .user_ids
-        .into_iter()
-        .filter(|uid| {
-            members.values().any(|m| &m.user_id == uid)
-                && users.get(uid).map(|u| u.role.as_str()) == Some("member")
-        })
-        .collect();
-    drop(members);
-    drop(users);
+    let valid_ids: Vec<String> = {
+        let members = state.team_members.read().await;
+        let users = state.users.read().await;
+        payload
+            .user_ids
+            .into_iter()
+            .filter(|uid| {
+                members.values().any(|m| &m.user_id == uid)
+                    && users.get(uid).map(|u| u.role.as_str()) == Some("member")
+            })
+            .collect()
+    };
 
-    problem.visible_to = valid_ids;
-    drop(problems);
+    // visible_to is Vec<String>, use read-modify-write via insert_problem
+    let mut p = state
+        .problems
+        .read()
+        .await
+        .get(&problem_id)
+        .cloned()
+        .unwrap();
+    p.visible_to = valid_ids;
+    state.insert_problem(&p).await;
     state.save().await;
 
     Json(ClaimResponse {
@@ -875,14 +1104,17 @@ pub async fn update_problem(
     };
     let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await;
 
-    let mut problems = state.problems.write().await;
-    let problem = match problems.get_mut(&problem_id) {
-        Some(p) => p,
-        None => {
-            return Json(ReviewResponse {
-                success: false,
-                message: "题目不存在".to_string(),
-            })
+    // Read problem and validate ownership
+    let mut problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
         }
     };
 
@@ -951,7 +1183,7 @@ pub async fn update_problem(
         problem.remark = if val.is_empty() { None } else { Some(val) };
     }
 
-    drop(problems);
+    state.insert_problem(&problem).await;
     state.save().await;
 
     Json(ReviewResponse {
@@ -980,14 +1212,16 @@ pub async fn delete_problem(
     };
     let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await;
 
-    let mut problems = state.problems.write().await;
-    let problem = match problems.get(&problem_id) {
-        Some(p) => p.clone(),
-        None => {
-            return Json(ReviewResponse {
-                success: false,
-                message: "题目不存在".to_string(),
-            })
+    let problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
         }
     };
 
@@ -1005,8 +1239,7 @@ pub async fn delete_problem(
         });
     }
 
-    problems.remove(&problem_id);
-    drop(problems);
+    state.delete_problem_by_id(&problem_id).await;
     state.save().await;
 
     Json(ReviewResponse {
@@ -1028,13 +1261,15 @@ pub async fn set_problem_contest(
     auth.require_perm(&state, crate::types::perms::APPROVE_PROBLEM)
         .await?;
 
-    let mut problems = state.problems.write().await;
-    let problem = match problems.get_mut(&problem_id) {
-        Some(p) => p,
-        None => {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "题目不存在"}),
-            ))
+    let mut problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Ok(Json(
+                    serde_json::json!({"success": false, "message": "题目不存在"}),
+                ))
+            }
         }
     };
 
@@ -1054,7 +1289,8 @@ pub async fn set_problem_contest(
         problem.contest = String::new();
         problem.contest_id = None;
     }
-    drop(problems);
+
+    state.insert_problem(&problem).await;
     state.save().await;
 
     Ok(Json(

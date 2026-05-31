@@ -39,44 +39,49 @@ pub fn get_token_from_headers(headers: &axum::http::HeaderMap) -> Option<String>
 
 /// Resolve user from token; returns (user_id, user)
 /// Checks session expiry (24h inactivity) and updates last_active timestamp
+/// 双写：HashMap + SQLite
 pub async fn resolve_user(
     state: &AppState,
     headers: &axum::http::HeaderMap,
 ) -> Option<(String, User)> {
     let token = get_token_from_headers(headers)?;
     let now = Utc::now();
+    let now_rfc = now.to_rfc3339();
 
     // Check session expiry
-    {
+    let user_id = {
         let mut sessions = state.sessions.write().await;
-        if let Some(entry) = sessions.get(&token) {
-            let elapsed = (now - entry.last_active).num_seconds();
-            if elapsed > SESSION_MAX_AGE_SECS {
-                // Session expired — clean up
-                sessions.remove(&token);
-                // Drop lock before save
-                drop(sessions);
-                state.save().await;
-                return None;
-            }
-        } else {
+        let entry = sessions.get(&token)?;
+        let elapsed = (now - entry.last_active).num_seconds();
+        if elapsed > SESSION_MAX_AGE_SECS {
+            // Session expired — clean up
+            sessions.remove(&token);
+            drop(sessions);
+            // 同步到 SQLite
+            state.remove_session(&token).await;
+            state.save().await;
             return None;
         }
-
-        // Update last_active time — we already have write lock
+        // Update last_active time
         if let Some(entry) = sessions.get_mut(&token) {
             entry.last_active = now;
         }
-
-        let user_id = sessions.get(&token)?.user_id.clone();
-        let users = state.users.read().await;
-        let mut user = users.get(&user_id)?.clone();
-        drop(users);
+        let uid = sessions.get(&token)?.user_id.clone();
         drop(sessions);
-        // Set computed effective_role on the response
-        user.effective_role = user.compute_effective_role().to_string();
-        Some((user_id, user))
-    }
+        // 更新 SQLite 中的 last_active
+        let _ = sqlx::query("UPDATE sessions SET last_active = ? WHERE token = ?")
+            .bind(&now_rfc)
+            .bind(&token)
+            .execute(&state.db)
+            .await;
+        uid
+    };
+
+    let users = state.users.read().await;
+    let mut user = users.get(&user_id)?.clone();
+    drop(users);
+    user.effective_role = user.compute_effective_role().to_string();
+    Some((user_id, user))
 }
 
 /// Check if user has admin role (includes superadmin)
