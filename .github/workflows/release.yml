@@ -96,16 +96,16 @@ jobs:
           echo "→ Packaging ${PKG_DIR}"
 
           # Staging directory
-          mkdir -p "release/${PKG_DIR}"
+          mkdir -p "release/${PKG_DIR}/dist"
 
           # Copy server binary
-          cp "server/target/release/mcguffin-server${SUFFIX}" "release/${PKG_DIR}/dist"
+          cp "server/target/release/mcguffin-server${SUFFIX}" "release/${PKG_DIR}/dist/mcguffin-server${SUFFIX}"
 
           # Copy CLI binary
-          cp "server/target/release/mcguffin${SUFFIX}" "release/${PKG_DIR}/dist"
+          cp "server/target/release/mcguffin${SUFFIX}" "release/${PKG_DIR}/dist/mcguffin${SUFFIX}"
 
           # Copy frontend dist (production build of SPA)
-          cp -r web/dist "release/${PKG_DIR}/dist"
+          cp -r web/dist/* "release/${PKG_DIR}/dist/"
 
           # Create archive
           cd release
