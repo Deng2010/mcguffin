@@ -49,6 +49,11 @@ export default function CommunityPage() {
   const [allTags, setAllTags] = useState<DiscussionTag[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<string>(searchParams.get('tag') || 'all')
+  // ── Pagination ──
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const limit = 10
 
   // ── Create post ──
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -61,14 +66,23 @@ export default function CommunityPage() {
 
   const isAdmin = hasPermission('manage_posts')
 
-  const loadPosts = () => {
-    apiFetch<PostListItem[]>('/community/posts')
-      .then(setPosts)
+  const loadPosts = (p?: number) => {
+    const currentPage = p ?? page
+    const tagParam = activeTab !== 'all' ? `&tag=${activeTab}` : ''
+    apiFetch<{ items: PostListItem[]; total: number; page: number; total_pages: number }>(
+      `/community/posts?page=${currentPage}&limit=${limit}${tagParam}`
+    )
+      .then(res => {
+        setPosts(res.items)
+        setTotal(res.total)
+        setPage(res.page)
+        setTotalPages(res.total_pages)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { loadPosts() }, [])
+  useEffect(() => { loadPosts(1) }, [])
 
   useEffect(() => {
     apiFetch<DiscussionTag[]>('/posts/tags')
@@ -76,13 +90,41 @@ export default function CommunityPage() {
       .catch(() => {})
   }, [])
 
-  const filteredPosts = posts.filter(p => {
-    if (activeTab === 'all') return true
-    return p.tags.includes(activeTab)
-  })
+  const switchTab = (tab: string) => {
+    setActiveTab(tab)
+    setPage(1)
+    setLoading(true)
+    const tagParam = tab !== 'all' ? `&tag=${tab}` : ''
+    apiFetch<{ items: PostListItem[]; total: number }>(
+      `/community/posts?page=1&limit=${limit}${tagParam}`
+    )
+      .then(res => {
+        setPosts(res.items)
+        setTotal(res.total)
+        setPage(1)
+        setTotalPages(Math.max(1, Math.ceil(res.total / limit)))
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
+
+  const goToPage = (p: number) => {
+    if (p < 1 || p > totalPages) return
+    setLoading(true)
+    const tagParam = activeTab !== 'all' ? `&tag=${activeTab}` : ''
+    apiFetch<{ items: PostListItem[]; total: number; page: number; total_pages: number }>(
+      `/community/posts?page=${p}&limit=${limit}${tagParam}`
+    )
+      .then(res => {
+        setPosts(res.items)
+        setPage(res.page)
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }
 
   const counts: Record<string, number> = {
-    all: posts.length,
+    all: total,
   }
   allTags.forEach(t => {
     counts[t.id] = posts.filter(p => p.tags.includes(t.id)).length
@@ -189,13 +231,13 @@ export default function CommunityPage() {
 
       {/* ── Tag tab bar ── */}
       <div className="flex items-center gap-1 border-b border-gray-300 dark:border-gray-700 mb-6 overflow-x-auto">
-        <button key="all" onClick={() => setActiveTab('all')}
+        <button key="all" onClick={() => switchTab('all')}
           className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${activeTab === 'all' ? 'border-gray-800 dark:border-gray-100 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100'}`}>
           全部
           <span className={`ml-1.5 px-1.5 py-0.5 text-xs ${activeTab === 'all' ? 'bg-gray-800 dark:bg-gray-700 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}>{counts.all}</span>
         </button>
         {visibleTags.map(t => (
-          <button key={t.id} onClick={() => setActiveTab(t.id)}
+          <button key={t.id} onClick={() => switchTab(t.id)}
             className={`px-3 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${activeTab === t.id ? 'border-gray-800 dark:border-gray-100 text-gray-900 dark:text-gray-100' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100'}`}>
             {t.name}
             {counts[t.id] > 0 && (
@@ -206,11 +248,11 @@ export default function CommunityPage() {
       </div>
 
       {/* ── Post List ── */}
-      {filteredPosts.length === 0 ? (
+      {posts.length === 0 ? (
         <div className="text-center py-12 text-gray-400 dark:text-gray-500">暂无内容</div>
       ) : (
         <div className="space-y-3">
-          {filteredPosts.map(p => (
+          {posts.map(p => (
             <div
               key={p.id}
               className={`bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow border-l-4 cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors ${p.pinned ? 'border-yellow-400 border-l-4' : 'border-l-gray-300 dark:border-l-gray-700'}`}
@@ -272,6 +314,43 @@ export default function CommunityPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Pagination ── */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-8">
+          <button
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1}
+            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            上一页
+          </button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 2)
+            .map((p, idx, arr) => (
+              <span key={p} className="flex items-center">
+                {idx > 0 && arr[idx - 1] !== p - 1 && <span className="px-1 text-gray-400 dark:text-gray-600">…</span>}
+                <button
+                  onClick={() => goToPage(p)}
+                  className={`px-3 py-1.5 text-sm border ${
+                    p === page
+                      ? 'border-gray-800 dark:border-gray-100 bg-gray-800 dark:bg-gray-700 text-white'
+                      : 'border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {p}
+                </button>
+              </span>
+            ))}
+          <button
+            onClick={() => goToPage(page + 1)}
+            disabled={page >= totalPages}
+            className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            下一页
+          </button>
         </div>
       )}
     </div>

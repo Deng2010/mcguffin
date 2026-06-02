@@ -983,7 +983,14 @@ pub struct CommunityQuery {
     pub tags: Option<String>, // comma-separated tag IDs
     #[serde(default)]
     pub tag: Option<String>, // single tag (backward compat)
+    #[serde(default = "default_page")]
+    pub page: u32,
+    #[serde(default = "default_limit")]
+    pub limit: u32,
 }
+
+fn default_page() -> u32 { 1 }
+fn default_limit() -> u32 { 10 }
 
 // ============== Tests ==============
 
