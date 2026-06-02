@@ -184,6 +184,7 @@ pub async fn get_problems(
                     }),
                     claimed_by: row.claimed_by,
                     has_verifier_solution: row.verifier_solution.is_some(),
+                    visible_to: serde_json::from_str(&row.visible_to).unwrap_or_default(),
                     link: row.link,
                     remark: if row.status == "pending"
                         && (is_admin_user
@@ -291,6 +292,7 @@ pub async fn get_problems(
                         public_at: p.public_at,
                         claimed_by: p.claimed_by.clone(),
                         has_verifier_solution: p.verifier_solution.is_some(),
+                        visible_to: p.visible_to.clone(),
                         link: p.link.clone(),
                         remark: if p.status == "pending"
                             && (is_admin_user

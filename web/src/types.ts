@@ -206,6 +206,7 @@ export interface ProblemListItem {
   has_verifier_solution: boolean;
   link?: string | null;
   remark?: string | null;
+  visible_to?: string[];
 }
 
 export interface ProblemDetail {

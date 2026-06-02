@@ -4,7 +4,7 @@ import { useAuth } from "../AuthContext";
 import { apiFetch } from "../api";
 import { useDifficulties, DiffBadge } from "../hooks/useDifficulties";
 import MarkdownEditor from "../components/MarkdownEditor";
-import type { ProblemListItem, AdminPendingProblem } from "../types";
+import type { ProblemListItem } from "../types";
 
 interface TeamMemberOption {
   user_id: string;
@@ -31,21 +31,11 @@ export default function ProblemsPage() {
   const [loading, setLoading] = useState(true);
 
   // Review tabs
-  const [pendingProblems, setPendingProblems] = useState<AdminPendingProblem[]>(
-    [],
-  );
   const [members, setMembers] = useState<TeamMemberOption[]>([]);
   const [contests, setContests] = useState<ContestOption[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [visibilityMap, setVisibilityMap] = useState<Record<string, string[]>>(
     {},
   );
-
-  // For non-admin members: pending problems visible to them (from the main list)
-  const myPendingProblems = useMemo(() => {
-    if (canApprove) return []; // admin uses pendingProblems from API
-    return problems.filter((p) => p.status === "pending");
-  }, [problems, canApprove]);
 
   // Submit form state
   const [showSubmit, setShowSubmit] = useState(false);
@@ -109,7 +99,7 @@ export default function ProblemsPage() {
       {
         id: "pending",
         label: "待审核",
-        count: canApprove ? pendingCount : myPendingProblems.length,
+        count: pendingCount,
       },
       { id: "approved", label: "已通过", count: approvedCount },
       { id: "published", label: "已发布", count: publishedCount },
@@ -124,29 +114,45 @@ export default function ProblemsPage() {
       .finally(() => setLoading(false));
   };
 
-  const loadReviewData = () => {
+  const loadMembersAndContests = () => {
     Promise.all([
-      apiFetch<AdminPendingProblem[]>("/problems/admin/pending"),
       apiFetch<TeamMemberOption[]>("/problems/admin/members"),
       apiFetch<ContestOption[]>("/contests"),
     ])
-      .then(([pendingList, memberList, contestList]) => {
-        setPendingProblems(pendingList);
+      .then(([memberList, contestList]) => {
         setMembers(memberList);
         setContests(contestList);
-        const vm: Record<string, string[]> = {};
-        pendingList.forEach((p: AdminPendingProblem) => {
-          vm[p.id] = p.visible_to || [];
-        });
-        setVisibilityMap(vm);
       })
       .catch(() => {});
   };
 
   useEffect(() => {
     loadProblems();
-    if (canSubmit) loadReviewData();
   }, [canSubmit, canApprove]);
+
+  // Lazy load members/contests when admin opens the pending tab
+  useEffect(() => {
+    if (activeTab === "pending" && canApprove && members.length === 0) {
+      loadMembersAndContests();
+    }
+  }, [activeTab, canApprove, members.length]);
+
+  // Initialize visibilityMap from problems when problems change (admin only)
+  useEffect(() => {
+    if (canApprove && problems.length > 0) {
+      const vm: Record<string, string[]> = {};
+      problems.forEach((p) => {
+        if (p.visible_to && p.visible_to.length > 0) {
+          vm[p.id] = p.visible_to;
+        }
+      });
+      setVisibilityMap((prev) => {
+        // Only merge new entries, preserve user edits
+        const merged = { ...prev, ...vm };
+        return Object.keys(merged).length > Object.keys(prev).length ? merged : prev;
+      });
+    }
+  }, [problems, canApprove]);
 
   // Load contests when submit form opens
   useEffect(() => {
@@ -218,7 +224,6 @@ export default function ProblemsPage() {
         alert(res.message);
         return;
       }
-      loadReviewData();
       loadProblems();
     } catch (err) {
       alert(`操作失败: ${err}`);
@@ -270,7 +275,6 @@ export default function ProblemsPage() {
         alert(res.message);
         return;
       }
-      loadReviewData();
       loadProblems();
     } catch (err) {
       alert(`设置失败: ${err}`);
@@ -289,7 +293,6 @@ export default function ProblemsPage() {
         alert(res.message);
         return;
       }
-      loadReviewData();
       loadProblems();
     } catch (err) {
       alert(`删除失败: ${err}`);
@@ -393,7 +396,7 @@ export default function ProblemsPage() {
   };
 
   // Shared meta info row for all card types
-  const renderMeta = (p: ProblemListItem | AdminPendingProblem) => (
+  const renderMeta = (p: ProblemListItem) => (
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400 mt-1">
       <span>作者：{p.author_name}</span>
       <span>赛事：{p.contest || "无"}</span>
@@ -737,7 +740,7 @@ export default function ProblemsPage() {
   // ====== Problem Card (shared by all tabs) ======
 
   const renderProblemCard = (
-    p: ProblemListItem | AdminPendingProblem,
+    p: ProblemListItem,
     extraActions?: React.ReactNode,
   ) => {
     return (
@@ -876,7 +879,7 @@ export default function ProblemsPage() {
   // ====== Tab: Pending ======
 
   const renderPending = () => {
-    const items = canApprove ? pendingProblems : myPendingProblems;
+    const items = problems.filter((p) => p.status === "pending");
     if (items.length === 0)
       return (
         <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
@@ -939,7 +942,7 @@ export default function ProblemsPage() {
                   </h4>
                   <div className="flex items-center gap-2">
                     <select
-                      defaultValue={(p as AdminPendingProblem).contest || ""}
+                      defaultValue={p.contest || ""}
                       onChange={(e) => handleSetContest(p.id, e.target.value)}
                       className="px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
                     >
@@ -956,13 +959,13 @@ export default function ProblemsPage() {
                   </div>
                 </div>
                 {renderVisibilityEditor(p.id)}
-                {(p as AdminPendingProblem).remark && (
+                {p.remark && (
                   <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800">
                     <h4 className="text-xs font-semibold text-yellow-800 dark:text-yellow-300 mb-1">
                       备注
                     </h4>
                     <p className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap">
-                      {(p as AdminPendingProblem).remark}
+                      {p.remark}
                     </p>
                   </div>
                 )}
