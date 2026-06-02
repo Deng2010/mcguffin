@@ -313,7 +313,6 @@ pub async fn verify_token(
 pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Json<LogoutResponse> {
     if let Some(token) = get_token_from_headers(&headers) {
         state.sessions.write().await.remove(&token);
-        state.save().await;
         Json(LogoutResponse { success: true })
     } else {
         Json(LogoutResponse { success: false })

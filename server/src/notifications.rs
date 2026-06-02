@@ -106,7 +106,6 @@ pub async fn mark_notification_read(
     }
 
     state.mark_notification_read(&notification_id).await;
-    state.save().await;
     Json(serde_json::json!({"success": true, "message": "已标记为已读"}))
 }
 
@@ -122,7 +121,6 @@ pub async fn mark_all_notifications_read(
     };
 
     state.mark_all_user_notifications_read(&user_id).await;
-    state.save().await;
 
     Json(serde_json::json!({"success": true, "message": "已标记所有通知为已读"}))
 }
@@ -146,5 +144,4 @@ pub async fn create_notification(
         link: link.map(|l| l.to_string()),
     };
     state.insert_notification(&notification).await;
-    state.save().await;
 }

@@ -99,8 +99,8 @@ pub async fn get_suggestions(
     } else {
         let map = state.posts.read().await;
         map.values()
+            .filter(|&p| p.tags.contains(&"建议".to_string()) || !p.status.is_empty())
             .cloned()
-            .filter(|p| p.tags.contains(&"建议".to_string()) || !p.status.is_empty())
             .collect()
     };
 
@@ -183,7 +183,6 @@ pub async fn create_suggestion(
         editable_by: vec![],
     };
     state.upsert_post(&post).await;
-    state.save().await;
     Json(serde_json::json!({"success": true, "message": "建议已提交"}))
 }
 
@@ -254,7 +253,6 @@ pub async fn update_suggestion(
         }
         p.updated_at = Utc::now();
         state.upsert_post(&p).await;
-        state.save().await;
 
         if let Some(new_status) = payload.get("status").and_then(|v| v.as_str()) {
             if new_status == "resolved" && author_id != auth.user_id {
@@ -325,7 +323,6 @@ pub async fn reply_to_suggestion(
         p.replies.push(reply);
         p.updated_at = Utc::now();
         state.upsert_post(&p).await;
-        state.save().await;
         if author_id != auth.user_id {
             create_notification(
                 &state,
@@ -370,7 +367,6 @@ pub async fn delete_suggestion_reply(
         }
         p.replies.retain(|r| r.id != reply_id);
         state.upsert_post(&p).await;
-        state.save().await;
         return Json(serde_json::json!({"success": true, "message": "回复已删除"}));
     }
     Json(serde_json::json!({"success": false, "message": "建议不存在"}))
@@ -395,7 +391,6 @@ pub async fn delete_suggestion(
         }
         drop(posts);
         state.delete_post_by_id(&id).await;
-        state.save().await;
         return Json(serde_json::json!({"success": true, "message": "建议已删除"}));
     }
     Json(serde_json::json!({"success": false, "message": "建议不存在"}))

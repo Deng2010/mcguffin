@@ -114,7 +114,6 @@ pub async fn truncate_existing_posts(state: &AppState) {
     }
 
     tracing::info!("Truncated some existing posts/replies to meet character limits");
-    state.save().await;
 }
 
 // ============== List Posts ==============
@@ -302,7 +301,6 @@ pub async fn create_post(
     };
     let post_id = post.id.clone();
     state.upsert_post(&post).await;
-    state.save().await;
 
     // Create notifications for @mentioned users
     for uid in &payload.mentioned_user_ids {
@@ -566,7 +564,6 @@ pub async fn update_post(
     }
     p.updated_at = Utc::now();
     state.upsert_post(&p).await;
-    state.save().await;
     Json(serde_json::json!({"success": true, "message": "帖子已更新"}))
 }
 
@@ -589,7 +586,6 @@ pub async fn delete_post(
                 return Json(serde_json::json!({"success": false, "message": "无权删除"}));
             }
             state.delete_post_by_id(&id).await;
-            state.save().await;
             Json(serde_json::json!({"success": true, "message": "帖子已删除"}))
         }
         None => Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
@@ -637,7 +633,6 @@ pub async fn reply_to_post(
     let post_author_id = p.author_id.clone();
     let mentioned = payload.mentioned_user_ids.clone();
     state.upsert_post(&p).await;
-    state.save().await;
 
     // Notify post author when someone replies
     if post_author_id != user_id {
@@ -696,7 +691,6 @@ pub async fn delete_post_reply(
         .retain(|r| r.parent_id.as_deref() != Some(&reply_id));
     p.updated_at = Utc::now();
     state.upsert_post(&p).await;
-    state.save().await;
     Json(serde_json::json!({"success": true, "message": "回复已删除"}))
 }
 
@@ -745,7 +739,6 @@ pub async fn react_to_post(
         users_set.push(user_id);
     }
     state.upsert_post(&p).await;
-    state.save().await;
     Json(serde_json::json!({"success": true}))
 }
 
@@ -782,7 +775,6 @@ pub async fn react_to_reply(
             users_set.push(user_id);
         }
         state.upsert_post(&p).await;
-        state.save().await;
         return Json(serde_json::json!({"success": true}));
     }
     Json(serde_json::json!({"success": false, "message": "回复不存在"}))

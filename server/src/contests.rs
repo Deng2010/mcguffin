@@ -167,7 +167,7 @@ pub async fn get_contests(
                         false
                     }
                 })
-                .map(|c| crate::contests::to_list_item(c))
+                .map(crate::contests::to_list_item)
                 .collect();
             list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
             Json(list)
@@ -204,7 +204,6 @@ pub async fn create_contest(
 
     let cid = contest.id.clone();
     state.insert_contest(&contest).await;
-    state.save().await;
 
     Ok(Json(
         serde_json::json!({"success": true, "message": "比赛已创建", "contest_id": cid}),
@@ -228,7 +227,6 @@ pub async fn delete_contest(
     if exists {
         state.clear_contest_from_problems(&contest_id).await;
         state.delete_contest_by_id(&contest_id).await;
-        state.save().await;
         Ok(Json(
             serde_json::json!({"success": true, "message": "比赛已删除"}),
         ))
@@ -270,7 +268,6 @@ pub async fn update_contest(
     }
     state.insert_contest(&contest).await;
 
-    state.save().await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "比赛已更新"}),
     ))
@@ -321,7 +318,6 @@ pub async fn set_contest_status(
 
     contest.status = payload.status;
     state.insert_contest(&contest).await;
-    state.save().await;
 
     Ok(Json(
         serde_json::json!({"success": true, "message": "比赛状态已更新"}),
@@ -367,7 +363,6 @@ pub async fn set_problem_order(
 
     contest.problem_order = payload.problem_ids;
     state.insert_contest(&contest).await;
-    state.save().await;
 
     Ok(Json(
         serde_json::json!({"success": true, "message": "题目顺序已更新"}),

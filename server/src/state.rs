@@ -7,17 +7,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 
 pub const ADMIN_USER_ID: &str = "admin";
-
-/// 上次保存到 JSON 的时间戳（秒），用于节流
-static LAST_JSON_SAVE: AtomicI64 = AtomicI64::new(0);
-/// JSON 文件保存最小间隔（秒）
-const JSON_SAVE_INTERVAL: i64 = 5;
 
 /// Resolve the config file path with platform awareness.
 /// Priority: CWD 的 mcguffin.toml/config.toml > 平台默认路径。
@@ -532,28 +525,40 @@ impl AppState {
             .await
             .expect("SQLite 初始化失败，请检查数据库文件路径和权限");
 
-        // Load saved JSON data
-        let saved = std::fs::read_to_string(data_file)
-            .ok()
-            .and_then(|s| serde_json::from_str::<SavedData>(&s).ok());
-
-        // ── 数据加载策略：SQLite 优先，JSON 回退 ──
-        let sqlite_active = crate::db::sqlite_has_data(&db).await;
-        if !sqlite_active {
-            // SQLite 为空且 JSON 存在 → 首次导入
-            if let Some(ref saved_data) = saved {
-                match crate::db::import_saved_data(&db, saved_data).await {
-                    Ok(n) if n > 0 => {
-                        tracing::info!("已从 {} 导入 {} 条记录到 SQLite", data_file, n);
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::warn!("从 JSON 导入 SQLite 失败（可忽略）: {}", e);
-                    }
+        // ── 数据加载策略：SQLite 为主，JSON 仅用于首次迁移 ──
+        let mut saved: Option<SavedData> = None;
+        let has_data = crate::db::sqlite_has_data(&db).await;
+        if has_data {
+            // SQLite 已有数据 → 从数据库加载
+            tracing::info!("从 SQLite 加载数据...");
+            match crate::db::load_all_from_sqlite(&db).await {
+                Ok(data) => {
+                    saved = Some(data);
+                    tracing::info!("SQLite 数据加载成功");
+                }
+                Err(e) => {
+                    tracing::warn!("从 SQLite 加载数据失败: {}", e);
                 }
             }
-        } else {
-            tracing::info!("SQLite 已有数据，优先从数据库加载");
+        }
+
+        // SQLite 为空 → 尝试从 JSON 迁移
+        if saved.is_none() {
+            if let Ok(json) = std::fs::read_to_string(data_file) {
+                if let Ok(data) = serde_json::from_str::<SavedData>(&json) {
+                    tracing::info!("从 JSON 文件 {} 加载数据，准备导入 SQLite...", data_file);
+                    match crate::db::import_saved_data(&db, &data).await {
+                        Ok(n) if n > 0 => {
+                            tracing::info!("已从 {} 导入 {} 条记录到 SQLite", data_file, n);
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!("从 JSON 导入 SQLite 失败: {}", e);
+                        }
+                    }
+                    saved = Some(data);
+                }
+            }
         }
 
         // Discussion tags and emojis come from config.toml, not saved data
@@ -812,61 +817,14 @@ impl AppState {
             db,
         };
 
-        // 如果 SQLite 已有数据，导出到 JSON 以保持同步
-        if sqlite_active {
-            app_state.export_sqlite_to_json().await;
-            tracing::info!("已将 SQLite 数据同步到 JSON 文件");
-        }
-
+        // SQLite 是权威数据源，不需要反向同步 JSON
         app_state
     }
 
-    /// 持久化所有内存状态到 JSON 文件（每秒最多一次）
+    /// 已废弃：数据实时写入 SQLite，不再需要 JSON 持久化。
+    /// 保留此方法以兼容现有调用点（调用点为 no-op）。
     pub async fn save(&self) {
-        // 节流：每秒最多写一次
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        let last = LAST_JSON_SAVE.load(Ordering::Relaxed);
-        if now - last < JSON_SAVE_INTERVAL {
-            return;
-        }
-        LAST_JSON_SAVE.store(now, Ordering::Relaxed);
-
-        // 确保 JSON 文件父目录存在
-        let data_path = std::path::Path::new(&self.data_file);
-        if let Some(parent) = data_path.parent() {
-            if !parent.as_os_str().is_empty() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-        }
-
-        let data = SavedData {
-            users: self.users.read().await.clone(),
-            sessions: self.sessions.read().await.clone(),
-            refresh_tokens: self.refresh_tokens.read().await.clone(),
-            team_members: self.team_members.read().await.clone(),
-            problems: self.problems.read().await.clone(),
-            join_requests: self.join_requests.read().await.clone(),
-            contests: self.contests.read().await.clone(),
-            site_description: self.site_description.read().await.clone(),
-            notifications: self.notifications.read().await.clone(),
-            showcase_problem_ids: self.showcase_problem_ids.read().await.clone(),
-            showcase_contest_ids: self.showcase_contest_ids.read().await.clone(),
-            posts: self.posts.read().await.clone(),
-            suggestions: HashMap::new(),
-            announcements: HashMap::new(),
-            discussions: HashMap::new(),
-            member_groups: self.member_groups.read().await.clone(),
-        };
-        let json = serde_json::to_string_pretty(&data).unwrap();
-        let tmp_path = format!("{}.tmp", self.data_file);
-        // Write to temp file first, then atomically rename
-        // This prevents data corruption if the process crashes mid-write
-        if std::fs::write(&tmp_path, &json).is_ok() {
-            let _ = std::fs::rename(&tmp_path, &self.data_file);
-        }
+        // no-op: SQLite 是权威数据源，每次写操作已同步写入
     }
 
     const MAX_SESSIONS_PER_USER: usize = 3;
@@ -1455,11 +1413,11 @@ impl AppState {
             .await;
     }
 
-    /// Reload all in-memory state from the current data file on disk
-    /// Used after restoring from backup
+    /// 从 SQLite 重新加载所有内存状态。
+    /// 用于备份恢复后同步内存数据。
     pub async fn reload(&self) {
-        if let Ok(json) = std::fs::read_to_string(&self.data_file) {
-            if let Ok(data) = serde_json::from_str::<SavedData>(&json) {
+        match crate::db::load_all_from_sqlite(&self.db).await {
+            Ok(data) => {
                 *self.users.write().await = data.users;
                 *self.sessions.write().await = data.sessions;
                 *self.refresh_tokens.write().await = data.refresh_tokens;
@@ -1471,7 +1429,7 @@ impl AppState {
                 *self.notifications.write().await = data.notifications;
                 *self.showcase_problem_ids.write().await = data.showcase_problem_ids;
                 *self.showcase_contest_ids.write().await = data.showcase_contest_ids;
-                // member_groups come from config.toml, not data.json
+                // member_groups come from config.toml, not SQLite
                 let reloaded_config = load_config();
                 *self.member_groups.write().await = load_member_groups(&reloaded_config);
 
@@ -1485,106 +1443,11 @@ impl AppState {
                 *self.posts.write().await = p;
 
                 // discussion_tags and discussion_emojis stay from config.toml
-                tracing::info!("State reloaded from {}", self.data_file);
+                tracing::info!("内存状态已从 SQLite 重新加载");
             }
-        }
-    }
-
-    /// 将 SQLite 中的所有数据导出到 JSON 文件。
-    /// 用于 SQLite 备份恢复后将数据库状态同步回 JSON（从而同步到 HashMap）。
-    pub async fn export_sqlite_to_json(&self) {
-        use sqlx::Row;
-
-        let mut data = crate::state::SavedData {
-            users: HashMap::new(),
-            sessions: HashMap::new(),
-            refresh_tokens: HashMap::new(),
-            team_members: HashMap::new(),
-            problems: HashMap::new(),
-            join_requests: HashMap::new(),
-            contests: HashMap::new(),
-            site_description: self.site_description.read().await.clone(),
-            notifications: HashMap::new(),
-            showcase_problem_ids: self.showcase_problem_ids.read().await.clone(),
-            showcase_contest_ids: self.showcase_contest_ids.read().await.clone(),
-            posts: HashMap::new(),
-            suggestions: HashMap::new(),
-            announcements: HashMap::new(),
-            discussions: HashMap::new(),
-            member_groups: self.member_groups.read().await.clone(),
-        };
-
-        // 从 SQLite 读取用户
-        if let Ok(rows) = sqlx::query(
-            "SELECT id, username, display_name, avatar_url, email, role, team_status, \
-             created_at, bio, password_hash, effective_role, group_ids, user_permissions \
-             FROM users",
-        )
-        .fetch_all(&self.db)
-        .await
-        {
-            for row in rows {
-                let id: String = row.get("id");
-                data.users.insert(
-                    id.clone(),
-                    User {
-                        id,
-                        username: row.get("username"),
-                        display_name: row.get("display_name"),
-                        avatar_url: row.get("avatar_url"),
-                        email: row.get("email"),
-                        role: row.get("role"),
-                        team_status: row.get("team_status"),
-                        created_at: row
-                            .get::<String, _>("created_at")
-                            .parse()
-                            .unwrap_or_else(|_| Utc::now()),
-                        bio: row.get("bio"),
-                        password_hash: row.get("password_hash"),
-                        effective_role: row.get("effective_role"),
-                        group_ids: serde_json::from_str(&row.get::<String, _>("group_ids"))
-                            .unwrap_or_default(),
-                        user_permissions: serde_json::from_str(
-                            &row.get::<String, _>("user_permissions"),
-                        )
-                        .unwrap_or_default(),
-                    },
-                );
+            Err(e) => {
+                tracing::error!("从 SQLite 重新加载数据失败: {}", e);
             }
-        }
-
-        // 从 SQLite 读取团队成员
-        if let Ok(rows) = sqlx::query("SELECT id, user_id, joined_at FROM team_members")
-            .fetch_all(&self.db)
-            .await
-        {
-            for row in rows {
-                let id: String = row.get("id");
-                data.team_members.insert(
-                    id.clone(),
-                    TeamMember {
-                        id,
-                        user_id: row.get("user_id"),
-                        joined_at: row.get("joined_at"),
-                    },
-                );
-            }
-        }
-
-        // 写入 JSON 文件（确保父目录存在）
-        let json = serde_json::to_string_pretty(&data).unwrap_or_default();
-        let data_path = std::path::Path::new(&self.data_file);
-        if let Some(parent) = data_path.parent() {
-            if !parent.as_os_str().is_empty() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-        }
-        let tmp_path = format!("{}.tmp", self.data_file);
-        if std::fs::write(&tmp_path, &json).is_ok() {
-            let _ = std::fs::rename(&tmp_path, &self.data_file);
-            tracing::info!("SQLite 数据已导出到 JSON: {}", self.data_file);
-        } else {
-            tracing::warn!("无法写入 JSON 数据文件: {}", self.data_file);
         }
     }
 
@@ -1600,18 +1463,8 @@ impl AppState {
             loop {
                 interval.tick().await;
 
-                // 1. 保存当前状态到 JSON
-                state.save().await;
-
-                // 2. 同步到 SQLite
-                let data_file = &state.data_file;
-                if let Ok(json) = std::fs::read_to_string(data_file) {
-                    if let Ok(saved) = serde_json::from_str::<crate::state::SavedData>(&json) {
-                        let _ = crate::db::import_saved_data(&state.db, &saved).await;
-                    }
-                }
-
-                // 3. 创建 SQLite 备份
+                // 数据已实时写入 SQLite，直接创建备份即可
+                // 1. 创建 SQLite 备份
                 let db_path = std::path::Path::new(&state.data_file).with_extension("db");
                 if db_path.exists() {
                     let dir = db_path
@@ -1632,7 +1485,7 @@ impl AppState {
                         Err(e) => tracing::warn!("Auto backup failed: {}", e),
                     }
 
-                    // 4. 清理旧备份
+                    // 2. 清理旧备份
                     if let Ok(entries) = std::fs::read_dir(&dir) {
                         let mut db_backups: Vec<_> = entries
                             .filter_map(|e| e.ok())

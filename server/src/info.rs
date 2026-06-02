@@ -31,8 +31,14 @@ pub async fn update_site_description(
         .await
         .map_err(|_| axum::http::StatusCode::FORBIDDEN)?;
 
-    *state.site_description.write().await = payload.description.clone();
-    state.save().await;
+    let desc = payload.description.clone();
+    *state.site_description.write().await = desc.clone();
+
+    // 同步写入 SQLite meta 表
+    let _ = sqlx::query("INSERT OR REPLACE INTO meta (key, value) VALUES ('site_description', ?)")
+        .bind(&desc)
+        .execute(&state.db)
+        .await;
 
     Ok(Json(serde_json::json!({
         "success": true,

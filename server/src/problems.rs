@@ -540,7 +540,6 @@ pub async fn submit_problem(
 
     let pid = problem.id.clone();
     state.insert_problem(&problem).await;
-    state.save().await;
 
     Json(SubmitResponse {
         success: true,
@@ -597,7 +596,6 @@ pub async fn review_problem(
         drop(problems);
 
         state.delete_problem_by_id(&problem_id).await;
-        state.save().await;
 
         create_notification(
             &state,
@@ -725,7 +723,6 @@ pub async fn review_problem(
         }),
     };
 
-    state.save().await;
 
     // Send notification to the problem author
     match action.as_str() {
@@ -812,7 +809,6 @@ pub async fn claim_problem(
     state
         .update_problem_field(&problem_id, "claimed_by", &user_id)
         .await;
-    state.save().await;
 
     Json(ClaimResponse {
         success: true,
@@ -862,7 +858,6 @@ pub async fn unclaim_problem(
     state
         .update_problem_field(&problem_id, "verifier_solution", "")
         .await;
-    state.save().await;
 
     Json(ClaimResponse {
         success: true,
@@ -910,7 +905,6 @@ pub async fn submit_verifier_solution(
     state
         .update_problem_field(&problem_id, "verifier_solution", &payload.solution)
         .await;
-    state.save().await;
 
     Json(ClaimResponse {
         success: true,
@@ -988,7 +982,6 @@ pub async fn set_problem_visibility(
         .unwrap();
     p.visible_to = valid_ids;
     state.insert_problem(&p).await;
-    state.save().await;
 
     Json(ClaimResponse {
         success: true,
@@ -1184,7 +1177,6 @@ pub async fn update_problem(
     }
 
     state.insert_problem(&problem).await;
-    state.save().await;
 
     Json(ReviewResponse {
         success: true,
@@ -1240,7 +1232,6 @@ pub async fn delete_problem(
     }
 
     state.delete_problem_by_id(&problem_id).await;
-    state.save().await;
 
     Json(ReviewResponse {
         success: true,
@@ -1291,7 +1282,6 @@ pub async fn set_problem_contest(
     }
 
     state.insert_problem(&problem).await;
-    state.save().await;
 
     Ok(Json(
         serde_json::json!({"success": true, "message": "题目比赛已更新"}),

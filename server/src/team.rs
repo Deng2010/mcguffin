@@ -220,7 +220,6 @@ pub async fn apply_to_join(
                 state.insert_join_request(&request).await;
 
                 // Don't change team_status — user stays as "guest"
-                state.save().await;
 
                 return Json(ApplyResponse {
                     success: true,
@@ -300,7 +299,6 @@ pub async fn review_application(
         .update_user_field(&target_user_id, "role", role.to_string())
         .await;
 
-    state.save().await;
 
     match action_clone.as_str() {
         "approve" => Json(ReviewResponse {
@@ -379,7 +377,6 @@ pub async fn change_member_role(
     state
         .update_user_field(&user_id, "role", payload.role.clone())
         .await;
-    state.save().await;
     Json(ReviewResponse {
         success: true,
         message: "角色已更新".to_string(),
@@ -437,7 +434,6 @@ pub async fn remove_member(
     state
         .update_user_field(&user_id, "role", "guest".to_string())
         .await;
-    state.save().await;
     Json(ReviewResponse {
         success: true,
         message: "已移除团队成员".to_string(),

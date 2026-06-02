@@ -59,7 +59,6 @@ pub async fn resolve_user(
             drop(sessions);
             // 同步到 SQLite
             state.remove_session(&token).await;
-            state.save().await;
             return None;
         }
         // Update last_active time

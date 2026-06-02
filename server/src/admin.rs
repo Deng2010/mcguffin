@@ -921,18 +921,7 @@ pub async fn create_backup(
 
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
 
-    // 1. 将 HashMaps 刷到 JSON 文件（双写模式下 JSON 是源）
-    state.save().await;
-
-    // 2. 从 JSON 文件同步到 SQLite
-    let data_file = &state.data_file;
-    if let Ok(json) = std::fs::read_to_string(data_file) {
-        if let Ok(saved) = serde_json::from_str::<crate::state::SavedData>(&json) {
-            let _ = crate::db::import_saved_data(&state.db, &saved).await;
-        }
-    }
-
-    // 3. 创建 SQLite 在线备份（一致性快照）
+    // 1. 创建 SQLite 在线备份（一致性快照）
     let db_path = db_path_from_state(&state);
     let db_backup_name = format!("mcguffin_data_{}.db", timestamp);
     let db_backup_path = dir.join(&db_backup_name);
@@ -955,7 +944,7 @@ pub async fn create_backup(
         None
     };
 
-    // 4. 创建 JSON 备份（人类可读 + 跨版本兼容）
+    // 2. 创建 JSON 备份（兼容旧格式，若文件存在）
     let json_data_path = PathBuf::from(&state.data_file);
     let json_backup_name = format!("mcguffin_data_{}.json", timestamp);
     let json_backup_path = dir.join(&json_backup_name);
@@ -975,7 +964,7 @@ pub async fn create_backup(
         None
     };
 
-    // 5. 返回结果
+    // 3. 返回结果
     let results: Vec<serde_json::Value> = [db_result, json_result]
         .into_iter()
         .flatten()
@@ -1115,8 +1104,7 @@ pub async fn restore_backup(
             ));
         }
 
-        // 6. 将 SQLite 数据导出到 JSON 以同步 HashMap
-        state.export_sqlite_to_json().await;
+        // 6. 从 SQLite 重新加载数据到内存
         state.reload().await;
 
         tracing::info!("Restored from SQLite backup: {:?}", backup_path);
@@ -1361,7 +1349,6 @@ pub async fn import_data(
     })?;
 
     // 先创建安全备份
-    state.save().await;
     let safety_filename = format!(
         "pre_import_{}.json",
         chrono::Local::now().format("%Y%m%d_%H%M%S")
@@ -1387,10 +1374,8 @@ pub async fn import_data(
             )
         })?;
 
-    // 同步到 JSON 文件和 HashMap
-    state.export_sqlite_to_json().await;
+    // 从 SQLite 重新加载数据到内存
     state.reload().await;
-    state.save().await;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -1484,9 +1469,22 @@ pub async fn update_showcase_config(
     auth.require_perm(&state, crate::types::perms::EDIT_SHOWCASE)
         .await?;
 
+    let problem_ids_json = serde_json::to_string(&payload.problem_ids).unwrap_or_default();
+    let contest_ids_json = serde_json::to_string(&payload.contest_ids).unwrap_or_default();
     *state.showcase_problem_ids.write().await = payload.problem_ids;
     *state.showcase_contest_ids.write().await = payload.contest_ids;
-    state.save().await;
+
+    // 同步写入 SQLite meta 表
+    let _ =
+        sqlx::query("INSERT OR REPLACE INTO meta (key, value) VALUES ('showcase_problem_ids', ?)")
+            .bind(&problem_ids_json)
+            .execute(&state.db)
+            .await;
+    let _ =
+        sqlx::query("INSERT OR REPLACE INTO meta (key, value) VALUES ('showcase_contest_ids', ?)")
+            .bind(&contest_ids_json)
+            .execute(&state.db)
+            .await;
 
     Ok(Json(
         serde_json::json!({"success": true, "message": "展板配置已保存"}),
@@ -1688,7 +1686,6 @@ pub async fn admin_remove_user(
     }
     state.delete_user(&user_id).await;
     state.remove_team_member_by_user(&user_id).await;
-    state.save().await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "用户已删除"}),
     ))
@@ -1869,7 +1866,6 @@ pub async fn set_problem_acl(
     };
     problem.editable_by = payload.editable_by;
     state.insert_problem(&problem).await;
-    state.save().await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "题目访问控制已更新"}),
     ))
@@ -1929,7 +1925,6 @@ pub async fn set_resource_acl(
         }
     } // write locks dropped here
 
-    state.save().await;
     Ok(Json(
         serde_json::json!({"success": true, "message": "访问控制已更新"}),
     ))
