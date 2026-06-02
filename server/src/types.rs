@@ -1113,6 +1113,7 @@ color = "#ef4444"
             has_verifier_solution: false,
             link: None,
             remark: None,
+            visible_to: vec![],
         };
 
         let json = serde_json::to_string(&item).unwrap();
