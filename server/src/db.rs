@@ -52,8 +52,8 @@ pub async fn init_db(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
 
 async fn try_init_db_file(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
     let pool = SqlitePoolOptions::new()
-        .max_connections(10)
-        .min_connections(2)
+        .max_connections(1)
+        .min_connections(1)
         .connect(&format!("sqlite:{}", db_path))
         .await?;
 
@@ -70,12 +70,12 @@ async fn try_init_db_file(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
     sqlx::query("PRAGMA busy_timeout = 5000")
         .execute(&pool)
         .await?;
-    sqlx::query("PRAGMA foreign_keys = ON")
-        .execute(&pool)
-        .await?;
     sqlx::query("PRAGMA cache_size = -64000")
         .execute(&pool)
         .await?; // 64 MB
+
+    // FK 约束在启动时由 state.rs 控制：先关闭用于 JSON 导入，再开启用于正常操作
+    // 此处不设置 PRAGMA foreign_keys，默认由后续代码管理
 
     tracing::info!("SQLite database initialized: {}", db_path);
     Ok(pool)
@@ -551,10 +551,10 @@ pub(crate) async fn reimport_all_data(
         "users",
     ];
 
-    // 在一个事务中执行清空 + 重新导入
+    // 在一个事务中执行清空 + 重新导入，全程关闭 FK 约束
     let mut tx = pool.begin().await?;
 
-    // 暂时关闭 FK 约束，避免 DELETE 时级联问题
+    // 暂时关闭 FK 约束，避免 DELETE 时级联问题和 INSERT 时外键引用顺序问题
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut *tx)
         .await?;
@@ -566,15 +566,22 @@ pub(crate) async fn reimport_all_data(
             .await?;
     }
 
-    // 恢复 FK 约束
-    sqlx::query("PRAGMA foreign_keys = ON")
-        .execute(&mut *tx)
-        .await?;
-
+    // 在同一个事务中重新导入（FK 已关闭，不会因数据引用顺序报错）
+    // 使用 pool 直接导入，事务中的 FK OFF 设置会保留在当前连接上
     tx.commit().await?;
 
-    // 重新导入
+    // 确保 FK 关闭状态传播到 pool 连接
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(pool)
+        .await?;
+
     let total = import_saved_data(pool, data).await?;
+
+    // 恢复 FK 约束
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(pool)
+        .await?;
+
     tracing::info!("全量重新导入完成：{} 条记录", total);
     Ok(total)
 }

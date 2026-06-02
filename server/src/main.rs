@@ -67,6 +67,7 @@ async fn main() {
     }
     let spa_index = std::fs::read_to_string(dist_path.join("index.html"))
         .expect("Failed to read dist/index.html");
+    let spa_index_fallback = spa_index.clone();
 
     println!("Serving frontend SPA from: {:?}", dist_path);
     println!("McGuffin Server running on http://0.0.0.0:3000");
@@ -294,6 +295,19 @@ async fn main() {
         .layer(cors)
         .layer(CompressionLayer::new())
         .with_state(state);
+
+    // SPA fallback: 所有非 API 路径返回 index.html（前端路由）
+    let app = app.fallback(move || {
+        let html = spa_index_fallback.clone();
+        async move {
+            axum::http::Response::builder()
+                .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+                .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+                .header(header::PRAGMA, "no-cache")
+                .body(axum::body::Body::new(html))
+                .unwrap()
+        }
+    });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

@@ -547,6 +547,9 @@ impl AppState {
             if let Ok(json) = std::fs::read_to_string(data_file) {
                 if let Ok(data) = serde_json::from_str::<SavedData>(&json) {
                     tracing::info!("从 JSON 文件 {} 加载数据，准备导入 SQLite...", data_file);
+                    // 临时关闭 FK 约束（单连接池，所有操作使用同一连接）
+                    let _ = sqlx::query("PRAGMA foreign_keys = OFF")
+                        .execute(&db).await;
                     match crate::db::import_saved_data(&db, &data).await {
                         Ok(n) if n > 0 => {
                             tracing::info!("已从 {} 导入 {} 条记录到 SQLite", data_file, n);
@@ -556,6 +559,9 @@ impl AppState {
                             tracing::warn!("从 JSON 导入 SQLite 失败: {}", e);
                         }
                     }
+                    // 恢复 FK 约束
+                    let _ = sqlx::query("PRAGMA foreign_keys = ON")
+                        .execute(&db).await;
                     saved = Some(data);
                 }
             }
