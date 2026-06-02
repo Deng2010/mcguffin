@@ -551,12 +551,18 @@ pub async fn submit_problem(
 // ============== Review Problem ==============
 
 /// POST /api/problems/review/:problem_id/:action
-/// action = "approve" | "reject" | "publish"
+/// action = "approve" | "reject" | "publish" | "return" | "unpublish"
+/// Body (optional): { "reason": "..." } — used for "return" and "reject" actions
 pub async fn review_problem(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((problem_id, action)): Path<(String, String)>,
+    body: Option<Json<serde_json::Value>>,
 ) -> Json<ReviewResponse> {
+    let reason = body
+        .and_then(|b| b.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .unwrap_or_default();
+
     let (_user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => {
@@ -597,11 +603,16 @@ pub async fn review_problem(
 
         state.delete_problem_by_id(&problem_id).await;
 
+        let reject_msg = if reason.is_empty() {
+            format!("题目「{}」未通过审核，已被删除", problem_title)
+        } else {
+            format!("题目「{}」未通过审核，已被删除。\n审核意见：{}", problem_title, reason)
+        };
         create_notification(
             &state,
             &author_id,
             "题目未通过",
-            &format!("题目「{}」未通过审核，已被删除", problem_title),
+            &reject_msg,
             Some("/problems"),
         )
         .await;
@@ -745,6 +756,27 @@ pub async fn review_problem(
                 Some("/problems"),
             )
             .await;
+        }
+        "return" => {
+            let return_msg = if reason.is_empty() {
+                format!("题目「{}」已被退回至待审核状态，验题人题解已清除", problem_title)
+            } else {
+                format!(
+                    "题目「{}」已被退回至待审核状态，验题人题解已清除。\n退回理由：{}",
+                    problem_title, reason
+                )
+            };
+            create_notification(
+                &state,
+                &author_id,
+                "题目已退回",
+                &return_msg,
+                Some("/problems"),
+            )
+            .await;
+        }
+        "reject" => {
+            // 拒绝的通知已在前面内联处理（因为需要提前返回）
         }
         _ => {}
     }

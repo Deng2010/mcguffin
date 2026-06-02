@@ -256,7 +256,7 @@ export default function ProblemDetailPage() {
         ← 返回列表
       </Link>
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mb-6">
+      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mb-6 shadow">
         <div className="flex items-start justify-between mb-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
