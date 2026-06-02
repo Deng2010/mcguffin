@@ -53,6 +53,7 @@ export default function CommunityPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
+  const [tagCounts, setTagCounts] = useState<Record<string, number>>({})
   const limit = 10
 
   // ── Create post ──
@@ -69,7 +70,7 @@ export default function CommunityPage() {
   const loadPosts = (p?: number) => {
     const currentPage = p ?? page
     const tagParam = activeTab !== 'all' ? `&tag=${activeTab}` : ''
-    apiFetch<{ items: PostListItem[]; total: number; page: number; total_pages: number }>(
+    apiFetch<{ items: PostListItem[]; total: number; page: number; total_pages: number; tags: DiscussionTag[]; tag_counts: Record<string, number> }>(
       `/community/posts?page=${currentPage}&limit=${limit}${tagParam}`
     )
       .then(res => {
@@ -77,6 +78,8 @@ export default function CommunityPage() {
         setTotal(res.total)
         setPage(res.page)
         setTotalPages(res.total_pages)
+        if (res.tags) setAllTags(res.tags)
+        if (res.tag_counts) setTagCounts(res.tag_counts)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -84,18 +87,12 @@ export default function CommunityPage() {
 
   useEffect(() => { loadPosts(1) }, [])
 
-  useEffect(() => {
-    apiFetch<DiscussionTag[]>('/posts/tags')
-      .then(setAllTags)
-      .catch(() => {})
-  }, [])
-
   const switchTab = (tab: string) => {
     setActiveTab(tab)
     setPage(1)
     setLoading(true)
     const tagParam = tab !== 'all' ? `&tag=${tab}` : ''
-    apiFetch<{ items: PostListItem[]; total: number }>(
+    apiFetch<{ items: PostListItem[]; total: number; tag_counts: Record<string, number> }>(
       `/community/posts?page=1&limit=${limit}${tagParam}`
     )
       .then(res => {
@@ -103,6 +100,7 @@ export default function CommunityPage() {
         setTotal(res.total)
         setPage(1)
         setTotalPages(Math.max(1, Math.ceil(res.total / limit)))
+        if (res.tag_counts) setTagCounts(res.tag_counts)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -112,12 +110,13 @@ export default function CommunityPage() {
     if (p < 1 || p > totalPages) return
     setLoading(true)
     const tagParam = activeTab !== 'all' ? `&tag=${activeTab}` : ''
-    apiFetch<{ items: PostListItem[]; total: number; page: number; total_pages: number }>(
+    apiFetch<{ items: PostListItem[]; total: number; page: number; total_pages: number; tag_counts: Record<string, number> }>(
       `/community/posts?page=${p}&limit=${limit}${tagParam}`
     )
       .then(res => {
         setPosts(res.items)
         setPage(res.page)
+        if (res.tag_counts) setTagCounts(res.tag_counts)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -125,10 +124,8 @@ export default function CommunityPage() {
 
   const counts: Record<string, number> = {
     all: total,
+    ...tagCounts,
   }
-  allTags.forEach(t => {
-    counts[t.id] = posts.filter(p => p.tags.includes(t.id)).length
-  })
 
   const visibleTags = allTags
 
