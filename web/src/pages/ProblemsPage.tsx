@@ -34,12 +34,6 @@ export default function ProblemsPage() {
   const [pendingProblems, setPendingProblems] = useState<AdminPendingProblem[]>(
     [],
   );
-  const [approvedProblems, setApprovedProblems] = useState<
-    AdminPendingProblem[]
-  >([]);
-  const [publishedProblems, setPublishedProblems] = useState<
-    AdminPendingProblem[]
-  >([]);
   const [members, setMembers] = useState<TeamMemberOption[]>([]);
   const [contests, setContests] = useState<ContestOption[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -88,6 +82,22 @@ export default function ProblemsPage() {
     return problems.filter((p) => p.author_name === user.display_name);
   }, [problems, user]);
 
+  // Counts derived from already-loaded problems list (immediate, no extra API wait)
+  const pendingCount = useMemo(
+    () => problems.filter((p) => p.status === "pending").length,
+    [problems],
+  );
+  const approvedList = useMemo(
+    () => problems.filter((p) => p.status === "approved"),
+    [problems],
+  );
+  const publishedList = useMemo(
+    () => problems.filter((p) => p.status === "published"),
+    [problems],
+  );
+  const approvedCount = approvedList.length;
+  const publishedCount = publishedList.length;
+
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: "list", label: "全部题目" },
   ];
@@ -99,10 +109,10 @@ export default function ProblemsPage() {
       {
         id: "pending",
         label: "待审核",
-        count: canApprove ? pendingProblems.length : myPendingProblems.length,
+        count: canApprove ? pendingCount : myPendingProblems.length,
       },
-      { id: "approved", label: "已通过", count: approvedProblems.length },
-      { id: "published", label: "已发布", count: publishedProblems.length },
+      { id: "approved", label: "已通过", count: approvedCount },
+      { id: "published", label: "已发布", count: publishedCount },
     );
   }
 
@@ -117,18 +127,11 @@ export default function ProblemsPage() {
   const loadReviewData = () => {
     Promise.all([
       apiFetch<AdminPendingProblem[]>("/problems/admin/pending"),
-      apiFetch<AdminPendingProblem[]>("/problems?all=true"),
       apiFetch<TeamMemberOption[]>("/problems/admin/members"),
       apiFetch<ContestOption[]>("/contests"),
     ])
-      .then(([pendingList, allList, memberList, contestList]) => {
+      .then(([pendingList, memberList, contestList]) => {
         setPendingProblems(pendingList);
-        setApprovedProblems(
-          allList.filter((p: AdminPendingProblem) => p.status === "approved"),
-        );
-        setPublishedProblems(
-          allList.filter((p: AdminPendingProblem) => p.status === "published"),
-        );
         setMembers(memberList);
         setContests(contestList);
         const vm: Record<string, string[]> = {};
@@ -974,7 +977,7 @@ export default function ProblemsPage() {
   // ====== Tab: Approved ======
 
   const renderApproved = () => {
-    if (approvedProblems.length === 0)
+    if (approvedList.length === 0)
       return (
         <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
           暂无待发布题目
@@ -982,7 +985,7 @@ export default function ProblemsPage() {
       );
     return (
       <div className="space-y-4">
-        {approvedProblems.map((p) => (
+        {approvedList.map((p) => (
           <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
@@ -1031,7 +1034,7 @@ export default function ProblemsPage() {
   // ====== Tab: Published ======
 
   const renderPublished = () => {
-    if (publishedProblems.length === 0)
+    if (publishedList.length === 0)
       return (
         <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
           暂无已发布题目
@@ -1039,7 +1042,7 @@ export default function ProblemsPage() {
       );
     return (
       <div className="space-y-4">
-        {publishedProblems.map((p) => (
+        {publishedList.map((p) => (
           <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
