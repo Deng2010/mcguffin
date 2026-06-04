@@ -11,8 +11,9 @@
 use std::collections::HashMap;
 
 use rusqlite::backup::Backup;
+use rusqlite::OpenFlags;
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use tracing;
 
 use chrono::Utc;
@@ -39,10 +40,13 @@ pub async fn init_db(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
         }
     }
     // 回退到内存模式（测试环境或权限不足时使用）
+    let mem_opts = SqliteConnectOptions::new()
+        .filename(":memory:")
+        .foreign_keys(false);
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .min_connections(1)
-        .connect("sqlite::memory:")
+        .connect_with(mem_opts)
         .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     // `:memory:` 模式下 WAL 模式不支持，跳过 PRAGMA
@@ -51,10 +55,16 @@ pub async fn init_db(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
 }
 
 async fn try_init_db_file(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
+    // 使用 SqliteConnectOptions 禁用 FK 约束，避免 pool 连接复用问题
+    // （PRAGMA foreign_keys 是 per-connection 设置，pool 层面设置不可靠）
+    let opts = SqliteConnectOptions::new()
+        .filename(db_path)
+        .create_if_missing(true)
+        .foreign_keys(false);
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .min_connections(1)
-        .connect(&format!("sqlite:{}", db_path))
+        .connect_with(opts)
         .await?;
 
     // 运行迁移（CREATE TABLE IF NOT EXISTS）
@@ -399,135 +409,29 @@ pub(crate) async fn sqlite_has_data(pool: &SqlitePool) -> bool {
 
 /// 从 SQLite 读取全部数据并序列化为 JSON 字符串（不依赖本地文件）
 pub(crate) async fn export_db_to_json_string(pool: &SqlitePool) -> Result<String, String> {
-    use sqlx::Row;
-
-    let mut export = serde_json::json!({
-        "users": [],
-        "sessions": [],
-        "refresh_tokens": [],
-        "team_members": [],
-        "join_requests": [],
-        "contests": [],
-        "problems": [],
-        "notifications": [],
-        "posts": [],
-        "audit_log": [],
-    });
-
-    // users
-    if let Ok(rows) = sqlx::query(
-        "SELECT id, username, display_name, avatar_url, email, role, team_status, \
-         created_at, bio, password_hash, effective_role, group_ids, user_permissions FROM users",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| format!("查询 users: {}", e))
-    {
-        let mut list = Vec::with_capacity(rows.len());
-        for r in rows {
-            let id: String = r.get("id");
-            list.push(serde_json::json!({
-                "id": id,
-                "username": r.get::<String,_>("username"),
-                "display_name": r.get::<String,_>("display_name"),
-                "avatar_url": r.get::<Option<String>,_>("avatar_url"),
-                "email": r.get::<Option<String>,_>("email"),
-                "role": r.get::<String,_>("role"),
-                "team_status": r.get::<String,_>("team_status"),
-                "created_at": r.get::<String,_>("created_at"),
-                "bio": r.get::<String,_>("bio"),
-            }));
-        }
-        export["users"] = serde_json::json!(list);
-    }
-
-    // team_members
-    if let Ok(rows) = sqlx::query("SELECT id, user_id, joined_at FROM team_members")
-        .fetch_all(pool)
+    let data = load_all_from_sqlite(pool)
         .await
-    {
-        let list: Vec<serde_json::Value> = rows
-            .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "id": r.get::<String,_>("id"),
-                    "user_id": r.get::<String,_>("user_id"),
-                    "joined_at": r.get::<String,_>("joined_at"),
-                })
-            })
-            .collect();
-        export["team_members"] = serde_json::json!(list);
-    }
+        .map_err(|e| format!("加载数据失败: {}", e))?;
+    serde_json::to_string_pretty(&data).map_err(|e| format!("序列化失败: {}", e))
+}
 
-    // problems
-    if let Ok(rows) = sqlx::query(
-        "SELECT id, title, author_id, author_name, contest, contest_id, difficulty, \
-         content, solution, status, created_at, public_at, claimed_by, \
-         verifier_solution, visible_to, link, remark, editable_by FROM problems",
-    )
-    .fetch_all(pool)
-    .await
-    {
-        let list: Vec<serde_json::Value> = rows
-            .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "id": r.get::<String,_>("id"),
-                    "title": r.get::<String,_>("title"),
-                    "author_id": r.get::<String,_>("author_id"),
-                    "author_name": r.get::<String,_>("author_name"),
-                    "difficulty": r.get::<String,_>("difficulty"),
-                    "status": r.get::<String,_>("status"),
-                    "created_at": r.get::<String,_>("created_at"),
-                })
-            })
-            .collect();
-        export["problems"] = serde_json::json!(list);
-    }
+// ============== JSON → DB 转换（CLI 工具） ==============
 
-    // contests
-    if let Ok(rows) = sqlx::query(
-        "SELECT id, name, start_time, end_time, description, created_by, created_at, status, link FROM contests"
-    )
-    .fetch_all(pool)
-    .await
-    {
-        let list: Vec<serde_json::Value> = rows.iter().map(|r| {
-            serde_json::json!({
-                "id": r.get::<String,_>("id"),
-                "name": r.get::<String,_>("name"),
-                "status": r.get::<String,_>("status"),
-                "created_at": r.get::<String,_>("created_at"),
-            })
-        }).collect();
-        export["contests"] = serde_json::json!(list);
-    }
+/// 从 JSON 文件导入数据到 SQLite 数据库文件。
+/// 专为 CLI `json-to-db` 命令设计，公开为 `pub`。
+pub async fn import_json_to_db(json_path: &str, db_path: &str) -> Result<u32, String> {
+    let json = std::fs::read_to_string(json_path)
+        .map_err(|e| format!("无法读取 JSON 文件: {}", e))?;
+    let data: crate::state::SavedData = serde_json::from_str(&json)
+        .map_err(|e| format!("JSON 解析失败: {}", e))?;
 
-    // posts
-    if let Ok(rows) = sqlx::query(
-        "SELECT id, title, content, author_id, author_name, created_at, updated_at, \
-         tags, pinned, team_only, status FROM posts",
-    )
-    .fetch_all(pool)
-    .await
-    {
-        let list: Vec<serde_json::Value> = rows
-            .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "id": r.get::<String,_>("id"),
-                    "title": r.get::<String,_>("title"),
-                    "author_id": r.get::<String,_>("author_id"),
-                    "author_name": r.get::<String,_>("author_name"),
-                    "created_at": r.get::<String,_>("created_at"),
-                    "status": r.get::<String,_>("status"),
-                })
-            })
-            .collect();
-        export["posts"] = serde_json::json!(list);
-    }
+    let pool = init_db(db_path)
+        .await
+        .map_err(|e| format!("创建数据库失败: {}", e))?;
 
-    serde_json::to_string_pretty(&export).map_err(|e| format!("JSON 序列化失败: {}", e))
+    reimport_all_data(&pool, &data)
+        .await
+        .map_err(|e| format!("导入数据失败: {}", e))
 }
 
 // ============== 全量重新导入（用于 JSON 恢复） ==============
@@ -590,11 +494,15 @@ pub(crate) async fn reimport_all_data(
 
 /// 使用 SQLite 在线备份 API 创建一致性快照。
 /// 在 WAL 模式下，备份期间源数据库可以继续读写。
+/// 源数据库以只读模式打开，避免 WAL checkpoint 干扰运行中的池连接。
 pub fn create_consistent_backup(source_path: &str, dest_path: &str) -> Result<(), String> {
-    let mut src =
-        rusqlite::Connection::open(source_path).map_err(|e| format!("无法打开源数据库: {}", e))?;
-    let dst =
-        rusqlite::Connection::open(dest_path).map_err(|e| format!("无法创建备份文件: {}", e))?;
+    let mut src = rusqlite::Connection::open_with_flags(
+        source_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|e| format!("无法打开源数据库: {}", e))?;
+    let dst = rusqlite::Connection::open(dest_path)
+        .map_err(|e| format!("无法创建备份文件: {}", e))?;
 
     let backup = Backup::new(&dst, &mut src).map_err(|e| format!("备份初始化失败: {}", e))?;
 

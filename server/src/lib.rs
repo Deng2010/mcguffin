@@ -34,4 +34,5 @@ pub use team::*;
 pub use types::*;
 pub use user::*;
 pub mod discussions;
+pub use db::*;
 pub use discussions::*;

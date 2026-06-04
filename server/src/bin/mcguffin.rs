@@ -47,6 +47,13 @@ enum Commands {
     Restart,
     /// 查看服务状态
     Status,
+    /// 转换 JSON 数据文件为 SQLite 数据库
+    JsonToDb {
+        /// JSON 数据文件路径
+        input: String,
+        /// 输出 SQLite 数据库文件路径（可选，默认同目录）
+        output: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1182,6 +1189,38 @@ fn cmd_service_status(config_path: &Path) {
     }
 }
 
+// ===================== JSON → DB 转换 =====================
+
+/// 将旧版 JSON 数据文件转换为 SQLite 数据库
+fn cmd_json_to_db(input_path: &str, output_path: Option<&str>) {
+    eprintln!("JSON → SQLite 数据转换工具");
+    eprintln!("输入: {}", input_path);
+
+    let json_path = std::path::Path::new(input_path);
+    if !json_path.exists() {
+        eprintln!("错误: 输入文件不存在: {}", input_path);
+        std::process::exit(1);
+    }
+
+    let output = output_path
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| json_path.with_extension("db"));
+    eprintln!("输出: {}", output.display());
+
+    eprintln!("正在转换...");
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        match mcguffin_server_lib::import_json_to_db(input_path, &output.to_string_lossy()).await {
+            Ok(n) => {
+                eprintln!("成功! 已导入 {} 条记录到 {}", n, output.display());
+            }
+            Err(e) => {
+                eprintln!("错误: {}", e);
+                std::process::exit(1);
+            }
+        }
+    });
+}
+
 // ===================== Entry Point =====================
 
 fn main() {
@@ -1204,5 +1243,6 @@ fn main() {
         Commands::Stop => cmd_service_stop(&config_path),
         Commands::Restart => cmd_service_restart(&config_path),
         Commands::Status => cmd_service_status(&config_path),
+        Commands::JsonToDb { input, output } => cmd_json_to_db(&input, output.as_deref()),
     }
 }

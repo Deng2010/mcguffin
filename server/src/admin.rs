@@ -43,7 +43,6 @@ pub struct ConfigResponse {
 pub struct ServerSection {
     pub site_url: String,
     pub port: u16,
-    pub data_file: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -96,7 +95,6 @@ fn read_config_raw() -> Result<String, String> {
             Ok(r#"[server]
 site_url = "http://localhost:3000"
 port = 3000
-data_file = "mcguffin_data.json"
 
 [admin]
 password = "admin123"
@@ -148,7 +146,6 @@ async fn sync_groups_to_config(state: &AppState) {
             server: ServerSection {
                 site_url: String::new(),
                 port: 0,
-                data_file: String::new(),
             },
             admin: AdminSection {
                 password: String::new(),
@@ -417,7 +414,6 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         server: ServerSection {
             site_url: get_str("server", "site_url"),
             port: get_u16("server", "port"),
-            data_file: get_str("server", "data_file"),
         },
         admin: AdminSection {
             password: get_str("admin", "password"),
@@ -460,7 +456,6 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
     if let Some(t) = doc.get_mut("server").and_then(|s| s.as_table_mut()) {
         set_str(t, "site_url", &payload.server.site_url);
         set_u16(t, "port", payload.server.port);
-        set_str(t, "data_file", &payload.server.data_file);
     }
     if let Some(t) = doc.get_mut("admin").and_then(|s| s.as_table_mut()) {
         set_str(t, "password", &payload.admin.password);
@@ -850,23 +845,22 @@ pub async fn restart_service(
 
 // ============== Data Backup / Restore ==============
 
-/// 获取备份目录（与 data_file 同目录下的 backups/）
+/// 获取备份目录（与 db 文件同目录下的 backups/）
 fn backup_dir(state: &AppState) -> PathBuf {
-    // Use db_path for backup dir derivation
-    let db_path = std::path::Path::new(&state.data_file).with_extension("db");
-    let parent = db_path
+    let db_path = std::path::Path::new(&state.db_path);
+    db_path
         .parent()
-        .unwrap_or_else(|| std::path::Path::new("."));
-    parent.join("backups")
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("backups")
 }
 
-/// 获取 SQLite 数据库文件路径（由 data_file 路径推导）
+/// 获取 SQLite 数据库文件路径
 fn db_path_from_state(state: &AppState) -> PathBuf {
-    std::path::Path::new(&state.data_file).with_extension("db")
+    std::path::PathBuf::from(&state.db_path)
 }
 
 /// 获取备份文件列表，按名称降序（最新的在前）
-/// 同时支持 .db（SQLite 完整备份）和 .json（JSON 导出）
+/// 只列出 .db（SQLite）备份文件
 fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
     let dir = match std::fs::read_dir(dir) {
         Ok(d) => d,
@@ -877,24 +871,22 @@ fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
         .filter(|e| {
             e.path()
                 .extension()
-                .map(|ext| ext == "json" || ext == "db")
+                .map(|ext| ext == "db")
                 .unwrap_or(false)
         })
         .filter_map(|e| {
             let meta = e.metadata().ok()?;
             let name = e.file_name().to_string_lossy().to_string();
-            let ext = e.path().extension()?.to_str()?.to_string();
             Some(serde_json::json!({
                 "name": name,
                 "size": meta.len(),
-                "type": if ext == "db" { "sqlite" } else { "json" },
+                "type": "sqlite",
                 "modified": chrono::DateTime::<chrono::Utc>::from(meta.modified().ok()?)
                     .format("%Y-%m-%d %H:%M:%S")
                     .to_string(),
             }))
         })
         .collect();
-    // Sort by name descending (newest first)
     entries.sort_by(|a, b| {
         let an = a.get("name").and_then(|v| v.as_str()).unwrap_or("");
         let bn = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -904,7 +896,7 @@ fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
 }
 
 /// POST /api/admin/backup
-/// manage_backups permission required — creates timestamped backups (JSON + SQLite)
+/// manage_backups permission required — creates a SQLite backup (.db)
 pub async fn create_backup(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -920,72 +912,34 @@ pub async fn create_backup(
     }
 
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-
-    // 1. 创建 SQLite 在线备份（一致性快照）
     let db_path = db_path_from_state(&state);
     let db_backup_name = format!("mcguffin_data_{}.db", timestamp);
     let db_backup_path = dir.join(&db_backup_name);
 
-    let db_result = if db_path.exists() {
-        match crate::db::create_consistent_backup(
-            &db_path.to_string_lossy(),
-            &db_backup_path.to_string_lossy(),
-        ) {
-            Ok(()) => {
-                tracing::info!("SQLite backup created: {:?}", db_backup_path);
-                Some(db_backup_name)
-            }
-            Err(e) => {
-                tracing::warn!("SQLite backup failed (可忽略，JSON 备份仍可用): {}", e);
-                None
-            }
+    if !db_path.exists() {
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "数据库文件不存在，无法创建备份"}),
+        ));
+    }
+
+    match crate::db::create_consistent_backup(
+        &db_path.to_string_lossy(),
+        &db_backup_path.to_string_lossy(),
+    ) {
+        Ok(()) => {
+            tracing::info!("备份已创建: {:?}", db_backup_path);
+            Ok(Json(serde_json::json!({
+                "success": true,
+                "message": "备份已创建",
+                "backup": {
+                    "name": db_backup_name,
+                    "type": "sqlite",
+                },
+            })))
         }
-    } else {
-        None
-    };
-
-    // 2. 创建 JSON 备份（兼容旧格式，若文件存在）
-    let json_data_path = PathBuf::from(&state.data_file);
-    let json_backup_name = format!("mcguffin_data_{}.json", timestamp);
-    let json_backup_path = dir.join(&json_backup_name);
-
-    let json_result = if json_data_path.exists() {
-        match std::fs::copy(&json_data_path, &json_backup_path) {
-            Ok(_) => {
-                tracing::info!("JSON backup created: {:?}", json_backup_path);
-                Some(json_backup_name)
-            }
-            Err(e) => {
-                tracing::warn!("JSON backup failed: {}", e);
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    // 3. 返回结果
-    let results: Vec<serde_json::Value> = [db_result, json_result]
-        .into_iter()
-        .flatten()
-        .map(|name| {
-            serde_json::json!({
-                "name": name,
-                "type": if name.ends_with(".db") { "sqlite" } else { "json" }
-            })
-        })
-        .collect();
-
-    if results.is_empty() {
-        Ok(Json(
-            serde_json::json!({"success": false, "message": "备份失败：数据文件和数据库均不可用"}),
-        ))
-    } else {
-        Ok(Json(serde_json::json!({
-            "success": true,
-            "message": format!("已创建 {} 个备份", results.len()),
-            "backups": results,
-        })))
+        Err(e) => Ok(Json(
+            serde_json::json!({"success": false, "message": format!("备份失败: {}", e)}),
+        )),
     }
 }
 
@@ -1027,9 +981,9 @@ pub async fn restore_backup(
             serde_json::json!({"success": false, "message": "无效的备份文件名"}),
         ));
     }
-    if !name_clean.ends_with(".json") && !name_clean.ends_with(".db") {
+    if !name_clean.ends_with(".db") {
         return Ok(Json(
-            serde_json::json!({"success": false, "message": "无效的备份文件格式，仅支持 .db 或 .json"}),
+            serde_json::json!({"success": false, "message": "仅支持 .db 备份文件恢复"}),
         ));
     }
 
@@ -1041,115 +995,76 @@ pub async fn restore_backup(
         ));
     }
 
-    let is_db_backup = name_clean.ends_with(".db");
     let safety_timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    let db_path = db_path_from_state(&state);
 
-    if is_db_backup {
-        // ── 从 SQLite .db 文件恢复 ──
-        let db_path = db_path_from_state(&state);
+    // 1. 创建安全备份
+    let safety_name = format!("pre_restore_{}.db", safety_timestamp);
+    let safety_path = dir.join(&safety_name);
+    if let Err(e) = crate::db::create_consistent_backup(
+        &db_path.to_string_lossy(),
+        &safety_path.to_string_lossy(),
+    ) {
+        tracing::warn!("创建安全备份失败: {}", e);
+    }
 
-        // 1. 创建 SQLite 安全备份
-        let safety_name = format!("pre_restore_{}.db", safety_timestamp);
-        let safety_path = dir.join(&safety_name);
-        if let Err(e) = crate::db::create_consistent_backup(
-            &db_path.to_string_lossy(),
-            &safety_path.to_string_lossy(),
-        ) {
-            tracing::warn!("创建安全备份失败: {}", e);
-        }
+    // 2. 关闭连接池
+    state.db.close().await;
 
-        // 2. 关闭连接池
-        state.db.close().await;
-
-        // 3. 用备份文件覆盖主数据库
-        if let Err(e) = std::fs::copy(&backup_path, &db_path) {
-            match crate::db::init_db(&db_path.to_string_lossy()).await {
-                Ok(pool) => state.db = pool,
-                Err(_) => {
-                    // 文件失败且无法重建连接，只能 panic
-                    panic!("恢复失败且无法重建连接");
-                }
-            }
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": format!("文件复制失败: {}", e)}),
-            ));
-        }
-
-        // 清理残留 WAL/SHM 文件
-        let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
-        let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
-
-        // 4. 重建连接池
+    // 3. 用备份文件覆盖主数据库
+    if let Err(e) = std::fs::copy(&backup_path, &db_path) {
         match crate::db::init_db(&db_path.to_string_lossy()).await {
             Ok(pool) => state.db = pool,
-            Err(e) => {
-                tracing::error!("重建数据库连接失败: {}", e);
-                // 回退到 :memory:
-                state.db = crate::db::init_db(":memory:")
-                    .await
-                    .expect("内存数据库也无法创建");
+            Err(_) => {
+                panic!("恢复失败且无法重建连接");
             }
         }
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": format!("文件复制失败: {}", e)}),
+        ));
+    }
 
-        // 5. 验证完整性
-        let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
-            .fetch_one(&state.db)
-            .await
-            .unwrap_or_else(|_| "error".to_string());
+    // 清理残留 WAL/SHM 文件
+    let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+    let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
 
-        if integrity != "ok" {
-            tracing::error!("恢复后完整性检查失败: {}", integrity);
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": format!("数据完整性检查失败: {}，建议手动恢复安全备份 {}", integrity, safety_name)}),
-            ));
-        }
-
-        // 6. 从 SQLite 重新加载数据到内存
-        state.reload().await;
-
-        tracing::info!("Restored from SQLite backup: {:?}", backup_path);
-        Ok(Json(serde_json::json!({
-            "success": true,
-            "message": "SQLite 备份已恢复，安全备份已创建",
-            "safety_backup": safety_name,
-        })))
-    } else {
-        // ── 从 JSON .json 文件恢复（旧格式兼容） ──
-        let data_path = PathBuf::from(&state.data_file);
-
-        // 创建 JSON 安全备份
-        let safety_name = format!("pre_restore_{}.json", safety_timestamp);
-        let safety_path = dir.join(&safety_name);
-        let _ = std::fs::copy(&data_path, &safety_path);
-
-        match std::fs::copy(&backup_path, &data_path) {
-            Ok(_) => {
-                tracing::info!("Restored from JSON backup: {:?}", backup_path);
-                // 重新导入 SQLite（同步到数据库）
-                if let Ok(json) = std::fs::read_to_string(data_path) {
-                    if let Ok(saved) = serde_json::from_str::<crate::state::SavedData>(&json) {
-                        // 清空 SQLite 并重新导入
-                        if let Err(e) = crate::db::reimport_all_data(&state.db, &saved).await {
-                            tracing::warn!("JSON 恢复到 SQLite 失败: {}", e);
-                        }
-                    }
-                }
-                state.reload().await;
-                Ok(Json(serde_json::json!({
-                    "success": true,
-                    "message": "JSON 备份已恢复，安全备份已创建",
-                    "safety_backup": safety_name,
-                })))
-            }
-            Err(e) => Ok(Json(
-                serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}),
-            )),
+    // 4. 重建连接池
+    match crate::db::init_db(&db_path.to_string_lossy()).await {
+        Ok(pool) => state.db = pool,
+        Err(e) => {
+            tracing::error!("重建数据库连接失败: {}", e);
+            state.db = crate::db::init_db(":memory:")
+                .await
+                .expect("内存数据库也无法创建");
         }
     }
+
+    // 5. 验证完整性
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or_else(|_| "error".to_string());
+
+    if integrity != "ok" {
+        tracing::error!("恢复后完整性检查失败: {}", integrity);
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": format!("数据完整性检查失败: {}，建议手动恢复安全备份 {}", integrity, safety_name)}),
+        ));
+    }
+
+    // 6. 从 SQLite 重新加载数据到内存
+    state.reload().await;
+
+    tracing::info!("从备份恢复成功: {:?}", backup_path);
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "备份已恢复，安全备份已创建",
+        "safety_backup": safety_name,
+    })))
 }
 
 /// GET /api/admin/backup/download/{name}
-/// 下载备份文件。.json 直接返回文本，.db 返回 base64 编码。
+/// 下载备份文件。从 .db 备份生成完整 JSON 内容返回。
 pub async fn download_backup(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -1179,7 +1094,7 @@ pub async fn download_backup(
     let is_json = name_clean.ends_with(".json");
 
     if is_json {
-        // JSON 文件直接返回文本
+        // 旧格式 .json 备份文件，直接读取
         match std::fs::read_to_string(&backup_path) {
             Ok(content) => Ok(Json(serde_json::json!({
                 "success": true,
@@ -1192,7 +1107,7 @@ pub async fn download_backup(
             )),
         }
     } else {
-        // .db 文件是二进制，返回 base64 编码
+        // .db 备份 — 返回 base64 编码的二进制文件
         match std::fs::read(&backup_path) {
             Ok(bytes) => {
                 use base64::Engine;
@@ -1351,17 +1266,19 @@ pub async fn import_data(
 
     // 先创建安全备份
     let safety_filename = format!(
-        "pre_import_{}.json",
+        "pre_import_{}.db",
         chrono::Local::now().format("%Y%m%d_%H%M%S")
     );
-    if let Ok(json) = std::fs::read_to_string(&state.data_file) {
-        let backup_dir = std::path::Path::new(&state.data_file)
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new("."))
-            .join("backups");
-        let _ = std::fs::create_dir_all(&backup_dir);
-        let _ = std::fs::write(backup_dir.join(&safety_filename), &json);
-    }
+    let backup_dir = std::path::Path::new(&state.db_path)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("backups");
+    let _ = std::fs::create_dir_all(&backup_dir);
+    // 创建 SQLite 安全备份
+    let _ = crate::db::create_consistent_backup(
+        &state.db_path,
+        &backup_dir.join(&safety_filename).to_string_lossy(),
+    );
 
     // 清空 SQLite 并重新导入
     crate::db::reimport_all_data(&state.db, &saved)

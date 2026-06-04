@@ -443,8 +443,8 @@ pub struct AppState {
     pub site_description: Arc<RwLock<String>>,
     /// Public-facing site URL (e.g. https://lba-oi.team)
     pub site_url: String,
-    /// Path to the JSON data persistence file
-    pub data_file: String,
+    /// Path to the SQLite database file
+    pub db_path: String,
     /// Customizable difficulty levels
     pub difficulty: Arc<RwLock<crate::types::DifficultyConfig>>,
     /// Unified posts (replaces suggestions, announcements, discussions)
@@ -516,12 +516,10 @@ impl AppState {
         let site_version = env!("CARGO_PKG_VERSION").to_string();
 
         // ── SQLite 初始化 ──
-        let data_file = &config.server.data_file;
-        let db_path = std::path::Path::new(data_file)
-            .with_extension("db")
-            .to_string_lossy()
-            .to_string();
-        let db = crate::db::init_db(&db_path)
+        let db_path = std::path::PathBuf::from("mcguffin_data.db");
+        let json_path = db_path.with_extension("json");
+        let db_path_str = db_path.to_string_lossy().to_string();
+        let db = crate::db::init_db(&db_path_str)
             .await
             .expect("SQLite 初始化失败，请检查数据库文件路径和权限");
 
@@ -543,25 +541,20 @@ impl AppState {
         }
 
         // SQLite 为空 → 尝试从 JSON 迁移
+        let json_path_str = json_path.to_string_lossy().to_string();
         if saved.is_none() {
-            if let Ok(json) = std::fs::read_to_string(data_file) {
+            if let Ok(json) = std::fs::read_to_string(&json_path) {
                 if let Ok(data) = serde_json::from_str::<SavedData>(&json) {
-                    tracing::info!("从 JSON 文件 {} 加载数据，准备导入 SQLite...", data_file);
-                    // 临时关闭 FK 约束（单连接池，所有操作使用同一连接）
-                    let _ = sqlx::query("PRAGMA foreign_keys = OFF")
-                        .execute(&db).await;
+                    tracing::info!("从 JSON 文件 {} 加载数据，准备导入 SQLite...", json_path_str);
                     match crate::db::import_saved_data(&db, &data).await {
                         Ok(n) if n > 0 => {
-                            tracing::info!("已从 {} 导入 {} 条记录到 SQLite", data_file, n);
+                            tracing::info!("已从 {} 导入 {} 条记录到 SQLite", json_path_str, n);
                         }
                         Ok(_) => {}
                         Err(e) => {
                             tracing::warn!("从 JSON 导入 SQLite 失败: {}", e);
                         }
                     }
-                    // 恢复 FK 约束
-                    let _ = sqlx::query("PRAGMA foreign_keys = ON")
-                        .execute(&db).await;
                     saved = Some(data);
                 }
             }
@@ -585,7 +578,7 @@ impl AppState {
             showcase_contest_ids,
             posts,
         ) = if let Some(data) = saved {
-            tracing::info!("Loaded state from {}", data_file);
+            tracing::info!("Loaded state from JSON: {}", json_path_str);
 
             // Migrate legacy data if needed
             let mut p = data.posts;
@@ -803,7 +796,7 @@ impl AppState {
             site_version,
             site_description: Arc::new(RwLock::new(site_description)),
             site_url: config.server.site_url,
-            data_file: config.server.data_file,
+            db_path: db_path_str,
             difficulty: Arc::new(RwLock::new(difficulty_config.clone())),
             posts: Arc::new(RwLock::new(posts)),
             notifications: Arc::new(RwLock::new(notifications)),
@@ -823,7 +816,50 @@ impl AppState {
             db,
         };
 
-        // SQLite 是权威数据源，不需要反向同步 JSON
+        // SQLite 是权威数据源，确保 admin 存在于数据库中
+        {
+            let admin_user = app_state.users.read().await.get(ADMIN_USER_ID).cloned();
+            if let Some(ref admin) = admin_user {
+                let _ = sqlx::query(
+                    "INSERT OR REPLACE INTO users (id, username, display_name, avatar_url, email, role, team_status, \
+                     created_at, bio, password_hash, effective_role, group_ids, user_permissions) \
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(&admin.id)
+                .bind(&admin.username)
+                .bind(&admin.display_name)
+                .bind(&admin.avatar_url)
+                .bind(&admin.email)
+                .bind(&admin.role)
+                .bind(&admin.team_status)
+                .bind(admin.created_at.to_rfc3339())
+                .bind(&admin.bio)
+                .bind(&admin.password_hash)
+                .bind(&admin.effective_role)
+                .bind(serde_json::to_string(&admin.group_ids).unwrap_or_default())
+                .bind(serde_json::to_string(&admin.user_permissions).unwrap_or_default())
+                .execute(&app_state.db)
+                .await;
+            }
+        }
+        {
+            let admin_member = app_state.team_members.read().await.get(ADMIN_USER_ID).cloned();
+            if let Some(ref m) = admin_member {
+                let _ = sqlx::query(
+                    "INSERT OR REPLACE INTO team_members (id, user_id, joined_at) VALUES (?, ?, ?)",
+                )
+                .bind(&m.id)
+                .bind(&m.user_id)
+                .bind(&m.joined_at)
+                .execute(&app_state.db)
+                .await;
+            }
+        }
+
+        // 启动完成，启用 FK 约束以保障正常运行的引用完整性
+        let _ = sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&app_state.db).await;
+
         app_state
     }
 
@@ -1471,7 +1507,7 @@ impl AppState {
 
                 // 数据已实时写入 SQLite，直接创建备份即可
                 // 1. 创建 SQLite 备份
-                let db_path = std::path::Path::new(&state.data_file).with_extension("db");
+                let db_path = std::path::Path::new(&state.db_path);
                 if db_path.exists() {
                     let dir = db_path
                         .parent()
@@ -1684,7 +1720,6 @@ fn load_config() -> AppConfig {
         server: crate::types::ServerConfig {
             site_url,
             port: 3000,
-            data_file: "mcguffin_data.json".to_string(),
         },
         admin: crate::types::AdminConfig {
             password: admin_password,
@@ -1724,7 +1759,6 @@ mod tests {
             server: ServerConfig {
                 site_url: "https://test.com".to_string(),
                 port: 3000,
-                data_file: "test.json".to_string(),
             },
             admin: AdminConfig {
                 password: "pass".to_string(),
@@ -1762,7 +1796,6 @@ mod tests {
             server: ServerConfig {
                 site_url: "https://test.com".to_string(),
                 port: 3000,
-                data_file: "test.json".to_string(),
             },
             admin: AdminConfig {
                 password: "pass".to_string(),
@@ -1800,7 +1833,6 @@ mod tests {
             server: ServerConfig {
                 site_url: "https://test.com".to_string(),
                 port: 3000,
-                data_file: "test.json".to_string(),
             },
             admin: AdminConfig {
                 password: "pass".to_string(),

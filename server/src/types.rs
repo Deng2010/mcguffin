@@ -666,15 +666,10 @@ pub struct ServerConfig {
     pub site_url: String,
     #[serde(default = "default_port")]
     pub port: u16,
-    #[serde(default = "default_data_file")]
-    pub data_file: String,
 }
 
 fn default_port() -> u16 {
     3000
-}
-fn default_data_file() -> String {
-    "mcguffin_data.json".to_string()
 }
 
 #[derive(Deserialize)]
@@ -1033,7 +1028,6 @@ cp_client_secret = "secret"
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.server.site_url, "https://example.com");
         assert_eq!(config.server.port, 3000); // default
-        assert_eq!(config.server.data_file, "mcguffin_data.json"); // default
         assert_eq!(config.admin.password, "pass");
         assert_eq!(config.site.name, None); // default
     }
