@@ -173,10 +173,18 @@ pub async fn get_community_posts(
 
     // ── Pagination ──
     let total = result.len() as u32;
-    let total_pages = if total == 0 { 1 } else { (total + query.limit - 1) / query.limit };
+    let total_pages = if total == 0 {
+        1
+    } else {
+        total.div_ceil(query.limit)
+    };
     let page = query.page.max(1).min(total_pages);
     let offset = ((page - 1) * query.limit) as usize;
-    let items: Vec<PostListItem> = result.into_iter().skip(offset).take(query.limit as usize).collect();
+    let items: Vec<PostListItem> = result
+        .into_iter()
+        .skip(offset)
+        .take(query.limit as usize)
+        .collect();
 
     Json(serde_json::json!({
         "items": items,

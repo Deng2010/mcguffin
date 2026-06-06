@@ -545,7 +545,10 @@ impl AppState {
         if saved.is_none() {
             if let Ok(json) = std::fs::read_to_string(&json_path) {
                 if let Ok(data) = serde_json::from_str::<SavedData>(&json) {
-                    tracing::info!("从 JSON 文件 {} 加载数据，准备导入 SQLite...", json_path_str);
+                    tracing::info!(
+                        "从 JSON 文件 {} 加载数据，准备导入 SQLite...",
+                        json_path_str
+                    );
                     match crate::db::import_saved_data(&db, &data).await {
                         Ok(n) if n > 0 => {
                             tracing::info!("已从 {} 导入 {} 条记录到 SQLite", json_path_str, n);
@@ -843,7 +846,12 @@ impl AppState {
             }
         }
         {
-            let admin_member = app_state.team_members.read().await.get(ADMIN_USER_ID).cloned();
+            let admin_member = app_state
+                .team_members
+                .read()
+                .await
+                .get(ADMIN_USER_ID)
+                .cloned();
             if let Some(ref m) = admin_member {
                 let _ = sqlx::query(
                     "INSERT OR REPLACE INTO team_members (id, user_id, joined_at) VALUES (?, ?, ?)",
@@ -858,7 +866,8 @@ impl AppState {
 
         // 启动完成，启用 FK 约束以保障正常运行的引用完整性
         let _ = sqlx::query("PRAGMA foreign_keys = ON")
-            .execute(&app_state.db).await;
+            .execute(&app_state.db)
+            .await;
 
         app_state
     }

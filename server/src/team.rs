@@ -299,7 +299,6 @@ pub async fn review_application(
         .update_user_field(&target_user_id, "role", role.to_string())
         .await;
 
-
     match action_clone.as_str() {
         "approve" => Json(ReviewResponse {
             success: true,

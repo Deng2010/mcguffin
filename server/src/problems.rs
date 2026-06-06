@@ -562,7 +562,11 @@ pub async fn review_problem(
     body: Option<Json<serde_json::Value>>,
 ) -> Json<ReviewResponse> {
     let reason = body
-        .and_then(|b| b.get("reason").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .and_then(|b| {
+            b.get("reason")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
         .unwrap_or_default();
 
     let (_user_id, user) = match resolve_user(&state, &headers).await {
@@ -608,7 +612,10 @@ pub async fn review_problem(
         let reject_msg = if reason.is_empty() {
             format!("题目「{}」未通过审核，已被删除", problem_title)
         } else {
-            format!("题目「{}」未通过审核，已被删除。\n审核意见：{}", problem_title, reason)
+            format!(
+                "题目「{}」未通过审核，已被删除。\n审核意见：{}",
+                problem_title, reason
+            )
         };
         create_notification(
             &state,
@@ -736,7 +743,6 @@ pub async fn review_problem(
         }),
     };
 
-
     // Send notification to the problem author
     match action.as_str() {
         "approve" => {
@@ -761,7 +767,10 @@ pub async fn review_problem(
         }
         "return" => {
             let return_msg = if reason.is_empty() {
-                format!("题目「{}」已被退回至待审核状态，验题人题解已清除", problem_title)
+                format!(
+                    "题目「{}」已被退回至待审核状态，验题人题解已清除",
+                    problem_title
+                )
             } else {
                 format!(
                     "题目「{}」已被退回至待审核状态，验题人题解已清除。\n退回理由：{}",

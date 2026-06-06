@@ -868,12 +868,7 @@ fn list_backup_files(dir: &PathBuf) -> Vec<serde_json::Value> {
     };
     let mut entries: Vec<_> = dir
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map(|ext| ext == "db")
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().extension().map(|ext| ext == "db").unwrap_or(false))
         .filter_map(|e| {
             let meta = e.metadata().ok()?;
             let name = e.file_name().to_string_lossy().to_string();
@@ -1862,7 +1857,9 @@ fn parse_import_data(content: &str) -> Result<crate::state::SavedData, String> {
             if items.is_empty() {
                 // 空数组 → 空 Map（HashMap 需要 object 而非 array）
                 *arr = serde_json::Value::Object(serde_json::Map::new());
-            } else if items.iter().any(|v| v.is_object() && v.get(key_field).and_then(|i| i.as_str()).is_some())
+            } else if items
+                .iter()
+                .any(|v| v.is_object() && v.get(key_field).and_then(|i| i.as_str()).is_some())
             {
                 let mut map = serde_json::Map::new();
                 for item in items.drain(..) {
@@ -1879,11 +1876,26 @@ fn parse_import_data(content: &str) -> Result<crate::state::SavedData, String> {
         // 补全缺失的顶层字段（没有 #[serde(default)] 的 SavedData 字段）
         let required_fields: Vec<(&str, serde_json::Value)> = vec![
             ("users", serde_json::Value::Object(serde_json::Map::new())),
-            ("sessions", serde_json::Value::Object(serde_json::Map::new())),
-            ("refresh_tokens", serde_json::Value::Object(serde_json::Map::new())),
-            ("team_members", serde_json::Value::Object(serde_json::Map::new())),
-            ("problems", serde_json::Value::Object(serde_json::Map::new())),
-            ("join_requests", serde_json::Value::Object(serde_json::Map::new())),
+            (
+                "sessions",
+                serde_json::Value::Object(serde_json::Map::new()),
+            ),
+            (
+                "refresh_tokens",
+                serde_json::Value::Object(serde_json::Map::new()),
+            ),
+            (
+                "team_members",
+                serde_json::Value::Object(serde_json::Map::new()),
+            ),
+            (
+                "problems",
+                serde_json::Value::Object(serde_json::Map::new()),
+            ),
+            (
+                "join_requests",
+                serde_json::Value::Object(serde_json::Map::new()),
+            ),
         ];
         for (field, default_val) in &required_fields {
             if !obj.contains_key(*field) {
@@ -1913,14 +1925,39 @@ fn parse_import_data(content: &str) -> Result<crate::state::SavedData, String> {
         if let Some(contests) = obj.get_mut("contests").and_then(|c| c.as_object_mut()) {
             for contest in contests.values_mut() {
                 if let Some(c) = contest.as_object_mut() {
-                    if !c.contains_key("start_time") { c.insert("start_time".into(), serde_json::Value::String(String::new())); }
-                    if !c.contains_key("end_time") { c.insert("end_time".into(), serde_json::Value::String(String::new())); }
-                    if !c.contains_key("description") { c.insert("description".into(), serde_json::Value::String(String::new())); }
-                    if !c.contains_key("created_by") { c.insert("created_by".into(), serde_json::Value::String(String::new())); }
-                    if !c.contains_key("problem_order") { c.insert("problem_order".into(), serde_json::Value::Array(Vec::new())); }
-                    if !c.contains_key("visible_to") { c.insert("visible_to".into(), serde_json::Value::Array(Vec::new())); }
-                    if !c.contains_key("editable_by") { c.insert("editable_by".into(), serde_json::Value::Array(Vec::new())); }
-                    if !c.contains_key("link") { c.insert("link".into(), serde_json::Value::Null); }
+                    if !c.contains_key("start_time") {
+                        c.insert(
+                            "start_time".into(),
+                            serde_json::Value::String(String::new()),
+                        );
+                    }
+                    if !c.contains_key("end_time") {
+                        c.insert("end_time".into(), serde_json::Value::String(String::new()));
+                    }
+                    if !c.contains_key("description") {
+                        c.insert(
+                            "description".into(),
+                            serde_json::Value::String(String::new()),
+                        );
+                    }
+                    if !c.contains_key("created_by") {
+                        c.insert(
+                            "created_by".into(),
+                            serde_json::Value::String(String::new()),
+                        );
+                    }
+                    if !c.contains_key("problem_order") {
+                        c.insert("problem_order".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !c.contains_key("visible_to") {
+                        c.insert("visible_to".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !c.contains_key("editable_by") {
+                        c.insert("editable_by".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !c.contains_key("link") {
+                        c.insert("link".into(), serde_json::Value::Null);
+                    }
                 }
             }
         }
@@ -1929,17 +1966,39 @@ fn parse_import_data(content: &str) -> Result<crate::state::SavedData, String> {
         if let Some(problems) = obj.get_mut("problems").and_then(|p| p.as_object_mut()) {
             for problem in problems.values_mut() {
                 if let Some(p) = problem.as_object_mut() {
-                    if !p.contains_key("contest") { p.insert("contest".into(), serde_json::Value::String(String::new())); }
-                    if !p.contains_key("contest_id") { p.insert("contest_id".into(), serde_json::Value::Null); }
-                    if !p.contains_key("content") { p.insert("content".into(), serde_json::Value::String(String::new())); }
-                    if !p.contains_key("solution") { p.insert("solution".into(), serde_json::Value::Null); }
-                    if !p.contains_key("public_at") { p.insert("public_at".into(), serde_json::Value::Null); }
-                    if !p.contains_key("claimed_by") { p.insert("claimed_by".into(), serde_json::Value::Null); }
-                    if !p.contains_key("verifier_solution") { p.insert("verifier_solution".into(), serde_json::Value::Null); }
-                    if !p.contains_key("visible_to") { p.insert("visible_to".into(), serde_json::Value::Array(Vec::new())); }
-                    if !p.contains_key("link") { p.insert("link".into(), serde_json::Value::Null); }
-                    if !p.contains_key("remark") { p.insert("remark".into(), serde_json::Value::Null); }
-                    if !p.contains_key("editable_by") { p.insert("editable_by".into(), serde_json::Value::Array(Vec::new())); }
+                    if !p.contains_key("contest") {
+                        p.insert("contest".into(), serde_json::Value::String(String::new()));
+                    }
+                    if !p.contains_key("contest_id") {
+                        p.insert("contest_id".into(), serde_json::Value::Null);
+                    }
+                    if !p.contains_key("content") {
+                        p.insert("content".into(), serde_json::Value::String(String::new()));
+                    }
+                    if !p.contains_key("solution") {
+                        p.insert("solution".into(), serde_json::Value::Null);
+                    }
+                    if !p.contains_key("public_at") {
+                        p.insert("public_at".into(), serde_json::Value::Null);
+                    }
+                    if !p.contains_key("claimed_by") {
+                        p.insert("claimed_by".into(), serde_json::Value::Null);
+                    }
+                    if !p.contains_key("verifier_solution") {
+                        p.insert("verifier_solution".into(), serde_json::Value::Null);
+                    }
+                    if !p.contains_key("visible_to") {
+                        p.insert("visible_to".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !p.contains_key("link") {
+                        p.insert("link".into(), serde_json::Value::Null);
+                    }
+                    if !p.contains_key("remark") {
+                        p.insert("remark".into(), serde_json::Value::Null);
+                    }
+                    if !p.contains_key("editable_by") {
+                        p.insert("editable_by".into(), serde_json::Value::Array(Vec::new()));
+                    }
                 }
             }
         }
@@ -1948,18 +2007,50 @@ fn parse_import_data(content: &str) -> Result<crate::state::SavedData, String> {
         if let Some(posts) = obj.get_mut("posts").and_then(|p| p.as_object_mut()) {
             for post in posts.values_mut() {
                 if let Some(p) = post.as_object_mut() {
-                    if !p.contains_key("content") { p.insert("content".into(), serde_json::Value::String(String::new())); }
-                    if !p.contains_key("updated_at") { p.insert("updated_at".into(), p.get("created_at").cloned().unwrap_or(serde_json::Value::String(String::new()))); }
-                    if !p.contains_key("tags") { p.insert("tags".into(), serde_json::Value::Array(Vec::new())); }
-                    if !p.contains_key("pinned") { p.insert("pinned".into(), serde_json::Value::Bool(false)); }
-                    if !p.contains_key("team_only") { p.insert("team_only".into(), serde_json::Value::Bool(false)); }
-                    if !p.contains_key("emoji") { p.insert("emoji".into(), serde_json::Value::Null); }
-                    if !p.contains_key("reactions") { p.insert("reactions".into(), serde_json::Value::Array(Vec::new())); }
-                    if !p.contains_key("status") { p.insert("status".into(), serde_json::Value::String("normal".into())); }
-                    if !p.contains_key("visible_to") { p.insert("visible_to".into(), serde_json::Value::Array(Vec::new())); }
-                    if !p.contains_key("editable_by") { p.insert("editable_by".into(), serde_json::Value::Array(Vec::new())); }
-                    if !p.contains_key("reply_count") { p.insert("reply_count".into(), serde_json::Value::Number(serde_json::Number::from(0))); }
-                    if !p.contains_key("solution") { p.insert("solution".into(), serde_json::Value::String(String::new())); }
+                    if !p.contains_key("content") {
+                        p.insert("content".into(), serde_json::Value::String(String::new()));
+                    }
+                    if !p.contains_key("updated_at") {
+                        p.insert(
+                            "updated_at".into(),
+                            p.get("created_at")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::String(String::new())),
+                        );
+                    }
+                    if !p.contains_key("tags") {
+                        p.insert("tags".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !p.contains_key("pinned") {
+                        p.insert("pinned".into(), serde_json::Value::Bool(false));
+                    }
+                    if !p.contains_key("team_only") {
+                        p.insert("team_only".into(), serde_json::Value::Bool(false));
+                    }
+                    if !p.contains_key("emoji") {
+                        p.insert("emoji".into(), serde_json::Value::Null);
+                    }
+                    if !p.contains_key("reactions") {
+                        p.insert("reactions".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !p.contains_key("status") {
+                        p.insert("status".into(), serde_json::Value::String("normal".into()));
+                    }
+                    if !p.contains_key("visible_to") {
+                        p.insert("visible_to".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !p.contains_key("editable_by") {
+                        p.insert("editable_by".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !p.contains_key("reply_count") {
+                        p.insert(
+                            "reply_count".into(),
+                            serde_json::Value::Number(serde_json::Number::from(0)),
+                        );
+                    }
+                    if !p.contains_key("solution") {
+                        p.insert("solution".into(), serde_json::Value::String(String::new()));
+                    }
                 }
             }
         }
@@ -1968,11 +2059,27 @@ fn parse_import_data(content: &str) -> Result<crate::state::SavedData, String> {
         if let Some(users) = obj.get_mut("users").and_then(|u| u.as_object_mut()) {
             for user in users.values_mut() {
                 if let Some(u) = user.as_object_mut() {
-                    if !u.contains_key("bio") { u.insert("bio".into(), serde_json::Value::String(String::new())); }
-                    if !u.contains_key("password_hash") { u.insert("password_hash".into(), serde_json::Value::Null); }
-                    if !u.contains_key("effective_role") { u.insert("effective_role".into(), serde_json::Value::String(String::new())); }
-                    if !u.contains_key("group_ids") { u.insert("group_ids".into(), serde_json::Value::Array(Vec::new())); }
-                    if !u.contains_key("user_permissions") { u.insert("user_permissions".into(), serde_json::Value::Array(Vec::new())); }
+                    if !u.contains_key("bio") {
+                        u.insert("bio".into(), serde_json::Value::String(String::new()));
+                    }
+                    if !u.contains_key("password_hash") {
+                        u.insert("password_hash".into(), serde_json::Value::Null);
+                    }
+                    if !u.contains_key("effective_role") {
+                        u.insert(
+                            "effective_role".into(),
+                            serde_json::Value::String(String::new()),
+                        );
+                    }
+                    if !u.contains_key("group_ids") {
+                        u.insert("group_ids".into(), serde_json::Value::Array(Vec::new()));
+                    }
+                    if !u.contains_key("user_permissions") {
+                        u.insert(
+                            "user_permissions".into(),
+                            serde_json::Value::Array(Vec::new()),
+                        );
+                    }
                 }
             }
         }
@@ -1981,12 +2088,13 @@ fn parse_import_data(content: &str) -> Result<crate::state::SavedData, String> {
         if let Some(requests) = obj.get_mut("join_requests").and_then(|r| r.as_object_mut()) {
             for request in requests.values_mut() {
                 if let Some(r) = request.as_object_mut() {
-                    if !r.contains_key("user_email") { r.insert("user_email".into(), serde_json::Value::Null); }
+                    if !r.contains_key("user_email") {
+                        r.insert("user_email".into(), serde_json::Value::Null);
+                    }
                 }
             }
         }
     }
 
-    serde_json::from_value(value)
-        .map_err(|e| format!("数据格式转换失败: {}", e))
+    serde_json::from_value(value).map_err(|e| format!("数据格式转换失败: {}", e))
 }

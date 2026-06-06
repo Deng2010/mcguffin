@@ -420,10 +420,10 @@ pub(crate) async fn export_db_to_json_string(pool: &SqlitePool) -> Result<String
 /// 从 JSON 文件导入数据到 SQLite 数据库文件。
 /// 专为 CLI `json-to-db` 命令设计，公开为 `pub`。
 pub async fn import_json_to_db(json_path: &str, db_path: &str) -> Result<u32, String> {
-    let json = std::fs::read_to_string(json_path)
-        .map_err(|e| format!("无法读取 JSON 文件: {}", e))?;
-    let data: crate::state::SavedData = serde_json::from_str(&json)
-        .map_err(|e| format!("JSON 解析失败: {}", e))?;
+    let json =
+        std::fs::read_to_string(json_path).map_err(|e| format!("无法读取 JSON 文件: {}", e))?;
+    let data: crate::state::SavedData =
+        serde_json::from_str(&json).map_err(|e| format!("JSON 解析失败: {}", e))?;
 
     let pool = init_db(db_path)
         .await
@@ -496,13 +496,11 @@ pub(crate) async fn reimport_all_data(
 /// 在 WAL 模式下，备份期间源数据库可以继续读写。
 /// 源数据库以只读模式打开，避免 WAL checkpoint 干扰运行中的池连接。
 pub fn create_consistent_backup(source_path: &str, dest_path: &str) -> Result<(), String> {
-    let mut src = rusqlite::Connection::open_with_flags(
-        source_path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .map_err(|e| format!("无法打开源数据库: {}", e))?;
-    let dst = rusqlite::Connection::open(dest_path)
-        .map_err(|e| format!("无法创建备份文件: {}", e))?;
+    let mut src =
+        rusqlite::Connection::open_with_flags(source_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| format!("无法打开源数据库: {}", e))?;
+    let dst =
+        rusqlite::Connection::open(dest_path).map_err(|e| format!("无法创建备份文件: {}", e))?;
 
     let backup = Backup::new(&dst, &mut src).map_err(|e| format!("备份初始化失败: {}", e))?;
 

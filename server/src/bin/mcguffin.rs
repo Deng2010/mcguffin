@@ -1243,6 +1243,6 @@ fn main() {
         Commands::Stop => cmd_service_stop(&config_path),
         Commands::Restart => cmd_service_restart(&config_path),
         Commands::Status => cmd_service_status(&config_path),
-        Commands::JsonToDb { input, output } => cmd_json_to_db(&input, output.as_deref()),
+        Commands::JsonToDb { input, output } => cmd_json_to_db(input, output.as_deref()),
     }
 }

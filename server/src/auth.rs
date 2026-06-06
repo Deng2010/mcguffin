@@ -372,7 +372,6 @@ pub async fn oauth_callback(
                         .set_refresh_token(token_resp.refresh_token.clone(), user_id)
                         .await;
 
-
                     Redirect::to(&format!("{}#/auth/callback?token={}", fe, session_token))
                 }
                 Err(e) => Redirect::to(&format!(
@@ -469,7 +468,6 @@ pub async fn refresh_token(
         state
             .set_refresh_token(new_refresh_token.clone(), uid)
             .await;
-
 
         Json(serde_json::json!({
             "success": true,

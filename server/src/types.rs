@@ -986,8 +986,12 @@ pub struct CommunityQuery {
     pub limit: u32,
 }
 
-fn default_page() -> u32 { 1 }
-fn default_limit() -> u32 { 10 }
+fn default_page() -> u32 {
+    1
+}
+fn default_limit() -> u32 {
+    10
+}
 
 // ============== Tests ==============
 
