@@ -113,13 +113,10 @@ pub async fn get_community_posts(
 
     let users = state.users.read().await;
 
-    // ── Gather tag metadata and counts from ALL matching posts ──
+    // ── Gather tag metadata and global counts from ALL posts (before filtering) ──
     let tag_meta = state.discussion_tags.read().await;
     let mut tag_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for p in &posts {
-        if !filter_tags.is_empty() && !p.tags.iter().any(|t| filter_tags.contains(t)) {
-            continue; // skip posts that don't match the filter
-        }
         for t in &p.tags {
             *tag_counts.entry(t.clone()).or_default() += 1;
         }
@@ -129,6 +126,7 @@ pub async fn get_community_posts(
         v.sort_by(|a, b| a.name.cmp(&b.name));
         v
     };
+    let total_all = posts.len() as u32;
 
     let mut result: Vec<PostListItem> = Vec::new();
 
@@ -189,6 +187,7 @@ pub async fn get_community_posts(
     Json(serde_json::json!({
         "items": items,
         "total": total,
+        "total_all": total_all,
         "page": page,
         "total_pages": total_pages,
         "limit": query.limit,

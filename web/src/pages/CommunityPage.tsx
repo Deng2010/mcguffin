@@ -76,6 +76,7 @@ export default function CommunityPage() {
     apiFetch<{
       items: PostListItem[];
       total: number;
+      total_all?: number;
       page: number;
       total_pages: number;
       tags: DiscussionTag[];
@@ -88,7 +89,7 @@ export default function CommunityPage() {
         setTotalPages(res.total_pages);
         if (res.tags) setAllTags(res.tags);
         if (res.tag_counts) setTagCounts(res.tag_counts);
-        if (activeTab === "all") setTotalAll(res.total);
+        setTotalAll(res.total_all ?? 0);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -106,6 +107,7 @@ export default function CommunityPage() {
     apiFetch<{
       items: PostListItem[];
       total: number;
+      total_all?: number;
       tag_counts: Record<string, number>;
     }>(`/community/posts?page=1&limit=${limit}${tagParam}`)
       .then((res) => {
@@ -114,7 +116,7 @@ export default function CommunityPage() {
         setPage(1);
         setTotalPages(Math.max(1, Math.ceil(res.total / limit)));
         if (res.tag_counts) setTagCounts(res.tag_counts);
-        if (tab === "all") setTotalAll(res.total);
+        setTotalAll(res.total_all ?? 0);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -127,6 +129,7 @@ export default function CommunityPage() {
     apiFetch<{
       items: PostListItem[];
       total: number;
+      total_all?: number;
       page: number;
       total_pages: number;
       tag_counts: Record<string, number>;
@@ -135,13 +138,14 @@ export default function CommunityPage() {
         setPosts(res.items);
         setPage(res.page);
         if (res.tag_counts) setTagCounts(res.tag_counts);
+        setTotalAll(res.total_all ?? 0);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
   const counts: Record<string, number> = {
-    all: total,
+    all: totalAll,
     ...tagCounts,
   };
 
