@@ -922,6 +922,9 @@ pub async fn create_backup(
         ));
     }
 
+    // 备份前同步 HashMap 数据到 SQLite 并刷新 WAL
+    state.sync_to_db().await;
+
     match crate::db::create_consistent_backup(
         &db_path.to_string_lossy(),
         &db_backup_path.to_string_lossy(),
@@ -931,10 +934,7 @@ pub async fn create_backup(
             Ok(Json(serde_json::json!({
                 "success": true,
                 "message": "备份已创建",
-                "backup": {
-                    "name": db_backup_name,
-                    "type": "sqlite",
-                },
+                "backup": db_backup_name,
             })))
         }
         Err(e) => Ok(Json(

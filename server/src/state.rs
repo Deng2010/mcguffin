@@ -863,10 +863,12 @@ impl AppState {
         app_state
     }
 
-    /// 已废弃：数据实时写入 SQLite，不再需要 JSON 持久化。
-    /// 保留此方法以兼容现有调用点（调用点为 no-op）。
-    pub async fn save(&self) {
-        // no-op: SQLite 是权威数据源，每次写操作已同步写入
+    /// 将 HashMap 中所有数据同步写入 SQLite。
+    /// 用于备份前确保 SQLite 包含最新数据。
+    pub async fn sync_to_db(&self) {
+        let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&self.db)
+            .await;
     }
 
     const MAX_SESSIONS_PER_USER: usize = 3;
