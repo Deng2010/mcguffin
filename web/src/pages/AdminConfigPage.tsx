@@ -9,6 +9,7 @@ interface ConfigData {
   admin: { password: string; display_name: string }
   site: { name: string; title?: string | null; difficulty_order: string[] }
   oauth: { cp_client_id: string; cp_client_secret: string }
+  backup: { interval_minutes: number; retention_count: number }
   difficulty: Record<string, { label: string; color: string }>
   discussion_tags?: Record<string, { color: string; description: string }>
   discussion_emojis?: Record<string, { char: string }>
@@ -20,7 +21,7 @@ interface DifficultyEntry {
   color: string
 }
 
-type TabId = 'server' | 'admin' | 'site' | 'oauth' | 'difficulty'
+type TabId = 'server' | 'admin' | 'site' | 'oauth' | 'difficulty' | 'backup'
 
 // ============== Component ==============
 
@@ -39,6 +40,7 @@ export default function AdminConfigPage() {
     { id: 'site', label: '站点' },
     { id: 'oauth', label: 'OAuth' },
     { id: 'difficulty', label: '难度' },
+    { id: 'backup', label: '备份' },
   ]
 
   return (
@@ -89,6 +91,8 @@ interface ConfigCtx {
   moveDiff: (idx: number, direction: -1 | 1) => void
   removeDiff: (idx: number) => void
   addDiff: () => void
+  backupInterval: number; setBackupInterval: (v: number) => void
+  backupRetention: number; setBackupRetention: (v: number) => void
 }
 
 const ConfigCtx = createContext<ConfigCtx>(null!)
@@ -113,6 +117,8 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
   const [newDiffName, setNewDiffName] = useState('')
   const [newDiffLabel, setNewDiffLabel] = useState('')
   const [newDiffColor, setNewDiffColor] = useState('#888888')
+  const [backupInterval, setBackupInterval] = useState(60)
+  const [backupRetention, setBackupRetention] = useState(48)
 
   const loadConfig = async () => {
     setLoading(true)
@@ -128,6 +134,8 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       setSiteTitle(res.config.site.title ?? '')
       setCpClientId(res.config.oauth.cp_client_id)
       setCpClientSecret(res.config.oauth.cp_client_secret)
+      setBackupInterval(res.config.backup?.interval_minutes ?? 60)
+      setBackupRetention(res.config.backup?.retention_count ?? 48)
       const allDiffs = Object.entries(res.config.difficulty).map(([name, fields]) => ({ name, label: fields.label, color: fields.color }))
       const order = res.config.site.difficulty_order ?? []
       allDiffs.sort((a, b) => {
@@ -187,6 +195,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
           admin: { password: adminPassword, display_name: displayName },
           site: { name: siteName, title: siteTitle || undefined, difficulty_order: order },
           oauth: { cp_client_id: cpClientId, cp_client_secret: cpClientSecret },
+          backup: { interval_minutes: backupInterval, retention_count: backupRetention },
           difficulty: diffObj,
         }),
       })
@@ -216,6 +225,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
     difficulties, difficultyOrder,
     newDiffName, setNewDiffName, newDiffLabel, setNewDiffLabel, newDiffColor, setNewDiffColor,
     updateDiff, moveDiff, removeDiff, addDiff,
+    backupInterval, setBackupInterval, backupRetention, setBackupRetention,
   }
 
   if (loading) return (
@@ -233,6 +243,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       case 'site': return <SiteForm />
       case 'oauth': return <OAuthForm />
       case 'difficulty': return <DifficultyForm />
+      case 'backup': return <BackupForm />
     }
   }
 
@@ -333,6 +344,28 @@ function OAuthForm() {
       <div>
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Client Secret</label>
         <input type="text" value={c.cpClientSecret} onChange={e => c.setCpClientSecret(e.target.value)} className={inputClass} />
+      </div>
+    </div>
+  )
+}
+
+function BackupForm() {
+  const c = useContext(ConfigCtx)
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">自动备份间隔（分钟）</label>
+        <input type="number" min={10} max={1440} value={c.backupInterval}
+          onChange={e => c.setBackupInterval(parseInt(e.target.value) || 60)}
+          className={inputClass} />
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">每隔多少分钟自动备份一次。最小值 10 分钟，最大值 1440 分钟（24 小时）。</p>
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">最大备份保留数量</label>
+        <input type="number" min={1} max={999} value={c.backupRetention}
+          onChange={e => c.setBackupRetention(parseInt(e.target.value) || 48)}
+          className={inputClass} />
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">最多保留多少个自动备份文件。超出数量的旧备份会被自动清理。</p>
       </div>
       <p className="text-xs text-gray-400 dark:text-gray-500">修改后需重启服务生效</p>
     </div>

@@ -26,6 +26,7 @@ pub struct ConfigResponse {
     pub admin: AdminSection,
     pub site: SiteSection,
     pub oauth: OAuthSection,
+    pub backup: BackupSection,
     pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub discussion_tags:
@@ -66,6 +67,12 @@ pub struct OAuthSection {
     pub cp_client_secret: String,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct BackupSection {
+    pub interval_minutes: u64,
+    pub retention_count: u64,
+}
+
 /// The full config payload from the frontend
 #[derive(serde::Deserialize)]
 pub struct UpdateConfigPayload {
@@ -73,6 +80,7 @@ pub struct UpdateConfigPayload {
     pub admin: AdminSection,
     pub site: SiteSection,
     pub oauth: OAuthSection,
+    pub backup: BackupSection,
     pub difficulty: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     #[serde(default)]
     pub discussion_tags:
@@ -160,6 +168,10 @@ async fn sync_groups_to_config(state: &AppState) {
                 cp_client_id: String::new(),
                 cp_client_secret: String::new(),
             },
+            backup: BackupSection {
+                interval_minutes: 0,
+                retention_count: 0,
+            },
             difficulty: std::collections::HashMap::new(),
             discussion_tags: std::collections::HashMap::new(),
             discussion_emojis: std::collections::HashMap::new(),
@@ -229,6 +241,14 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
             .and_then(|v| v.as_integer())
             .map(|n| n as u16)
             .unwrap_or(3000)
+    };
+
+    let get_u64 = |section: &str, key: &str, default_val: u64| -> u64 {
+        doc.get(section)
+            .and_then(|s| s.get(key))
+            .and_then(|v| v.as_integer())
+            .map(|n| n as u64)
+            .unwrap_or(default_val)
     };
 
     let get_array = |section: &str, key: &str| -> Vec<String> {
@@ -435,6 +455,10 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
             cp_client_id: get_str("oauth", "cp_client_id"),
             cp_client_secret: get_str("oauth", "cp_client_secret"),
         },
+        backup: BackupSection {
+            interval_minutes: get_u64("backup", "interval_minutes", 60),
+            retention_count: get_u64("backup", "retention_count", 48),
+        },
         difficulty,
         discussion_tags,
         discussion_emojis,
@@ -450,6 +474,9 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         table[key] = Item::Value(TomlValue::from(value));
     };
     let set_u16 = |table: &mut toml_edit::Table, key: &str, value: u16| {
+        table[key] = Item::Value(TomlValue::from(value as i64));
+    };
+    let set_u64 = |table: &mut toml_edit::Table, key: &str, value: u64| {
         table[key] = Item::Value(TomlValue::from(value as i64));
     };
 
@@ -486,6 +513,15 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
     if let Some(t) = doc.get_mut("oauth").and_then(|s| s.as_table_mut()) {
         set_str(t, "cp_client_id", &payload.oauth.cp_client_id);
         set_str(t, "cp_client_secret", &payload.oauth.cp_client_secret);
+    }
+
+    // Write backup section
+    if !doc.contains_key("backup") {
+        doc["backup"] = Item::Table(toml_edit::Table::new());
+    }
+    if let Some(t) = doc.get_mut("backup").and_then(|s| s.as_table_mut()) {
+        set_u64(t, "interval_minutes", payload.backup.interval_minutes);
+        set_u64(t, "retention_count", payload.backup.retention_count);
     }
 
     // Write difficulty levels — remove old ones first, then add new

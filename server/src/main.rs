@@ -15,9 +15,29 @@ async fn main() {
 
     let state = AppState::new().await;
 
-    // Start auto-backup (hourly, keep 48 backups)
+    // Start auto-backup — read interval and retention from config.toml
     let state_for_backup = std::sync::Arc::new(state.clone());
-    state_for_backup.start_auto_backup(3600, 48);
+    let backup_config = {
+        let path = resolve_config_path();
+        let raw = std::fs::read_to_string(&path).unwrap_or_default();
+        let doc = raw
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap_or_default();
+        let interval_secs = doc
+            .get("backup")
+            .and_then(|s| s.get("interval_minutes"))
+            .and_then(|v| v.as_integer())
+            .map(|n| n as u64 * 60)
+            .unwrap_or(3600);
+        let retention = doc
+            .get("backup")
+            .and_then(|s| s.get("retention_count"))
+            .and_then(|v| v.as_integer())
+            .map(|n| n as usize)
+            .unwrap_or(48);
+        (interval_secs, retention)
+    };
+    state_for_backup.start_auto_backup(backup_config.0, backup_config.1);
 
     crate::discussions::truncate_existing_posts(&state).await;
     crate::discussions::cleanup_orphan_reactions(&state).await;
