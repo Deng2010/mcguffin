@@ -496,13 +496,13 @@ pub(crate) async fn reimport_all_data(
 /// 在 WAL 模式下，备份期间源数据库可以继续读写。
 /// 源数据库以只读模式打开，避免 WAL checkpoint 干扰运行中的池连接。
 pub fn create_consistent_backup(source_path: &str, dest_path: &str) -> Result<(), String> {
-    let mut src =
+    let src =
         rusqlite::Connection::open_with_flags(source_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| format!("无法打开源数据库: {}", e))?;
-    let dst =
+    let mut dst =
         rusqlite::Connection::open(dest_path).map_err(|e| format!("无法创建备份文件: {}", e))?;
 
-    let backup = Backup::new(&dst, &mut src).map_err(|e| format!("备份初始化失败: {}", e))?;
+    let backup = Backup::new(&src, &mut dst).map_err(|e| format!("备份初始化失败: {}", e))?;
 
     // 每步拷贝最多 100 页，每页之间最多等待 250ms
     backup
