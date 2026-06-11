@@ -47,6 +47,10 @@ enum Commands {
     Restart,
     /// 查看服务状态
     Status,
+    /// 安装系统服务（init 脚本 / systemd unit）
+    InstallService,
+    /// 卸载系统服务
+    UninstallService,
     /// 转换 JSON 数据文件为 SQLite 数据库
     JsonToDb {
         /// JSON 数据文件路径
@@ -598,6 +602,7 @@ fn cmd_init(config_path: &Path) {
     println!("  1. 启动服务:  mcguffin start");
     println!("  2. 查看状态:  mcguffin status");
     println!("  3. 修改配置:  mcguffin config set <key> <value>");
+    println!("  4. 安装系统服务（可选）:  mcguffin install-service");
 }
 
 // ===================== Config Builder =====================
@@ -966,23 +971,72 @@ fn cmd_backup_delete(config_path: &Path, name: &str) {
     println!("✓ 备份已删除: {} ({})", name, format_size(size));
 }
 
+// ===================== Platform Detection Helpers =====================
+
+/// 尝试使用 systemctl 管理服务，返回 Some(true/false) 表示操作成功/失败，
+/// None 表示 systemctl 不可用（未找到命令）
+fn try_systemctl(action: &str) -> Option<bool> {
+    let output = Command::new("which")
+        .arg("systemctl")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .ok()?;
+    if !output.success() {
+        return None; // systemctl 不存在
+    }
+    let status = Command::new("systemctl")
+        .arg(action)
+        .arg("mcguffin.service")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .ok()?;
+    Some(status.success())
+}
+
+/// 尝试使用 OpenRC 的 rc-service 管理服务，返回 Some(true/false) 表示操作成功/失败，
+/// None 表示 rc-service 不可用（未找到命令或服务未安装）
+fn try_openrc(action: &str) -> Option<bool> {
+    let output = Command::new("which")
+        .arg("rc-service")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .ok()?;
+    if !output.success() {
+        return None; // rc-service 不存在（非 Alpine/OpenRC）
+    }
+    // init 脚本可能尚未安装，先检查
+    let init_check = Command::new("test")
+        .arg("-x")
+        .arg("/etc/init.d/mcguffin")
+        .status()
+        .ok()?;
+    if !init_check.success() {
+        return None; // 服务脚本未安装
+    }
+    let status = Command::new("rc-service")
+        .arg("mcguffin")
+        .arg(action)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .ok()?;
+    Some(status.success())
+}
+
 // ===================== Commands: Service =====================
 
 fn cmd_service_start(config_path: &Path) {
-    #[cfg(target_os = "linux")]
-    {
-        let status = Command::new("systemctl")
-            .arg("start")
-            .arg("mcguffin.service")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if let Ok(s) = status {
-            if s.success() {
-                println!("✓ 服务已启动: mcguffin.service (systemd)");
-                return;
-            }
-        }
+    // 优先尝试 systemd，其次 OpenRC，最后 fallback 到 PID 管理
+    if let Some(true) = try_systemctl("start") {
+        println!("✓ 服务已启动: mcguffin.service (systemd)");
+        return;
+    }
+    if let Some(true) = try_openrc("start") {
+        println!("✓ 服务已启动: mcguffin (OpenRC)");
+        return;
     }
 
     let server_bin = find_server_binary();
@@ -1063,20 +1117,13 @@ fn cmd_service_start(config_path: &Path) {
 }
 
 fn cmd_service_stop(config_path: &Path) {
-    #[cfg(target_os = "linux")]
-    {
-        let status = Command::new("systemctl")
-            .arg("stop")
-            .arg("mcguffin.service")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if let Ok(s) = status {
-            if s.success() {
-                println!("✓ 服务已停止: mcguffin.service (systemd)");
-                return;
-            }
-        }
+    if let Some(true) = try_systemctl("stop") {
+        println!("✓ 服务已停止: mcguffin.service (systemd)");
+        return;
+    }
+    if let Some(true) = try_openrc("stop") {
+        println!("✓ 服务已停止: mcguffin (OpenRC)");
+        return;
     }
 
     let pid_path = server_pid_path(config_path);
@@ -1105,20 +1152,13 @@ fn cmd_service_stop(config_path: &Path) {
 }
 
 fn cmd_service_restart(config_path: &Path) {
-    #[cfg(target_os = "linux")]
-    {
-        let status = Command::new("systemctl")
-            .arg("restart")
-            .arg("mcguffin.service")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if let Ok(s) = status {
-            if s.success() {
-                println!("✓ 服务已重启: mcguffin.service (systemd)");
-                return;
-            }
-        }
+    if let Some(true) = try_systemctl("restart") {
+        println!("✓ 服务已重启: mcguffin.service (systemd)");
+        return;
+    }
+    if let Some(true) = try_openrc("restart") {
+        println!("✓ 服务已重启: mcguffin (OpenRC)");
+        return;
     }
 
     cmd_service_stop(config_path);
@@ -1127,27 +1167,42 @@ fn cmd_service_restart(config_path: &Path) {
 }
 
 fn cmd_service_status(config_path: &Path) {
-    #[cfg(target_os = "linux")]
-    {
+    // systemd
+    if let Some(true) = try_systemctl("is-active") {
         let output = Command::new("systemctl")
             .arg("status")
             .arg("mcguffin.service")
             .arg("--no-pager")
             .output();
         if let Ok(o) = output {
-            if o.status.success() {
-                let stdout = String::from_utf8_lossy(&o.stdout);
-                for line in stdout.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with("●")
-                        || trimmed.starts_with("Active:")
-                        || trimmed.starts_with("Main PID:")
-                    {
-                        println!("{}", trimmed);
-                    }
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("●")
+                    || trimmed.starts_with("Active:")
+                    || trimmed.starts_with("Main PID:")
+                {
+                    println!("{}", trimmed);
                 }
-                return;
             }
+            return;
+        }
+    }
+
+    // OpenRC
+    if let Some(true) = try_openrc("status") {
+        let output = Command::new("rc-service")
+            .arg("mcguffin")
+            .arg("status")
+            .output();
+        if let Ok(o) = output {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            println!("● mcguffin (OpenRC)");
+            let trimmed = stdout.trim();
+            if !trimmed.is_empty() {
+                println!("  Status: {}", trimmed);
+            }
+            return;
         }
     }
 
@@ -1186,6 +1241,358 @@ fn cmd_service_status(config_path: &Path) {
             println!("● mcguffin 服务未运行");
             std::process::exit(1);
         }
+    }
+}
+
+// ===================== Install / Uninstall Service =====================
+
+/// 生成 OpenRC init 脚本内容（Alpine Linux）
+fn openrc_init_script(config_path: &Path) -> String {
+    let server_bin = find_server_binary();
+    let server_path = std::path::absolute(&server_bin).unwrap_or(server_bin.clone());
+    let work_dir = server_work_dir(&server_path);
+    let log_path = runtime_dir(config_path).join("mcguffin.log");
+    let data_file = get_data_file(config_path);
+    let data_path = if PathBuf::from(&data_file).is_absolute() {
+        PathBuf::from(&data_file)
+    } else {
+        work_dir.join(&data_file)
+    };
+
+    format!(
+        r#"#!/sbin/openrc-run
+#===============================================================================
+# McGuffin OpenRC init script
+# 由 `mcguffin install-service` 自动生成
+#===============================================================================
+
+description="McGuffin Server - Algorithm Competition Team Tool"
+
+command="{}"
+command_args=""
+command_dir="{}"
+command_background=true
+pidfile="{}"
+
+depend() {{
+    need net
+    after firewall
+}}
+
+start_pre() {{
+    checkpath -d -m 755 -o root:root "$(dirname "{}")"
+    checkpath -d -m 755 -o root:root "$(dirname "{}")"
+}}
+"#,
+        server_path.display(),
+        work_dir.display(),
+        runtime_dir(config_path).join("mcguffin.pid").display(),
+        log_path.display(),
+        data_path.parent().unwrap_or(Path::new(".")).display(),
+    )
+}
+
+/// 安装系统服务
+fn cmd_install_service(config_path: &Path) {
+    // 检测系统类型
+    let has_systemd = Command::new("which")
+        .arg("systemctl")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    let has_openrc = Command::new("which")
+        .arg("rc-service")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if !has_systemd && !has_openrc {
+        eprintln!("警告: 未检测到 systemd 或 OpenRC，将安装 PID 管理脚本（不支持开机自启）");
+        eprintln!("  Alpine Linux 请安装 OpenRC: apk add openrc");
+        eprintln!("  其他发行版请安装 systemd 或使用 'mcguffin start' 手动启动");
+        // 仍可提示后续步骤
+    }
+
+    // 检查二进制文件
+    let server_bin = find_server_binary();
+    if !server_bin.exists() {
+        eprintln!("错误: 找不到 mcguffin-server 二进制文件");
+        eprintln!("  查找位置: {}", server_bin.display());
+        eprintln!("  请先构建并安装: just install");
+        std::process::exit(1);
+    }
+
+    // 检查配置文件
+    if !config_path.exists() {
+        eprintln!("错误: 配置文件不存在 -> {}", config_path.display());
+        eprintln!("  请先运行 'mcguffin init' 生成配置文件");
+        std::process::exit(1);
+    }
+
+    let server_path = std::path::absolute(&server_bin).unwrap_or(server_bin.clone());
+
+    if has_openrc {
+        let init_path = PathBuf::from("/etc/init.d/mcguffin");
+        let content = openrc_init_script(config_path);
+
+        if init_path.exists() {
+            if !prompt_yesno(
+                &format!(
+                    "OpenRC init 脚本已存在 ({})，是否覆盖？",
+                    init_path.display()
+                ),
+                false,
+            ) {
+                println!("已取消，未作任何更改。");
+                return;
+            }
+        }
+
+        fs::write(&init_path, &content).unwrap_or_else(|e| {
+            eprintln!("错误: 无法写入 {}: {}", init_path.display(), e);
+            eprintln!("  请使用 sudo 运行: sudo mcguffin install-service");
+            std::process::exit(1);
+        });
+
+        // 设置可执行权限
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&init_path, fs::Permissions::from_mode(0o755)).unwrap_or_else(
+                |e| {
+                    eprintln!("错误: 无法设置执行权限: {}", e);
+                    std::process::exit(1);
+                },
+            );
+        }
+
+        println!("✓ OpenRC init 脚本已安装: {}", init_path.display());
+
+        // 添加到默认运行级别
+        let rc_status = Command::new("rc-update")
+            .arg("add")
+            .arg("mcguffin")
+            .arg("default")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        match rc_status {
+            Ok(s) if s.success() => {
+                println!("✓ 已添加到 OpenRC default 运行级别（开机自启）");
+            }
+            _ => {
+                eprintln!("警告: 无法添加到开机自启，可手动运行:");
+                eprintln!("  rc-update add mcguffin default");
+            }
+        }
+
+        println!();
+        println!("启动服务:  rc-service mcguffin start");
+        println!("停止服务:  rc-service mcguffin stop");
+        println!("查看状态:  rc-service mcguffin status");
+        println!("开机自启:  已配置（rc-update add mcguffin default）");
+    } else if has_systemd {
+        // systemd — 创建 service unit 文件
+        let work_dir = server_work_dir(&server_path);
+        let unit_content = format!(
+            r#"[Unit]
+Description=McGuffin Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={}
+WorkingDirectory={}
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:{}
+StandardError=append:{}
+
+[Install]
+WantedBy=multi-user.target
+"#,
+            server_path.display(),
+            work_dir.display(),
+            runtime_dir(config_path).join("mcguffin.log").display(),
+            runtime_dir(config_path).join("mcguffin.log").display(),
+        );
+
+        let unit_path = PathBuf::from("/etc/systemd/system/mcguffin.service");
+
+        if unit_path.exists() {
+            if !prompt_yesno(
+                &format!("systemd unit 已存在 ({}), 是否覆盖？", unit_path.display()),
+                false,
+            ) {
+                println!("已取消，未作任何更改。");
+                return;
+            }
+        }
+
+        fs::write(&unit_path, &unit_content).unwrap_or_else(|e| {
+            eprintln!("错误: 无法写入 {}: {}", unit_path.display(), e);
+            eprintln!("  请使用 sudo 运行: sudo mcguffin install-service");
+            std::process::exit(1);
+        });
+
+        println!("✓ systemd unit 已安装: {}", unit_path.display());
+
+        // 重新加载 systemd
+        let _ = Command::new("systemctl")
+            .arg("daemon-reload")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        // 启用开机自启
+        let enable_status = Command::new("systemctl")
+            .arg("enable")
+            .arg("mcguffin.service")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        match enable_status {
+            Ok(s) if s.success() => {
+                println!("✓ 已启用开机自启");
+            }
+            _ => {
+                eprintln!("警告: 无法启用开机自启，可手动运行:");
+                eprintln!("  systemctl enable mcguffin.service");
+            }
+        }
+
+        println!();
+        println!("启动服务:  systemctl start mcguffin.service");
+        println!("停止服务:  systemctl stop mcguffin.service");
+        println!("查看状态:  systemctl status mcguffin.service");
+        println!("开机自启:  已配置");
+    } else {
+        // 无 init 系统 — 仅打印手动启动说明
+        eprintln!("注意: 未检测到 systemd 或 OpenRC，无法安装系统服务。");
+        eprintln!("请使用 'mcguffin start' 手动管理服务。");
+        eprintln!();
+        eprintln!("二进制路径: {}", server_path.display());
+        eprintln!("配置文件:   {}", config_path.display());
+    }
+}
+
+/// 卸载系统服务
+fn cmd_uninstall_service(_config_path: &Path) {
+    let has_systemd = Command::new("which")
+        .arg("systemctl")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    let has_openrc = Command::new("which")
+        .arg("rc-service")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    let mut found = false;
+
+    // OpenRC
+    if has_openrc {
+        let init_path = PathBuf::from("/etc/init.d/mcguffin");
+        if init_path.exists() {
+            found = true;
+            if !prompt_yesno(
+                &format!("确定要卸载 OpenRC init 脚本 ({})？", init_path.display()),
+                false,
+            ) {
+                println!("已取消。");
+                return;
+            }
+
+            // 先停止服务
+            let _ = Command::new("rc-service")
+                .arg("mcguffin")
+                .arg("stop")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            // 移除开机自启
+            let _ = Command::new("rc-update")
+                .arg("del")
+                .arg("mcguffin")
+                .arg("default")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            // 删除 init 脚本
+            fs::remove_file(&init_path).unwrap_or_else(|e| {
+                eprintln!("错误: 无法删除 {}: {}", init_path.display(), e);
+                eprintln!("  请使用 sudo 运行: sudo mcguffin uninstall-service");
+                std::process::exit(1);
+            });
+
+            println!("✓ OpenRC init 脚本已卸载");
+        }
+    }
+
+    // systemd
+    if has_systemd {
+        let unit_path = PathBuf::from("/etc/systemd/system/mcguffin.service");
+        if unit_path.exists() {
+            found = true;
+            if !prompt_yesno(
+                &format!("确定要卸载 systemd unit ({})？", unit_path.display()),
+                false,
+            ) {
+                println!("已取消。");
+                return;
+            }
+
+            // 先停止服务
+            let _ = Command::new("systemctl")
+                .arg("stop")
+                .arg("mcguffin.service")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            // 禁用开机自启
+            let _ = Command::new("systemctl")
+                .arg("disable")
+                .arg("mcguffin.service")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            // 删除 unit 文件
+            fs::remove_file(&unit_path).unwrap_or_else(|e| {
+                eprintln!("错误: 无法删除 {}: {}", unit_path.display(), e);
+                eprintln!("  请使用 sudo 运行: sudo mcguffin uninstall-service");
+                std::process::exit(1);
+            });
+
+            // 重新加载 systemd
+            let _ = Command::new("systemctl")
+                .arg("daemon-reload")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+
+            println!("✓ systemd unit 已卸载");
+        }
+    }
+
+    if !found {
+        println!("未发现已安装的系统服务（检查 systemd 和 OpenRC）。");
     }
 }
 
@@ -1243,6 +1650,8 @@ fn main() {
         Commands::Stop => cmd_service_stop(&config_path),
         Commands::Restart => cmd_service_restart(&config_path),
         Commands::Status => cmd_service_status(&config_path),
+        Commands::InstallService => cmd_install_service(&config_path),
+        Commands::UninstallService => cmd_uninstall_service(&config_path),
         Commands::JsonToDb { input, output } => cmd_json_to_db(input, output.as_deref()),
     }
 }
