@@ -496,9 +496,8 @@ pub(crate) async fn reimport_all_data(
 /// 在 WAL 模式下，备份期间源数据库可以继续读写。
 /// 源数据库以只读模式打开，避免 WAL checkpoint 干扰运行中的池连接。
 pub fn create_consistent_backup(source_path: &str, dest_path: &str) -> Result<(), String> {
-    let src =
-        rusqlite::Connection::open_with_flags(source_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|e| format!("无法打开源数据库: {}", e))?;
+    let src = rusqlite::Connection::open_with_flags(source_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("无法打开源数据库: {}", e))?;
     let mut dst =
         rusqlite::Connection::open(dest_path).map_err(|e| format!("无法创建备份文件: {}", e))?;
 
@@ -508,6 +507,26 @@ pub fn create_consistent_backup(source_path: &str, dest_path: &str) -> Result<()
     backup
         .run_to_completion(100, std::time::Duration::from_millis(250), None)
         .map_err(|e| format!("备份执行失败: {}", e))?;
+
+    Ok(())
+}
+
+/// 使用 SQLite 在线备份 API 从备份文件恢复到主数据库（反向备份）。
+/// 与 `create_consistent_backup` 方向相反：
+/// - 源 = 备份文件（只读）
+/// - 目标 = 主数据库文件
+/// 无需关闭 sqlx 连接池，恢复完成后调用者应执行 `state.reload().await` 刷新内存缓存。
+pub fn restore_from_backup(backup_path: &str, db_path: &str) -> Result<(), String> {
+    let src = rusqlite::Connection::open_with_flags(backup_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("无法打开备份文件: {}", e))?;
+    let mut dst =
+        rusqlite::Connection::open(db_path).map_err(|e| format!("无法打开目标数据库: {}", e))?;
+
+    let backup = Backup::new(&src, &mut dst).map_err(|e| format!("恢复初始化失败: {}", e))?;
+
+    backup
+        .run_to_completion(100, std::time::Duration::from_millis(250), None)
+        .map_err(|e| format!("恢复执行失败: {}", e))?;
 
     Ok(())
 }

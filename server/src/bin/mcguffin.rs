@@ -1251,7 +1251,9 @@ fn openrc_init_script(config_path: &Path) -> String {
     let server_bin = find_server_binary();
     let server_path = std::path::absolute(&server_bin).unwrap_or(server_bin.clone());
     let work_dir = server_work_dir(&server_path);
-    let log_path = runtime_dir(config_path).join("mcguffin.log");
+    let log_dir = runtime_dir(config_path);
+    let log_path = log_dir.join("mcguffin.log");
+    let pid_path = log_dir.join("mcguffin.pid");
     let data_file = get_data_file(config_path);
     let data_path = if PathBuf::from(&data_file).is_absolute() {
         PathBuf::from(&data_file)
@@ -1269,10 +1271,13 @@ fn openrc_init_script(config_path: &Path) -> String {
 description="McGuffin Server - Algorithm Competition Team Tool"
 
 command="{}"
-command_args=""
+command_args="--config {}"
 command_dir="{}"
-command_background=true
 pidfile="{}"
+
+# 日志文件（stdout + stderr）
+output_log="{}"
+error_log="{}"
 
 depend() {{
     need net
@@ -1285,8 +1290,11 @@ start_pre() {{
 }}
 "#,
         server_path.display(),
+        config_path.display(),
         work_dir.display(),
-        runtime_dir(config_path).join("mcguffin.pid").display(),
+        pid_path.display(),
+        log_path.display(),
+        log_path.display(),
         log_path.display(),
         data_path.parent().unwrap_or(Path::new(".")).display(),
     )
