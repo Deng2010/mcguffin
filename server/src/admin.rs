@@ -1506,6 +1506,19 @@ pub async fn import_config(
         let _ = std::fs::copy(&config_path, &backup_path);
     }
 
+    // 确保配置文件的父目录存在
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("无法创建配置文件目录: {}", e),
+                })),
+            )
+        })?;
+    }
+
     // 写入新配置
     std::fs::write(&config_path, content).map_err(|e| {
         (
