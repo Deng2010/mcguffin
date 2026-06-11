@@ -20,9 +20,7 @@ async fn main() {
     let backup_config = {
         let path = resolve_config_path();
         let raw = std::fs::read_to_string(&path).unwrap_or_default();
-        let doc = raw
-            .parse::<toml_edit::DocumentMut>()
-            .unwrap_or_default();
+        let doc = raw.parse::<toml_edit::DocumentMut>().unwrap_or_default();
         let interval_secs = doc
             .get("backup")
             .and_then(|s| s.get("interval_minutes"))
@@ -272,6 +270,10 @@ async fn main() {
         .route("/api/admin/backup", post(create_backup))
         .route("/api/admin/backups", get(list_backups))
         .route("/api/admin/backup/restore/{name}", post(restore_backup))
+        .route(
+            "/api/admin/backup/restore-upload",
+            post(restore_upload_backup),
+        )
         .route("/api/admin/backup/download/{name}", get(download_backup))
         .route("/api/admin/backup/{name}", delete(delete_backup))
         // Admin showcase

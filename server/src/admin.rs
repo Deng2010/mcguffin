@@ -1094,6 +1094,140 @@ pub async fn restore_backup(
     })))
 }
 
+/// POST /api/admin/backup/restore-upload
+/// 接收前端上传的 .db 文件（base64 编码），保存到备份目录后执行恢复
+pub async fn restore_upload_backup(
+    State(mut state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
+        .await?;
+
+    let content = payload
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false, "message": "缺少 content 字段"
+                })),
+            )
+        })?;
+
+    let filename = payload
+        .get("filename")
+        .and_then(|v| v.as_str())
+        .unwrap_or("uploaded_backup.db");
+
+    // 确保文件名安全
+    if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "无效的文件名"}),
+        ));
+    }
+
+    // 解码 base64
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(content)
+        .map_err(|_| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "success": false, "message": "base64 解码失败"
+                })),
+            )
+        })?;
+
+    let dir = backup_dir(&state);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "无法创建备份目录"}),
+        ));
+    }
+
+    // 写入备份目录
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    let upload_name = format!("uploaded_{}_{}", timestamp, filename);
+    let upload_path = dir.join(&upload_name);
+    if let Err(e) = std::fs::write(&upload_path, &bytes) {
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": format!("文件写入失败: {}", e)}),
+        ));
+    }
+
+    tracing::info!("收到上传的 .db 备份文件: {:?}", upload_path);
+
+    // 创建安全备份
+    let safety_timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    let safety_name = format!("pre_restore_{}.db", safety_timestamp);
+    let safety_path = dir.join(&safety_name);
+    if let Err(e) =
+        crate::db::create_consistent_backup(&state.db_path, &safety_path.to_string_lossy())
+    {
+        tracing::warn!("创建安全备份失败: {}", e);
+    }
+
+    let db_path = db_path_from_state(&state);
+
+    // 关闭连接池
+    state.db.close().await;
+
+    // 用上传的备份文件覆盖主数据库
+    if let Err(e) = std::fs::copy(&upload_path, &db_path) {
+        // 重建连接
+        match crate::db::init_db(&db_path.to_string_lossy()).await {
+            Ok(pool) => state.db = pool,
+            Err(_) => {
+                panic!("恢复上传失败且无法重建连接");
+            }
+        }
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": format!("文件复制失败: {}", e)}),
+        ));
+    }
+
+    // 清理残留 WAL/SHM 文件
+    let _ = std::fs::remove_file(db_path.with_extension("db-wal"));
+    let _ = std::fs::remove_file(db_path.with_extension("db-shm"));
+
+    // 重建连接池
+    match crate::db::init_db(&db_path.to_string_lossy()).await {
+        Ok(pool) => state.db = pool,
+        Err(e) => {
+            tracing::error!("重建数据库连接失败: {}", e);
+            state.db = crate::db::init_db(":memory:")
+                .await
+                .expect("内存数据库也无法创建");
+        }
+    }
+
+    // 验证完整性
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(&state.db)
+        .await
+        .unwrap_or_else(|_| "error".to_string());
+
+    if integrity != "ok" {
+        tracing::error!("上传恢复后完整性检查失败: {}", integrity);
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": format!("数据完整性检查失败: {}，建议手动恢复安全备份 {}", integrity, safety_name)}),
+        ));
+    }
+
+    // 从 SQLite 重新加载数据到内存
+    state.reload().await;
+
+    tracing::info!("从上传的 .db 文件恢复成功: {:?}", upload_path);
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "message": "从 .db 文件恢复成功，安全备份已创建",
+        "safety_backup": safety_name,
+    })))
+}
+
 /// GET /api/admin/backup/download/{name}
 /// 下载备份文件。从 .db 备份生成完整 JSON 内容返回。
 pub async fn download_backup(

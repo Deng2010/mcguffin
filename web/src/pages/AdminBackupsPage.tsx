@@ -15,6 +15,7 @@ export default function AdminBackupsPage() {
   const [msg, setMsg] = useState("");
   const importFileRef = useRef<HTMLInputElement>(null);
   const importConfigRef = useRef<HTMLInputElement>(null);
+  const importDbRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     setLoading(true);
@@ -167,6 +168,39 @@ export default function AdminBackupsPage() {
     e.target.value = "";
   };
 
+  /** 从 .db 文件恢复（base64 上传到服务器再 restore） */
+  const handleImportDb = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (
+      !confirm(
+        `确定要从 .db 备份文件「${file.name}」恢复吗？\n此操作将替换所有现有数据！`,
+      )
+    ) {
+      e.target.value = "";
+      return;
+    }
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const content = btoa(binary);
+      const res = await apiFetch<any>("/admin/backup/restore-upload", {
+        method: "POST",
+        body: JSON.stringify({ content, filename: file.name }),
+        headers: { "Content-Type": "application/json" },
+      });
+      setMsg(res.success ? `✅ ${res.message}` : `恢复失败: ${res.message}`);
+      if (res.success) load();
+    } catch (err) {
+      setMsg(`恢复失败: ${err}`);
+    }
+    e.target.value = "";
+  };
+
   const handleImportConfig = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -270,6 +304,13 @@ export default function AdminBackupsPage() {
             onChange={handleImportConfig}
             className="hidden"
           />
+          <input
+            ref={importDbRef}
+            type="file"
+            accept=".db"
+            onChange={handleImportDb}
+            className="hidden"
+          />
           <button
             onClick={() => importFileRef.current?.click()}
             className="px-5 py-2 bg-white dark:bg-gray-900 border border-orange-600 dark:border-orange-700 text-orange-700 dark:text-orange-400 text-sm font-medium hover:bg-orange-50 dark:hover:bg-orange-900/20"
@@ -310,6 +351,27 @@ export default function AdminBackupsPage() {
                 />
               </svg>
               导入配置
+            </span>
+          </button>
+          <button
+            onClick={() => importDbRef.current?.click()}
+            className="px-5 py-2 bg-white dark:bg-gray-900 border border-purple-600 dark:border-purple-700 text-purple-700 dark:text-purple-400 text-sm font-medium hover:bg-purple-50 dark:hover:bg-purple-900/20"
+          >
+            <span className="flex items-center gap-2">
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"
+                />
+              </svg>
+              从 .db 恢复
             </span>
           </button>
         </div>

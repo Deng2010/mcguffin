@@ -29,6 +29,7 @@ web/package-lock.json
 *.bak
 .env
 restart.sh
+server/mcguffin_data*
 
 # ========== AI-Generated Python Script ==========
 server/*.py
