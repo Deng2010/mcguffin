@@ -1238,8 +1238,8 @@ impl AppState {
             .write()
             .await
             .insert(problem.id.clone(), problem.clone());
-        let _ = sqlx::query(
-            "INSERT OR IGNORE INTO problems \
+        if let Err(e) = sqlx::query(
+            "INSERT OR REPLACE INTO problems
              (id, title, author_id, author_name, contest, contest_id, difficulty, \
               content, solution, status, created_at, public_at, claimed_by, \
               verifier_solution, visible_to, link, remark, editable_by) \
@@ -1264,7 +1264,10 @@ impl AppState {
         .bind(&problem.remark)
         .bind(serde_json::to_string(&problem.editable_by).unwrap_or_default())
         .execute(&self.db)
-        .await;
+        .await
+        {
+            tracing::error!("Failed to insert problem {}: {}", problem.id, e);
+        }
     }
 
     /// 更新题目单个字段（双写）
@@ -1342,7 +1345,7 @@ impl AppState {
             .await
             .insert(contest.id.clone(), contest.clone());
         let _ = sqlx::query(
-            "INSERT OR IGNORE INTO contests \
+            "INSERT OR REPLACE INTO contests
              (id, name, start_time, end_time, description, created_by, created_at, \
               status, link, problem_order, visible_to, editable_by) \
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1381,7 +1384,7 @@ impl AppState {
             .await
             .insert(member.id.clone(), member.clone());
         let _ = sqlx::query(
-            "INSERT OR IGNORE INTO team_members (id, user_id, joined_at) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO team_members (id, user_id, joined_at) VALUES (?, ?, ?)",
         )
         .bind(&member.id)
         .bind(&member.user_id)
@@ -1430,7 +1433,7 @@ impl AppState {
             .await
             .insert(request.id.clone(), request.clone());
         let _ = sqlx::query(
-            "INSERT OR IGNORE INTO join_requests \
+            "INSERT OR REPLACE INTO join_requests \
              (id, user_id, user_name, user_email, reason, status, created_at) \
              VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
