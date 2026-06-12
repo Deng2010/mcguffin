@@ -518,7 +518,8 @@ impl AppState {
         let site_version = env!("CARGO_PKG_VERSION").to_string();
 
         // ── SQLite 初始化 ──
-        let db_path = std::path::PathBuf::from("mcguffin_data.db");
+        let data_dir = std::env::var("MCGUFFIN_DATA_DIR").unwrap_or_else(|_| ".".to_string());
+        let db_path = std::path::PathBuf::from(&data_dir).join("mcguffin_data.db");
         let json_path = db_path.with_extension("json");
         let db_path_str = db_path.to_string_lossy().to_string();
         let db = crate::db::init_db(&db_path_str)
@@ -1697,49 +1698,64 @@ fn load_difficulty_config(config: &AppConfig) -> crate::types::DifficultyConfig 
 /// with fallback to environment variables and then hardcoded defaults.
 fn load_config() -> AppConfig {
     let config_path = resolve_config_path();
-    // Try reading the system config file first
-    if let Ok(content) = std::fs::read_to_string(&config_path) {
-        if let Ok(config) = toml::from_str::<AppConfig>(&content) {
-            tracing::info!("Loaded config from {}", config_path.display());
-            return config;
-        }
-        tracing::warn!(
-            "Failed to parse {}, falling back to env vars",
-            config_path.display()
-        );
-    } else {
+
+    // 1. 尝试从配置文件加载
+    let mut config: Option<AppConfig> =
+        std::fs::read_to_string(&config_path)
+            .ok()
+            .and_then(|content| match toml::from_str::<AppConfig>(&content) {
+                Ok(c) => {
+                    tracing::info!("Loaded config from {}", config_path.display());
+                    Some(c)
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse {}: {}, falling back to env vars",
+                        config_path.display(),
+                        e
+                    );
+                    None
+                }
+            });
+
+    if config.is_none() {
         tracing::warn!(
             "{} not found, falling back to env vars",
             config_path.display()
         );
     }
 
-    // Fallback: read from environment variables with defaults
-    let site_url = std::env::var("SITE_URL").unwrap_or_else(|_| "https://lba-oi.team".to_string());
-    let admin_password = match std::env::var("ADMIN_PASSWORD") {
-        Ok(v) => v,
-        Err(_) => {
-            // Try reading mcguffin.toml (legacy)
-            std::fs::read_to_string("mcguffin.toml")
-                .ok()
-                .and_then(|c| toml::from_str::<serde_json::Value>(&c).ok())
-                .and_then(|v| {
-                    v.get("admin")?
-                        .get("password")?
-                        .as_str()
-                        .map(|s| s.to_string())
-                })
-                .unwrap_or_else(|| "admin123".to_string())
+    // 2. 环境变量覆盖（Docker 场景：环境变量优先级高于配置文件）
+    if let Some(ref mut cfg) = config {
+        if let Ok(v) = std::env::var("SITE_URL") {
+            cfg.server.site_url = v;
         }
-    };
+        if let Ok(v) = std::env::var("ADMIN_PASSWORD") {
+            cfg.admin.password = v;
+        }
+        if let Ok(v) = std::env::var("ADMIN_DISPLAY_NAME") {
+            cfg.admin.display_name = v;
+        }
+        if let Ok(v) = std::env::var("SITE_NAME") {
+            cfg.site.name = Some(v);
+        }
+        if let Ok(v) = std::env::var("CPOAUTH_CLIENT_ID") {
+            cfg.oauth.cp_client_id = v;
+        }
+        if let Ok(v) = std::env::var("CPOAUTH_CLIENT_SECRET") {
+            cfg.oauth.cp_client_secret = v;
+        }
+    }
 
-    AppConfig {
+    // 3. 最终 fallback：全环境变量模式
+    config.unwrap_or_else(|| AppConfig {
         server: crate::types::ServerConfig {
-            site_url,
+            site_url: std::env::var("SITE_URL")
+                .unwrap_or_else(|_| "https://lba-oi.team".to_string()),
             port: 3000,
         },
         admin: crate::types::AdminConfig {
-            password: admin_password,
+            password: std::env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "admin123".to_string()),
             display_name: std::env::var("ADMIN_DISPLAY_NAME")
                 .unwrap_or_else(|_| "管理员".to_string()),
         },
@@ -1759,7 +1775,7 @@ fn load_config() -> AppConfig {
         discussion_emojis: std::collections::HashMap::new(),
         permissions: std::collections::HashMap::new(),
         permission_groups: std::collections::HashMap::new(),
-    }
+    })
 }
 
 // ============== Tests ==============

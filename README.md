@@ -149,6 +149,78 @@ cd server && cargo build --release
 cd web && bun install && bun run build
 ```
 
+### Docker 部署
+
+#### 前置要求
+
+| 工具           | 安装                                                        |
+| -------------- | ----------------------------------------------------------- |
+| Docker         | https://docs.docker.com/engine/install/                     |
+| Docker Compose | 通常随 Docker Desktop 自带，或 `pip install docker-compose` |
+
+#### 快速启动
+
+```bash
+# 方式一：docker-compose（推荐，构建 + 启动一步完成）
+git clone https://github.com/your-org/mcguffin.git
+cd mcguffin
+docker compose up -d
+# → http://localhost:3000
+```
+
+```bash
+# 方式二：直接运行
+ docker build -t mcguffin .
+ docker run -d \
+   --name mcguffin \
+   -p 3000:3000 \
+   -e SITE_URL=http://localhost:3000 \
+   -e ADMIN_PASSWORD=change_me \
+   -v mcguffin_data:/app/data \
+   mcguffin
+```
+
+#### 配置方式
+
+Docker 容器优先读取环境变量，也支持挂载自定义配置文件：
+
+```yaml
+# docker-compose.yml
+services:
+  mcguffin:
+    environment:
+      - SITE_URL=https://mcguffin.example.com
+      - ADMIN_PASSWORD=your_password
+      - SITE_NAME=My Team
+      - TZ=Asia/Shanghai
+    volumes:
+      # 方式 A：持久化数据卷（自动生成配置）
+      - mcguffin_data:/app/data
+      # 方式 B：挂载自定义配置文件（覆盖自动生成）
+      - ./my-config.toml:/app/data/config.toml
+```
+
+#### 管理操作
+
+```bash
+# 查看运行状态
+docker compose ps
+
+# 查看日志
+docker compose logs -f
+
+# 容器内执行 CLI 命令（备份、配置查看等）
+docker exec mcguffin /app/mcguffin status
+docker exec mcguffin /app/mcguffin backup create
+
+# 健康检查
+curl http://localhost:3000/api/health
+# → {"status":"ok","version":"0.2.1"}
+```
+
+> **注意**：数据存储在 Docker volume `mcguffin_data` 中（映射到容器的 `/app/data`），
+> 包含 SQLite 数据库文件和配置文件。删除容器不会丢失数据，但删除 volume 会导致数据丢失。
+
 ### CLI 命令
 
 ```bash

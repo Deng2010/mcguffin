@@ -63,14 +63,19 @@ async fn main() {
         ])
         .allow_credentials(true);
 
-    // Frontend dist path — try multiple locations relative to CWD
-    let dist_path = ["../web/dist", "web/dist", "../dist"]
-        .iter()
+    // Frontend dist path — 优先 MCGUFFIN_WEB_DIST 环境变量，其次相对路径探测
+    let dist_path = std::env::var("MCGUFFIN_WEB_DIST")
+        .ok()
         .map(std::path::PathBuf::from)
-        .find(|p| p.join("index.html").exists())
+        .or_else(|| {
+            ["../web/dist", "web/dist", "../dist"]
+                .iter()
+                .map(std::path::PathBuf::from)
+                .find(|p| p.join("index.html").exists())
+        })
         .unwrap_or_else(|| {
             eprintln!("错误: 找不到前端构建产物 dist/index.html");
-            eprintln!("  请先运行 'bun run build'（web 目录下）或 'just build-frontend'");
+            eprintln!("  请设置 MCGUFFIN_WEB_DIST 环境变量或先运行 'bun run build'");
             std::process::exit(1);
         })
         .canonicalize()
@@ -91,7 +96,22 @@ async fn main() {
     println!("McGuffin Server running on http://0.0.0.0:3000");
     println!("Public URL: {}", state.site_url);
 
+    let state_for_health = state.clone();
+
     let app = Router::new()
+        // Health check
+        .route(
+            "/api/health",
+            get(move || {
+                let s = state_for_health.clone();
+                async move {
+                    axum::Json(serde_json::json!({
+                        "status": "ok",
+                        "version": s.site_version,
+                    }))
+                }
+            }),
+        )
         // SPA entry point
         .route(
             "/",
