@@ -1,6 +1,5 @@
 # ========== Rust (server) ==========
 server/target/
-server/Cargo.lock
 
 # Runtime data files — contains sensitive/instance-specific data
 server/mcguffin_data.json

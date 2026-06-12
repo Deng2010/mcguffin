@@ -18,4 +18,3 @@ web/public/
 web/index.html
 server/target/
 server/mcguffin_data.db*
-server/migrations/
