@@ -1348,17 +1348,17 @@ fn cmd_install_service(config_path: &Path) {
         let init_path = PathBuf::from("/etc/init.d/mcguffin");
         let content = openrc_init_script(config_path);
 
-        if init_path.exists() {
-            if !prompt_yesno(
+        if init_path.exists()
+            && !prompt_yesno(
                 &format!(
                     "OpenRC init 脚本已存在 ({})，是否覆盖？",
                     init_path.display()
                 ),
                 false,
-            ) {
-                println!("已取消，未作任何更改。");
-                return;
-            }
+            )
+        {
+            println!("已取消，未作任何更改。");
+            return;
         }
 
         fs::write(&init_path, &content).unwrap_or_else(|e| {
@@ -1433,14 +1433,14 @@ WantedBy=multi-user.target
 
         let unit_path = PathBuf::from("/etc/systemd/system/mcguffin.service");
 
-        if unit_path.exists() {
-            if !prompt_yesno(
+        if unit_path.exists()
+            && !prompt_yesno(
                 &format!("systemd unit 已存在 ({}), 是否覆盖？", unit_path.display()),
                 false,
-            ) {
-                println!("已取消，未作任何更改。");
-                return;
-            }
+            )
+        {
+            println!("已取消，未作任何更改。");
+            return;
         }
 
         fs::write(&unit_path, &unit_content).unwrap_or_else(|e| {

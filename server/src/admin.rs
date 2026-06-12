@@ -71,6 +71,8 @@ pub struct OAuthSection {
 pub struct BackupSection {
     pub interval_minutes: u64,
     pub retention_count: u64,
+    #[serde(default)]
+    pub backup_directory: Option<String>,
 }
 
 /// The full config payload from the frontend
@@ -171,6 +173,7 @@ async fn sync_groups_to_config(state: &AppState) {
             backup: BackupSection {
                 interval_minutes: 0,
                 retention_count: 0,
+                backup_directory: None,
             },
             difficulty: std::collections::HashMap::new(),
             discussion_tags: std::collections::HashMap::new(),
@@ -458,6 +461,14 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
         backup: BackupSection {
             interval_minutes: get_u64("backup", "interval_minutes", 60),
             retention_count: get_u64("backup", "retention_count", 48),
+            backup_directory: {
+                let v = get_str("backup", "backup_directory");
+                if v.is_empty() {
+                    None
+                } else {
+                    Some(v)
+                }
+            },
         },
         difficulty,
         discussion_tags,
@@ -522,6 +533,11 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
     if let Some(t) = doc.get_mut("backup").and_then(|s| s.as_table_mut()) {
         set_u64(t, "interval_minutes", payload.backup.interval_minutes);
         set_u64(t, "retention_count", payload.backup.retention_count);
+        if let Some(dir) = &payload.backup.backup_directory {
+            if !dir.trim().is_empty() {
+                set_str(t, "backup_directory", dir.trim());
+            }
+        }
     }
 
     // Write difficulty levels — remove old ones first, then add new
@@ -848,6 +864,10 @@ pub async fn update_config(
                     }
                 }
             }
+            // Update in-memory backup_directory immediately if changed
+            if let Some(dir) = &payload.backup.backup_directory {
+                *state.backup_directory.write().await = Some(dir.clone());
+            }
             Ok(Json(
                 serde_json::json!({"success": true, "message": "配置已保存，立即生效"}),
             ))
@@ -881,8 +901,16 @@ pub async fn restart_service(
 
 // ============== Data Backup / Restore ==============
 
-/// 获取备份目录（与 db 文件同目录下的 backups/）
-fn backup_dir(state: &AppState) -> PathBuf {
+/// 获取备份目录
+/// 优先使用自定义备份目录，否则使用数据库文件同级目录下的 backups/
+async fn backup_dir(state: &AppState) -> PathBuf {
+    // 如果设置了自定义备份目录，优先使用
+    if let Some(dir) = state.backup_directory.read().await.as_ref() {
+        if !dir.is_empty() {
+            return std::path::PathBuf::from(dir);
+        }
+    }
+    // 默认：数据库文件同级目录下的 backups/
     let db_path = std::path::Path::new(&state.db_path);
     db_path
         .parent()
@@ -935,7 +963,7 @@ pub async fn create_backup(
     auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
         .await?;
 
-    let dir = backup_dir(&state);
+    let dir = backup_dir(&state).await;
     if std::fs::create_dir_all(&dir).is_err() {
         return Ok(Json(
             serde_json::json!({"success": false, "message": "无法创建备份目录"}),
@@ -983,7 +1011,7 @@ pub async fn list_backups(
     auth.require_perm(&state, crate::types::perms::MANAGE_BACKUPS)
         .await?;
 
-    let dir = backup_dir(&state);
+    let dir = backup_dir(&state).await;
     let backups = list_backup_files(&dir);
 
     Ok(Json(
@@ -1018,7 +1046,7 @@ pub async fn restore_backup(
         ));
     }
 
-    let dir = backup_dir(&state);
+    let dir = backup_dir(&state).await;
     let backup_path = dir.join(name_clean);
     if !backup_path.exists() {
         return Ok(Json(
@@ -1119,7 +1147,7 @@ pub async fn restore_upload_backup(
             )
         })?;
 
-    let dir = backup_dir(&state);
+    let dir = backup_dir(&state).await;
     if std::fs::create_dir_all(&dir).is_err() {
         return Ok(Json(
             serde_json::json!({"success": false, "message": "无法创建备份目录"}),
@@ -1204,7 +1232,7 @@ pub async fn download_backup(
         ));
     }
 
-    let backup_path = backup_dir(&state).join(name_clean);
+    let backup_path = backup_dir(&state).await.join(name_clean);
     if !backup_path.exists() {
         return Ok(Json(
             serde_json::json!({"success": false, "message": "备份文件不存在"}),
@@ -1267,7 +1295,7 @@ pub async fn delete_backup(
         ));
     }
 
-    let dir = backup_dir(&state);
+    let dir = backup_dir(&state).await;
     let backup_path = dir.join(name_clean);
     if !backup_path.exists() {
         return Ok(Json(

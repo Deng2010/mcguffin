@@ -515,6 +515,7 @@ pub fn create_consistent_backup(source_path: &str, dest_path: &str) -> Result<()
 /// 与 `create_consistent_backup` 方向相反：
 /// - 源 = 备份文件（只读）
 /// - 目标 = 主数据库文件
+///
 /// 无需关闭 sqlx 连接池，恢复完成后调用者应执行 `state.reload().await` 刷新内存缓存。
 pub fn restore_from_backup(backup_path: &str, db_path: &str) -> Result<(), String> {
     let src = rusqlite::Connection::open_with_flags(backup_path, OpenFlags::SQLITE_OPEN_READ_ONLY)

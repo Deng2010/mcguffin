@@ -5,11 +5,15 @@ import { apiFetch } from "../api";
 // ============== Types ==============
 
 interface ConfigData {
-  server: { site_url: string; port: number; data_file: string };
+  server: { site_url: string; port: number };
   admin: { password: string; display_name: string };
   site: { name: string; title?: string | null; difficulty_order: string[] };
   oauth: { cp_client_id: string; cp_client_secret: string };
-  backup: { interval_minutes: number; retention_count: number };
+  backup: {
+    interval_minutes: number;
+    retention_count: number;
+    backup_directory?: string | null;
+  };
   difficulty: Record<string, { label: string; color: string }>;
   discussion_tags?: Record<string, { color: string; description: string }>;
   discussion_emojis?: Record<string, { char: string }>;
@@ -82,8 +86,6 @@ interface ConfigCtx {
   setSiteUrl: (v: string) => void;
   port: string;
   setPort: (v: string) => void;
-  dataFile: string;
-  setDataFile: (v: string) => void;
   adminPassword: string;
   setAdminPassword: (v: string) => void;
   displayName: string;
@@ -116,6 +118,8 @@ interface ConfigCtx {
   setBackupInterval: (v: number) => void;
   backupRetention: number;
   setBackupRetention: (v: number) => void;
+  backupDirectory: string;
+  setBackupDirectory: (v: string) => void;
 }
 
 const ConfigCtx = createContext<ConfigCtx>(null!);
@@ -128,7 +132,6 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
 
   const [siteUrl, setSiteUrl] = useState("");
   const [port, setPort] = useState("");
-  const [dataFile, setDataFile] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [siteName, setSiteName] = useState("");
@@ -142,6 +145,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
   const [newDiffColor, setNewDiffColor] = useState("#888888");
   const [backupInterval, setBackupInterval] = useState(60);
   const [backupRetention, setBackupRetention] = useState(48);
+  const [backupDirectory, setBackupDirectory] = useState("");
   // 以下字段在页面上不显示编辑控件，但保存时必须保留以免被清空
   const [savedTags, setSavedTags] = useState<
     Record<string, { color: string; description: string }>
@@ -164,7 +168,6 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       }
       setSiteUrl(res.config.server.site_url);
       setPort(String(res.config.server.port));
-      setDataFile(res.config.server.data_file);
       setAdminPassword(res.config.admin.password);
       setDisplayName(res.config.admin.display_name);
       setSiteName(res.config.site.name);
@@ -173,6 +176,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       setCpClientSecret(res.config.oauth.cp_client_secret);
       setBackupInterval(res.config.backup?.interval_minutes ?? 60);
       setBackupRetention(res.config.backup?.retention_count ?? 48);
+      setBackupDirectory(res.config.backup?.backup_directory ?? "");
       const allDiffs = Object.entries(res.config.difficulty).map(
         ([name, fields]) => ({
           name,
@@ -289,7 +293,6 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
             server: {
               site_url: siteUrl,
               port: parseInt(port) || 3000,
-              data_file: dataFile,
             },
             admin: { password: adminPassword, display_name: displayName },
             site: {
@@ -304,6 +307,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
             backup: {
               interval_minutes: backupInterval,
               retention_count: backupRetention,
+              backup_directory: backupDirectory || null,
             },
             difficulty: diffObj,
             discussion_tags: savedTags,
@@ -352,8 +356,6 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
     setSiteUrl,
     port,
     setPort,
-    dataFile,
-    setDataFile,
     adminPassword,
     setAdminPassword,
     displayName,
@@ -382,6 +384,8 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
     setBackupInterval,
     backupRetention,
     setBackupRetention,
+    backupDirectory,
+    setBackupDirectory,
   };
 
   if (loading)
@@ -471,31 +475,17 @@ function ServerForm() {
           placeholder="https://lba-oi.team"
         />
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-            端口
-          </label>
-          <input
-            type="number"
-            value={c.port}
-            onChange={(e) => c.setPort(e.target.value)}
-            className={inputClass}
-            placeholder="3000"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-            数据文件
-          </label>
-          <input
-            type="text"
-            value={c.dataFile}
-            onChange={(e) => c.setDataFile(e.target.value)}
-            className={inputClass}
-            placeholder="mcguffin_data.json"
-          />
-        </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+          端口
+        </label>
+        <input
+          type="number"
+          value={c.port}
+          onChange={(e) => c.setPort(e.target.value)}
+          className={inputClass}
+          placeholder="3000"
+        />
       </div>
     </div>
   );
@@ -633,8 +623,23 @@ function BackupForm() {
           最多保留多少个自动备份文件。超出数量的旧备份会被自动清理。
         </p>
       </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+          备份目录（留空使用默认位置）
+        </label>
+        <input
+          type="text"
+          value={c.backupDirectory}
+          onChange={(e) => c.setBackupDirectory(e.target.value)}
+          className={inputClass}
+          placeholder="留空则使用 data 目录下的 backups/"
+        />
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+          自定义备份文件、导出数据、导入数据的存放目录。修改后立即生效。
+        </p>
+      </div>
       <p className="text-xs text-gray-400 dark:text-gray-500">
-        修改后需重启服务生效
+        备份间隔和保留数量修改后需重启服务生效。
       </p>
     </div>
   );

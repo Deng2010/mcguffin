@@ -466,6 +466,8 @@ pub struct AppState {
     pub member_groups: Arc<RwLock<HashMap<String, MemberGroup>>>,
     /// SQLite 连接池（双写模式：SQLite + HashMap）
     pub db: SqlitePool,
+    /// 自定义备份目录（None 时使用默认路径）
+    pub backup_directory: Arc<RwLock<Option<String>>>,
 }
 
 impl AppState {
@@ -817,6 +819,7 @@ impl AppState {
             role_permissions: Arc::new(RwLock::new(role_permissions)),
             member_groups: Arc::new(RwLock::new(member_groups)),
             db,
+            backup_directory: Arc::new(RwLock::new(None)),
         };
 
         // SQLite 是权威数据源，确保 admin 存在于数据库中
