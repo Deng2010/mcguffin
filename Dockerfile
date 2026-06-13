@@ -16,16 +16,16 @@ RUN apk add --no-cache musl-dev
 WORKDIR /app/server
 
 # 缓存依赖层（利用 Docker layer caching 减少重复编译）
+# 先复制依赖清单 + 真实 migration（sqlx 编译时需要 migrations 目录存在且有合法文件）
 COPY server/Cargo.toml server/Cargo.lock ./
+COPY server/migrations/ ./migrations/
 RUN mkdir src && echo "fn main() {}" > src/main.rs \
-    && mkdir -p migrations \
-    && echo "CREATE TABLE IF NOT EXISTS dummy (id INTEGER PRIMARY KEY);" > migrations/0001_init.sql \
     && cargo build --release 2>/dev/null || true \
     && rm -rf src
 
 # 正式构建
 COPY server/ .
-RUN rm -f migrations/0001_init.sql && cargo build --release
+RUN cargo build --release
 
 # ==================== Stage 3: Runtime ====================
 FROM alpine:3.21
