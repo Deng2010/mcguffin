@@ -161,15 +161,26 @@ cd web && bun install && bun run build
 #### 快速启动
 
 ```bash
-# 方式一：docker-compose（推荐，构建 + 启动一步完成）
-git clone https://github.com/your-org/mcguffin.git
+# 方式一：从 ghcr 一键运行（无需克隆、无需构建）
+docker run -d \
+  --name mcguffin \
+  -p 3000:3000 \
+  -e SITE_URL=http://localhost:3000 \
+  -e ADMIN_PASSWORD=change_me \
+  -v mcguffin_data:/app/data \
+  ghcr.io/Deng2010/mcguffin
+```
+
+```bash
+# 方式二：docker-compose（推荐，构建 + 启动一步完成）
+git clone https://github.com/Deng2010/mcguffin.git
 cd mcguffin
 docker compose up -d
 # → http://localhost:3000
 ```
 
 ```bash
-# 方式二：直接运行
+# 方式三：本地构建后运行
  docker build -t mcguffin .
  docker run -d \
    --name mcguffin \
@@ -308,18 +319,7 @@ mcguffin/
 
 | 平台                    | 产物                                             | 保存时间 |
 | ----------------------- | ------------------------------------------------ | -------- |
-| Linux / macOS / Windows | `mcguffin-server` + `mcguffin` CLI + `web/dist/` | 7 天     |
-
----
-
-## ⚠️ 安全说明
-
-v0.1.0 为初始版本，已知以下安全注意事项：
-
-- **Client Secret 硬编码**：CP OAuth 凭据写在代码和配置文件中，生产环境建议通过环境变量注入
-- **Token 存储在 localStorage**：存在 XSS 风险，未来版本将迁移到 HttpOnly Cookie
-- **CORS 配置**：开发阶段允许所有来源，生产环境应限制为前端域名
-- **数据持久化**：当前使用 SQLite 数据库存储，适合小团队使用；大规模部署建议接入 PostgreSQL
+| Linux / macOS | `mcguffin-server` + `mcguffin` CLI + `web/dist/` | 7 天     |
 
 ---
 
