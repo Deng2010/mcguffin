@@ -240,32 +240,39 @@ mcguffin backup     # 数据备份管理
 mcguffin/
 ├── justfile              # 构建命令（just）
 ├── AGENTS.md             # AI 编程助手指南
-├── CLAUDE.md             # Claude Code 配置
 ├── GUIDE.md              # 开发者指南
+├── README.md             # 项目主页
+├── Dockerfile            # Docker 构建
+├── docker-compose.yml    # Docker Compose
+├── docker-entrypoint.sh  # 容器入口
 ├── web/                  # 前端 SPA（React + Vite + Tailwind）
 │   ├── src/
 │   │   ├── App.tsx       # 路由 + 布局 + Context 提供者
 │   │   ├── AuthContext.tsx  # 认证状态管理
 │   │   ├── SiteContext.tsx  # 站点信息
+│   │   ├── DarkModeContext.tsx # 暗色模式
+│   │   ├── NotificationContext.tsx # 通知轮询
 │   │   ├── api.ts        # API 客户端封装
 │   │   ├── types.ts      # TypeScript 类型定义
-│   │   ├── components/   # 可复用组件（Navbar, ProtectedRoute, MarkdownRenderer 等）
-│   │   ├── pages/        # 页面组件（24 个页面）
+│   │   ├── components/   # 9 个可复用组件
+│   │   ├── pages/        # 24 个页面组件
 │   │   ├── hooks/        # 自定义 Hooks
 │   │   ├── utils/        # 工具函数
 │   │   └── test/         # 前端测试
-│   └── package.json
+│   └── ...config files
 ├── server/               # 后端（Rust + Axum）
 │   ├── Cargo.toml
+│   ├── migrations/       # SQLite 迁移
 │   ├── src/
 │   │   ├── main.rs       # 服务入口，路由注册
 │   │   ├── lib.rs        # 模块导出
-│   │   ├── types.rs      # 数据模型 + 权限常量
-│   │   ├── state.rs      # AppState + 持久化 + 配置加载
-│   │   ├── auth.rs       # OAuth 认证 + 登录
+│   │   ├── types.rs      # 数据模型 + 20 种权限常量
+│   │   ├── state.rs      # AppState + SQLite 持久化 + 配置
+│   │   ├── db.rs         # SQLite 初始化 + 数据导入/导出/备份
+│   │   ├── auth.rs       # OAuth + 管理员登录
 │   │   ├── user.rs       # 用户管理
-│   │   ├── team.rs       # 团队管理
-│   │   ├── problems.rs   # 题目 CRUD + 审核
+│   │   ├── team.rs       # 团队管理 + 权限组
+│   │   ├── problems.rs   # 题目 CRUD + 审核 + 认领
 │   │   ├── contests.rs   # 赛事管理
 │   │   ├── discussions.rs # 统一帖子系统
 │   │   ├── community.rs  # 社区动态
@@ -274,14 +281,14 @@ mcguffin/
 │   │   ├── notifications.rs # 通知系统
 │   │   ├── info.rs       # 站点信息
 │   │   ├── admin.rs      # 管理后台 API
-│   │   ├── pages.rs      # 服务端渲染页面（legacy）
+│   │   ├── pages.rs      # SSR 页面（legacy）
 │   │   ├── utils.rs      # 认证工具函数
-│   │   └── bin/
-│   │       └── mcguffin.rs  # CLI 工具入口
-│   └── target/           # 构建产物
+│   │   └── bin/mcguffin.rs # CLI 工具
+│   └── tests/api.rs      # 集成测试
 └── .github/workflows/
-    ├── test.yml          # PR/Push 测试 + Nightly Build
-    └── release.yml       # Tag 触发发布
+    ├── test.yml          # PR/Push 测试
+    ├── release.yml       # Tag 触发发布
+    └── docker.yml        # Docker 构建
 ```
 
 ---
@@ -292,7 +299,6 @@ mcguffin/
 | ---------------------- | ----------- | ------------------------------ |
 | [AGENTS.md](AGENTS.md) | AI 编程助手 | 代码库结构、开发约定与操作指南 |
 | [GUIDE.md](GUIDE.md)   | 人类开发者  | 技术架构、API 文档、最佳实践   |
-| [CLAUDE.md](CLAUDE.md) | Claude Code | Claude Code 专用配置           |
 
 ---
 
@@ -313,7 +319,7 @@ v0.1.0 为初始版本，已知以下安全注意事项：
 - **Client Secret 硬编码**：CP OAuth 凭据写在代码和配置文件中，生产环境建议通过环境变量注入
 - **Token 存储在 localStorage**：存在 XSS 风险，未来版本将迁移到 HttpOnly Cookie
 - **CORS 配置**：开发阶段允许所有来源，生产环境应限制为前端域名
-- **数据持久化**：当前使用 JSON 文件存储，适合小团队使用；大规模部署建议接入数据库
+- **数据持久化**：当前使用 SQLite 数据库存储，适合小团队使用；大规模部署建议接入 PostgreSQL
 
 ---
 
