@@ -33,3 +33,6 @@ server/mcguffin_data*
 # ========== AI-Generated Python Script ==========
 server/*.py
 web/*.py
+backups/
+mcguffin_data.db*
+nohup.out
