@@ -11,8 +11,8 @@ COPY web/ .
 RUN bun run build
 
 # ==================== Stage 2: Backend ====================
-FROM rust:1.85-bookworm AS backend
-RUN apt-get update && apt-get install -y libssl-dev libsqlite3-dev && rm -rf /var/lib/apt/lists/*
+FROM rust:1.86-alpine AS backend
+RUN apk add --no-cache musl-dev sqlite-dev pkgconfig build-base
 WORKDIR /app/server
 
 # 缓存依赖层（利用 Docker layer caching 减少重复编译）
