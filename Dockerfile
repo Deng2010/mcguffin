@@ -12,7 +12,7 @@ RUN bun run build
 
 # ==================== Stage 2: Backend ====================
 FROM rust:1.85-alpine AS backend
-RUN apk add --no-cache musl-dev sqlite-dev
+RUN apk add --no-cache musl-dev sqlite-dev pkgconfig
 WORKDIR /app/server
 
 # 缓存依赖层（利用 Docker layer caching 减少重复编译）
