@@ -31,6 +31,22 @@ release: build
 
 # ---------- 开发 ----------
 
+# 快速部署（debug 编译后端 + 前端，安装到系统并重启服务）
+fast-deploy: fast-backend build-frontend
+    @echo "── 部署前端 ──"
+    rm -rf {{ web_dist_dir }}/dist && cp -r web/dist {{ web_dist_dir }}/
+    @echo "── 重启服务 ──"
+    -rc-service mcguffin restart 2>/dev/null || true
+    @echo "✓ 快速部署完成"
+
+# 仅快速构建后端（debug 模式，增量编译 5-15s）
+fast-backend:
+    @echo "── 构建后端 (debug) ──"
+    cd server && cargo build --bins
+    cp server/target/debug/mcguffin-server {{ lib_dir }}/
+    cp server/target/debug/mcguffin {{ bin_dir }}/
+    @echo "✓ 后端 debug 构建完成"
+
 # 启动开发服务器（前后端并行）
 dev:
     @echo "── 启动开发服务器 ──"
