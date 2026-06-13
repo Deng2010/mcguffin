@@ -58,7 +58,7 @@ async fn resolve_user(state: &AppState, headers: &HeaderMap) -> Option<(String, 
     let token = get_token_from_headers(headers)?;
     let entry = state.sessions.read().await.get(&token)?.clone();
     let user_id = entry.user_id;
-    let user = state.users.read().await.get(&user_id)?.clone();
+    let user = state.users.lock().await.get(&user_id)?.clone();
     Some((user_id, user))
 }
 

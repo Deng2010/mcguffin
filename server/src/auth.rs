@@ -90,7 +90,7 @@ pub async fn login(
             Ok(Some(row)) => Some(row.into_user()),
             _ => {
                 // Fallback to HashMap
-                let users = state.users.read().await;
+                let users = state.users.lock().await;
                 users
                     .values()
                     .find(|u| u.username == *identifier || u.display_name == *identifier)
@@ -218,10 +218,14 @@ pub async fn oauth_callback(
     Query(params): Query<HashMap<String, String>>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
+    tracing::info!("OAuth callback: code={:?}, state_param={:?}",
+        params.get("code").map(|c| &c[..10.min(c.len())]),
+        params.get("state"));
     let fe = state.site_url.clone();
     let code = params.get("code").cloned().unwrap_or_default();
 
     if code.is_empty() {
+        tracing::warn!("OAuth callback: 缺少 code 参数");
         return Redirect::to(&format!("{}#/login?error=no_code", fe));
     }
 
@@ -239,9 +243,11 @@ pub async fn oauth_callback(
     let callback_state = params.get("state").cloned();
     if let (Some(cs), Some(bs)) = (&callback_state, &cookie_state) {
         if cs != bs {
+            tracing::warn!("OAuth callback: state 不匹配，cookie={:?}, callback={:?}", bs, cs);
             return Redirect::to(&format!("{}#/login?error=state_mismatch", fe));
         }
     }
+    tracing::info!("OAuth callback: state 验证通过");
 
     // Read code_verifier from cookie
     let code_verifier = headers
@@ -256,18 +262,22 @@ pub async fn oauth_callback(
         })
         .unwrap_or_default();
 
+    tracing::info!("OAuth callback: 开始交换 token (code_verifier 长度={})", code_verifier.len());
     match exchange_token(
         &code,
         &code_verifier,
         &state.cpoauth_client_id,
         &state.cpoauth_client_secret,
         &state.cpoauth_redirect_uri,
+        &state.http_client,
     )
     .await
     {
         Ok(token_resp) => {
-            match get_user_info(&token_resp.access_token).await {
+            tracing::info!("OAuth callback: token 交换成功");
+            match get_user_info(&token_resp.access_token, &state.http_client).await {
                 Ok(userinfo) => {
+                    tracing::info!("OAuth callback: 用户信息获取成功: sub={}", &userinfo.sub[..8.min(userinfo.sub.len())]);
                     let user_id = userinfo.sub.clone();
                     let team_status = {
                         let members = state.team_members.read().await;
@@ -289,7 +299,7 @@ pub async fn oauth_callback(
                     let role = {
                         // New users: team member → "member", otherwise "guest"
                         // Existing users: preserve their current role
-                        let users_map = state.users.read().await;
+                        let users_map = state.users.lock().await;
                         if let Some(existing) = users_map.get(&user_id) {
                             existing.role.clone()
                         } else {
@@ -301,6 +311,8 @@ pub async fn oauth_callback(
                             }
                         }
                     };
+
+                    tracing::info!("OAuth callback: role 计算完成, role={}", role);
 
                     // Truncate username to 30 characters max
                     const MAX_USERNAME_LEN: usize = 30;
@@ -314,7 +326,14 @@ pub async fn oauth_callback(
                         userinfo.username
                     };
 
-                    if let Some(mut existing) = state.users.read().await.get(&user_id).cloned() {
+                    // 提前获取用户信息并释放锁（避免临时变量在 if let 中存活到 else 块）
+                    let existing_user = {
+                        let users = state.users.lock().await;
+                        users.get(&user_id).cloned()
+                    };
+
+                    if let Some(mut existing) = existing_user {
+                        tracing::info!("OAuth callback: 用户已存在 ({}), 更新中...", &existing.username);
                         // User already exists — preserve custom fields (display_name, avatar_url, bio, created_at)
                         // Only update OAuth-provided fields and computed role/status
                         existing.username = username.clone();
@@ -324,7 +343,9 @@ pub async fn oauth_callback(
                         existing.role = role;
                         existing.team_status = team_status;
                         state.upsert_user(&existing).await;
+                        tracing::info!("OAuth callback: upsert_user(已存在) 完成");
                     } else {
+                        tracing::info!("OAuth callback: 新用户, 创建中...");
                         // New user — use OAuth data, truncate display_name to 30 chars
                         let display_name = if userinfo.display_name.is_empty() {
                             username.clone()
@@ -363,29 +384,42 @@ pub async fn oauth_callback(
                             user_permissions: Vec::new(),
                         };
                         state.upsert_user(&user).await;
+                        tracing::info!("OAuth callback: upsert_user(新用户) 完成");
                     }
 
+                    tracing::info!("OAuth callback: 开始创建 session...");
                     let session_token = state.create_session(&user_id).await;
+                    tracing::info!("OAuth callback: session 创建完成");
                     // Remove old refresh tokens for this user to prevent accumulation
+                    tracing::info!("OAuth callback: 清除旧 refresh token...");
                     state.clear_user_refresh_tokens(&user_id).await;
+                    tracing::info!("OAuth callback: 旧 refresh token 已清除");
+                    tracing::info!("OAuth callback: 设置新 refresh token...");
                     state
                         .set_refresh_token(token_resp.refresh_token.clone(), user_id)
                         .await;
-
+                    tracing::info!("OAuth callback: 新 refresh token 已设置");
+                    tracing::info!("OAuth callback: 登录成功，重定向到 /#/auth/callback");
                     Redirect::to(&format!("{}#/auth/callback?token={}", fe, session_token))
                 }
-                Err(e) => Redirect::to(&format!(
+                Err(e) => {
+                    tracing::error!("OAuth callback: 获取用户信息失败: {}", e);
+                    Redirect::to(&format!(
                     "{}#/login?error=userinfo_failed&msg={}",
                     fe,
                     url_encode(&e)
-                )),
+                ))
+                }
             }
         }
-        Err(e) => Redirect::to(&format!(
+        Err(e) => {
+            tracing::error!("OAuth callback: token 交换失败: {}", e);
+            Redirect::to(&format!(
             "{}#/login?error=token_failed&msg={}",
             fe,
             url_encode(&e)
-        )),
+        ))
+        }
     }
 }
 
@@ -395,9 +429,8 @@ async fn exchange_token(
     client_id: &str,
     client_secret: &str,
     redirect_uri: &str,
+    http_client: &reqwest::Client,
 ) -> Result<OAuthTokenResponse, String> {
-    let client = reqwest::Client::new();
-
     let mut body = serde_json::json!({
         "grant_type": "authorization_code",
         "code": code,
@@ -410,12 +443,12 @@ async fn exchange_token(
         body["code_verifier"] = serde_json::Value::String(code_verifier.to_string());
     }
 
-    let response = client
+    let response = http_client
         .post("https://www.cpoauth.com/api/oauth/token")
         .json(&body)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("网络请求失败: {}", e))?;
 
     if response.status().is_success() {
         response
@@ -432,14 +465,16 @@ async fn exchange_token(
     }
 }
 
-async fn get_user_info(access_token: &str) -> Result<OAuthUserInfo, String> {
-    let client = reqwest::Client::new();
-    let response = client
+async fn get_user_info(
+    access_token: &str,
+    http_client: &reqwest::Client,
+) -> Result<OAuthUserInfo, String> {
+    let response = http_client
         .get("https://www.cpoauth.com/api/oauth/userinfo")
         .header("Authorization", format!("Bearer {}", access_token))
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| format!("网络请求失败: {}", e))?;
 
     if response.status().is_success() {
         response

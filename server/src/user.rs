@@ -82,7 +82,7 @@ pub async fn get_public_profile(
     }
 
     // Fallback to HashMap
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     let user = users.values().find(|u| u.username == username).cloned();
     drop(users);
 
@@ -160,7 +160,7 @@ pub async fn update_profile(
             }));
         }
         let current_display_name = {
-            let users = state.users.read().await;
+            let users = state.users.lock().await;
             match users.get(&user_id) {
                 Some(u) => u.display_name.clone(),
                 None => {
@@ -170,7 +170,7 @@ pub async fn update_profile(
         };
         if *name != current_display_name {
             let is_taken = {
-                let users = state.users.read().await;
+                let users = state.users.lock().await;
                 users
                     .values()
                     .any(|u| u.id != user_id && (u.display_name == *name || u.username == *name))
@@ -185,7 +185,7 @@ pub async fn update_profile(
     }
 
     // Read current user, then modify and dual-write via update_user
-    let mut user = match state.users.read().await.get(&user_id).cloned() {
+    let mut user = match state.users.lock().await.get(&user_id).cloned() {
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "用户不存在"})),
     };
@@ -277,7 +277,7 @@ pub async fn check_name_available(
         Ok(count) => count > 0,
         Err(_) => {
             // Fallback to HashMap
-            let users = state.users.read().await;
+            let users = state.users.lock().await;
             users
                 .values()
                 .any(|u| u.id != user_id && (u.display_name == name || u.username == name))

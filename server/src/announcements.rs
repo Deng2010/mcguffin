@@ -101,7 +101,7 @@ pub async fn get_announcements(
             .collect()
     };
 
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
 
     let mut result: Vec<serde_json::Value> = Vec::new();
     for p in &posts {
@@ -217,7 +217,7 @@ pub async fn get_announcement_detail(
         if !is_admin_user && !is_team && p.team_only {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
-        let users = state.users.read().await;
+        let users = state.users.lock().await;
         let author_name = users
             .get(&p.author_id)
             .map(|u| u.display_name.clone())

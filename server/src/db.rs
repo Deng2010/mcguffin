@@ -62,7 +62,7 @@ async fn try_init_db_file(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
         .create_if_missing(true)
         .foreign_keys(false);
     let pool = SqlitePoolOptions::new()
-        .max_connections(1)
+        .max_connections(5)
         .min_connections(1)
         .connect_with(opts)
         .await?;

@@ -111,7 +111,7 @@ pub async fn get_community_posts(
         map.values().cloned().collect()
     };
 
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
 
     // ── Gather tag metadata and global counts from ALL posts (before filtering) ──
     let tag_meta = state.discussion_tags.read().await;

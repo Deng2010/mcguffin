@@ -8,6 +8,7 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 
 pub const ADMIN_USER_ID: &str = "admin";
@@ -425,7 +426,7 @@ where
 
 #[derive(Clone)]
 pub struct AppState {
-    pub users: Arc<RwLock<HashMap<String, User>>>,
+    pub users: Arc<Mutex<HashMap<String, User>>>,
     /// token → SessionEntry (user_id + last_active timestamp)
     pub sessions: Arc<RwLock<HashMap<String, SessionEntry>>>,
     pub refresh_tokens: Arc<RwLock<HashMap<String, String>>>,
@@ -468,6 +469,8 @@ pub struct AppState {
     pub db: SqlitePool,
     /// 自定义备份目录（None 时使用默认路径）
     pub backup_directory: Arc<RwLock<Option<String>>>,
+    /// 复用 HTTP 客户端（带超时，连接池共享）
+    pub http_client: reqwest::Client,
 }
 
 impl AppState {
@@ -779,7 +782,7 @@ impl AppState {
         };
 
         let app_state = Self {
-            users: Arc::new(RwLock::new(users)),
+            users: Arc::new(Mutex::new(users)),
             sessions: Arc::new(RwLock::new(sessions)),
             refresh_tokens: Arc::new(RwLock::new(refresh_tokens)),
             team_members: Arc::new(RwLock::new(team_members)),
@@ -821,11 +824,16 @@ impl AppState {
             member_groups: Arc::new(RwLock::new(member_groups)),
             db,
             backup_directory: Arc::new(RwLock::new(None)),
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .build()
+                .expect("创建 HTTP 客户端失败"),
         };
 
         // SQLite 是权威数据源，确保 admin 存在于数据库中
         {
-            let admin_user = app_state.users.read().await.get(ADMIN_USER_ID).cloned();
+            let admin_user = app_state.users.lock().await.get(ADMIN_USER_ID).cloned();
             if let Some(ref admin) = admin_user {
                 let _ = sqlx::query(
                     "INSERT OR REPLACE INTO users (id, username, display_name, avatar_url, email, role, team_status, \
@@ -905,10 +913,10 @@ impl AppState {
 
     /// 设置 refresh token（双写：HashMap + SQLite）
     pub async fn set_refresh_token(&self, token: String, user_id: String) {
-        self.refresh_tokens
-            .write()
-            .await
-            .insert(token.clone(), user_id.clone());
+        {
+            let mut rt = self.refresh_tokens.write().await;
+            rt.insert(token.clone(), user_id.clone());
+        }
         let _ = sqlx::query("INSERT OR REPLACE INTO refresh_tokens (token, user_id) VALUES (?, ?)")
             .bind(&token)
             .bind(&user_id)
@@ -918,7 +926,10 @@ impl AppState {
 
     /// 删除 refresh token（双写）
     pub async fn remove_refresh_token(&self, token: &str) {
-        self.refresh_tokens.write().await.remove(token);
+        {
+            let mut rt = self.refresh_tokens.write().await;
+            rt.remove(token);
+        }
         let _ = sqlx::query("DELETE FROM refresh_tokens WHERE token = ?")
             .bind(token)
             .execute(&self.db)
@@ -927,10 +938,10 @@ impl AppState {
 
     /// 清除指定用户的所有 refresh token（双写）
     pub async fn clear_user_refresh_tokens(&self, user_id: &str) {
-        self.refresh_tokens
-            .write()
-            .await
-            .retain(|_, uid| uid != user_id);
+        {
+            let mut rt = self.refresh_tokens.write().await;
+            rt.retain(|_, uid| uid != user_id);
+        }
         let _ = sqlx::query("DELETE FROM refresh_tokens WHERE user_id = ?")
             .bind(user_id)
             .execute(&self.db)
@@ -1069,10 +1080,27 @@ impl AppState {
 
     /// 插入或替换用户（双写）
     pub async fn upsert_user(&self, user: &User) {
-        self.users
-            .write()
-            .await
-            .insert(user.id.clone(), user.clone());
+        tracing::info!("upsert_user 开始: id={}", &user.id[..8.min(user.id.len())]);
+        // 先写 HashMap，完成后立即释放写锁
+        // tokio::sync::Mutex 的 lock() 保证排队公平性，不会写者饿死
+        // 使用 try_lock 尝试避免阻塞
+        let mut waited = false;
+        let mut users = loop {
+            if let Ok(guard) = self.users.try_lock() {
+                break guard;
+            }
+            if !waited {
+                tracing::warn!("upsert_user: 锁被占用，排队等待...");
+                waited = true;
+            }
+            // 排队等待锁（最终一定能获取）
+            break self.users.lock().await;
+        };
+        users.insert(user.id.clone(), user.clone());
+        drop(users);
+        tracing::info!("upsert_user HashMap写入完成");
+        // 再写 SQLite（不持有 HashMap 锁）
+        tracing::info!("upsert_user 开始 sqlx query...");
         let _ = sqlx::query(
             "INSERT OR REPLACE INTO users \
              (id, username, display_name, avatar_url, email, role, team_status, \
@@ -1100,7 +1128,7 @@ impl AppState {
     pub async fn update_user_field(&self, user_id: &str, field: &str, value: String) {
         // HashMap 更新
         {
-            let mut users = self.users.write().await;
+            let mut users = self.users.lock().await;
             if let Some(u) = users.get_mut(user_id) {
                 match field {
                     "role" => u.role = value.clone(),
@@ -1125,10 +1153,11 @@ impl AppState {
 
     /// 更新用户多个字段（双写）
     pub async fn update_user(&self, user: &User) {
-        self.users
-            .write()
-            .await
-            .insert(user.id.clone(), user.clone());
+        // 先写 HashMap
+        {
+            let mut users = self.users.lock().await;
+            users.insert(user.id.clone(), user.clone());
+        }
         let _ = sqlx::query(
             "UPDATE users SET username=?, display_name=?, avatar_url=?, email=?, \
              role=?, team_status=?, bio=?, password_hash=?, effective_role=?, \
@@ -1152,7 +1181,7 @@ impl AppState {
 
     /// 删除用户（双写）
     pub async fn delete_user(&self, user_id: &str) {
-        self.users.write().await.remove(user_id);
+        self.users.lock().await.remove(user_id);
         let _ = sqlx::query("DELETE FROM users WHERE id = ?")
             .bind(user_id)
             .execute(&self.db)
@@ -1162,7 +1191,7 @@ impl AppState {
     /// 从用户列表中移除指定 group_id（双写）
     pub async fn remove_group_from_all_users(&self, group_id: &str) {
         {
-            let mut users = self.users.write().await;
+            let mut users = self.users.lock().await;
             for u in users.values_mut() {
                 u.group_ids.retain(|g| g != group_id);
             }
@@ -1478,7 +1507,7 @@ impl AppState {
     pub async fn reload(&self) {
         match crate::db::load_all_from_sqlite(&self.db).await {
             Ok(data) => {
-                *self.users.write().await = data.users;
+                *self.users.lock().await = data.users;
                 *self.sessions.write().await = data.sessions;
                 *self.refresh_tokens.write().await = data.refresh_tokens;
                 *self.team_members.write().await = data.team_members;

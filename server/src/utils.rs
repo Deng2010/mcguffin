@@ -76,7 +76,7 @@ pub async fn resolve_user(
         uid
     };
 
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     let mut user = users.get(&user_id)?.clone();
     drop(users);
     user.effective_role = user.compute_effective_role().to_string();
@@ -85,7 +85,7 @@ pub async fn resolve_user(
 
 /// Check if user has admin role (includes superadmin)
 pub async fn is_admin(state: &AppState, user_id: &str) -> bool {
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     users
         .get(user_id)
         .map(|u| u.role == "admin" || u.role == "superadmin")

@@ -739,7 +739,7 @@ pub async fn update_config(
     {
         let admin_dn = payload.admin.display_name.trim();
         if !admin_dn.is_empty() {
-            let users = state.users.read().await;
+            let users = state.users.lock().await;
             let is_taken = users
                 .values()
                 .any(|u| u.id != "admin" && (u.display_name == admin_dn || u.username == admin_dn));
@@ -1687,7 +1687,7 @@ pub async fn admin_list_users(
         }
         Err(_) => {
             // Fallback to HashMap
-            let users = state.users.read().await;
+            let users = state.users.lock().await;
             let members = state.team_members.read().await;
             let result: Vec<serde_json::Value> = users
                 .values()
@@ -1731,7 +1731,7 @@ pub async fn admin_change_user_role(
             serde_json::json!({"success": false, "message": "无效角色"}),
         ));
     }
-    if state.users.read().await.contains_key(&user_id) {
+    if state.users.lock().await.contains_key(&user_id) {
         state
             .update_user_field(&user_id, "role", payload.role.clone())
             .await;
@@ -1883,7 +1883,7 @@ pub async fn set_user_groups(
     Json(payload): Json<SetUserGroupsPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
-    let user = match state.users.read().await.get(&user_id) {
+    let user = match state.users.lock().await.get(&user_id) {
         Some(u) => u.clone(),
         None => {
             return Ok(Json(
@@ -1909,7 +1909,7 @@ pub async fn set_user_permissions(
     Json(payload): Json<SetUserPermissionsPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
-    let user = match state.users.read().await.get(&user_id) {
+    let user = match state.users.lock().await.get(&user_id) {
         Some(u) => u.clone(),
         None => {
             return Ok(Json(

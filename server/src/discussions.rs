@@ -152,7 +152,7 @@ pub async fn get_posts(
         map.values().cloned().collect()
     };
 
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     let all_tags = state.discussion_tags.read().await;
 
     let mut result: Vec<&Post> = posts
@@ -396,7 +396,7 @@ pub async fn get_post_detail(
             Json(serde_json::json!({"success": false, "message": "无权查看"})),
         ));
     }
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     let enriched_replies: Vec<serde_json::Value> = p
         .replies
         .iter()

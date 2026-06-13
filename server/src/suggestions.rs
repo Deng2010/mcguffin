@@ -86,7 +86,7 @@ pub async fn get_suggestions(
     };
     let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_DISCUSSIONS).await
         || user.team_status == "joined";
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
 
     // Try SQLite first, fallback to HashMap
     let posts: Vec<Post> = if let Ok(rows) = sqlx::query_as::<_, PostRow>(
@@ -205,7 +205,7 @@ pub async fn get_suggestion_detail(
         if !can_view_all && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
-        let users = state.users.read().await;
+        let users = state.users.lock().await;
         let author_name = users
             .get(&p.author_id)
             .map(|u| u.display_name.clone())

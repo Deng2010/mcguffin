@@ -1004,7 +1004,7 @@ pub async fn set_problem_visibility(
     // Only allow setting for actual 普通成员 (users.role == "member")
     let valid_ids: Vec<String> = {
         let members = state.team_members.read().await;
-        let users = state.users.read().await;
+        let users = state.users.lock().await;
         payload
             .user_ids
             .into_iter()
@@ -1099,7 +1099,7 @@ pub async fn get_team_members_for_visibility(
     }
 
     let members = state.team_members.read().await;
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     let result: Vec<serde_json::Value> = members
         .values()
         .filter(|m| users.get(&m.user_id).map(|u| u.role.as_str()) == Some("member"))
@@ -1206,7 +1206,7 @@ pub async fn update_problem(
                 problem.author_id = val.clone();
                 // Auto-update author_name to match user's display name if not explicitly set
                 if payload.author_name.is_none() {
-                    let users = state.users.read().await;
+                    let users = state.users.lock().await;
                     if let Some(u) = users.get(&val) {
                         problem.author_name = u.display_name.clone();
                     }

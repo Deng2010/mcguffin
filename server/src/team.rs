@@ -89,7 +89,7 @@ pub async fn get_team_members(
     } else {
         // 回退：HashMap 模式
         let members = state.team_members.read().await;
-        let users = state.users.read().await;
+        let users = state.users.lock().await;
         members
             .values()
             .filter(|m| {
@@ -185,7 +185,7 @@ pub async fn apply_to_join(
                 });
             }
             let user_id = entry.user_id.clone();
-            let users = state.users.read().await;
+            let users = state.users.lock().await;
             if let Some(user) = users.get(&user_id) {
                 if user.team_status == "joined" {
                     return Json(ApplyResponse {
@@ -343,7 +343,7 @@ pub async fn change_member_role(
     }
     // Only superadmin can demote an existing admin or promote to admin
     let is_super = check_permission(&state, &auth.user, PERM_WILDCARD).await;
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     let target_role = users.get(&user_id).map(|u| u.role.as_str());
     if let Some("admin") = target_role {
         if !is_super {
@@ -407,7 +407,7 @@ pub async fn remove_member(
             message: "不能移除自己".to_string(),
         });
     }
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     // Only superadmin can remove an admin
     let target_is_admin = users.get(&user_id).map(|u| u.role.as_str()) == Some("admin");
     if target_is_admin && !check_permission(&state, &auth.user, PERM_WILDCARD).await {
