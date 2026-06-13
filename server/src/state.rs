@@ -1084,17 +1084,11 @@ impl AppState {
         // 先写 HashMap，完成后立即释放写锁
         // tokio::sync::Mutex 的 lock() 保证排队公平性，不会写者饿死
         // 使用 try_lock 尝试避免阻塞
-        let mut waited = false;
-        let mut users = loop {
-            if let Ok(guard) = self.users.try_lock() {
-                break guard;
-            }
-            if !waited {
-                tracing::warn!("upsert_user: 锁被占用，排队等待...");
-                waited = true;
-            }
-            // 排队等待锁（最终一定能获取）
-            break self.users.lock().await;
+        let mut users = if let Ok(guard) = self.users.try_lock() {
+            guard
+        } else {
+            tracing::warn!("upsert_user: 锁被占用，排队等待...");
+            self.users.lock().await
         };
         users.insert(user.id.clone(), user.clone());
         drop(users);

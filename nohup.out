@@ -1,0 +1,38 @@
+[2m2026-06-11T13:18:14.647382Z[0m [33m WARN[0m [2mmcguffin_server_lib::state[0m[2m:[0m /usr/share/mcguffin/config.toml not found, falling back to env vars
+[2m2026-06-11T13:18:14.647512Z[0m [32m INFO[0m [2mmcguffin_server_lib::state[0m[2m:[0m No [permissions] section in config.toml, writing default permissions
+[2m2026-06-11T13:18:14.647557Z[0m [33m WARN[0m [2mmcguffin_server_lib::state[0m[2m:[0m /usr/share/mcguffin/config.toml not found, falling back to env vars
+[2m2026-06-11T13:18:14.677791Z[0m [32m INFO[0m [2mmcguffin_server_lib::db[0m[2m:[0m SQLite database initialized: mcguffin_data.db
+[2m2026-06-11T13:18:14.678485Z[0m [32m INFO[0m [2mmcguffin_server_lib::state[0m[2m:[0m No saved state, using default seed data
+[2m2026-06-11T13:18:14.678523Z[0m [33m WARN[0m [2mmcguffin_server_lib::state[0m[2m:[0m /usr/share/mcguffin/config.toml not found, falling back to env vars
+Serving frontend SPA from: "/var/mcguffin/web/dist"
+McGuffin Server running on http://0.0.0.0:3000
+Public URL: https://lba-oi.team
+Open http://localhost:3000 in your browser
+Available routes:
+  /              → SPA frontend (React app)
+  /login         → Server-rendered login page (legacy)
+  /portfolio     → Server-rendered portfolio page (legacy)
+  /api/posts     → Unified post CRUD
+  /api/community/posts → Unified community feed
+  /api/discussions/*   → Legacy compat routes
+  /api/suggestions/*   → Legacy compat routes
+  /api/announcements/* → Legacy compat routes
+[2m2026-06-11T15:26:55.470025Z[0m [32m INFO[0m [2mmcguffin_server_lib::state[0m[2m:[0m Loaded config from /usr/share/mcguffin/config.toml
+[2m2026-06-11T15:26:55.472452Z[0m [32m INFO[0m [2mmcguffin_server_lib::db[0m[2m:[0m SQLite database initialized: mcguffin_data.db
+[2m2026-06-11T15:26:55.472596Z[0m [32m INFO[0m [2mmcguffin_server_lib::state[0m[2m:[0m 从 SQLite 加载数据...
+[2m2026-06-11T15:26:55.476452Z[0m [32m INFO[0m [2mmcguffin_server_lib::state[0m[2m:[0m SQLite 数据加载成功
+[2m2026-06-11T15:26:55.476481Z[0m [32m INFO[0m [2mmcguffin_server_lib::state[0m[2m:[0m Loaded state from JSON: mcguffin_data.json
+[2m2026-06-11T15:26:55.476629Z[0m [32m INFO[0m [2mmcguffin_server_lib::state[0m[2m:[0m Loaded config from /usr/share/mcguffin/config.toml
+Serving frontend SPA from: "/mnt/data/mcguffin/web/dist"
+McGuffin Server running on http://0.0.0.0:3000
+Public URL: https://lba-oi.team
+Open http://localhost:3000 in your browser
+Available routes:
+  /              → SPA frontend (React app)
+  /login         → Server-rendered login page (legacy)
+  /portfolio     → Server-rendered portfolio page (legacy)
+  /api/posts     → Unified post CRUD
+  /api/community/posts → Unified community feed
+  /api/discussions/*   → Legacy compat routes
+  /api/suggestions/*   → Legacy compat routes
+  /api/announcements/* → Legacy compat routes

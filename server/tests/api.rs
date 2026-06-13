@@ -11,7 +11,7 @@ async fn test_app_state_initialization() {
     let state = AppState::new().await;
 
     // Admin user must exist
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     let admin = users.get("admin").expect("admin user must exist");
     assert_eq!(admin.role, "superadmin", "admin user must be superadmin");
     assert_eq!(admin.username, "admin");
@@ -94,7 +94,7 @@ async fn test_problem_state_operations() {
 async fn test_role_based_access() {
     let state = AppState::new().await;
 
-    let users = state.users.read().await;
+    let users = state.users.lock().await;
     let admin = users.get("admin").unwrap();
     assert_eq!(admin.role, "superadmin");
     assert!(admin.role == "admin" || admin.role == "superadmin");

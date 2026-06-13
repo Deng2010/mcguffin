@@ -158,7 +158,7 @@ pub async fn require_permission(
 pub async fn check_permission(state: &AppState, user: &User, permission: &str) -> bool {
     // ── 1. Role-based + role wildcard ──
     let perms_map = state.role_permissions.read().await;
-    let role_has = if let Some(user_perms) = perms_map.get(&user.role) {
+    let role_has = if let Some(user_perms) = perms_map.get(&user.effective_role) {
         if user_perms.iter().any(|p| p == types::PERM_WILDCARD) {
             return true;
         }

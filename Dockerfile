@@ -25,7 +25,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 
 # 正式构建
 COPY server/ .
-RUN cargo build --release
+RUN rm -f migrations/0001_init.sql && cargo build --release
 
 # ==================== Stage 3: Runtime ====================
 FROM alpine:3.21

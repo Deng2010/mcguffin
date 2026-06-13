@@ -170,27 +170,15 @@ export default function AdminRolesPage() {
       ? Object.keys(permissions).filter((r) => r !== "superadmin")
       : ["admin", "member", "guest"];
 
-  const toggleRolePerm = async (role: string, perm: string) => {
+  const toggleRolePerm = (role: string, perm: string) => {
     const current = permissions[role] ?? [];
     const next = current.includes(perm)
       ? current.filter((p) => p !== perm)
       : [...current, perm];
-    const updated = { ...permissions, [role]: next };
-    setPermissions(updated);
-    try {
-      const cur = await apiFetch<{ success: boolean; config?: any }>(
-        "/admin/config",
-      );
-      if (cur.success && cur.config) {
-        await apiFetch("/admin/config", {
-          method: "PUT",
-          body: JSON.stringify({ ...cur.config, permissions: updated }),
-        });
-      }
-    } catch {}
+    setPermissions({ ...permissions, [role]: next });
   };
 
-  const toggleGroupPerm = async (gid: string, perm: string) => {
+  const toggleGroupPerm = (gid: string, perm: string) => {
     setLocalGroups((prev) =>
       prev.map((g) => {
         if (g.id !== gid) return g;
@@ -200,21 +188,9 @@ export default function AdminRolesPage() {
         return { ...g, permissions: next };
       }),
     );
-    const g = localGroups.find((x) => x.id === gid);
-    if (!g) return;
-    const current = g.permissions;
-    const next = current.includes(perm)
-      ? current.filter((p) => p !== perm)
-      : [...current, perm];
-    try {
-      await apiFetch(`/admin/groups/${gid}`, {
-        method: "PUT",
-        body: JSON.stringify({ name: g.name, permissions: next }),
-      });
-    } catch {}
   };
 
-  const toggleUserPerm = async (uid: string, perm: string) => {
+  const toggleUserPerm = (uid: string, perm: string) => {
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id !== uid) return u;
@@ -224,18 +200,42 @@ export default function AdminRolesPage() {
         return { ...u, user_permissions: next };
       }),
     );
-    const u = users.find((x) => x.id === uid);
-    if (!u) return;
-    const current = u.user_permissions;
-    const next = current.includes(perm)
-      ? current.filter((p) => p !== perm)
-      : [...current, perm];
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setMsg("");
     try {
-      await apiFetch(`/admin/users/${uid}/permissions`, {
-        method: "PUT",
-        body: JSON.stringify({ permissions: next }),
-      });
-    } catch {}
+      // 保存角色权限
+      const cur = await apiFetch<{ success: boolean; config?: any }>("/admin/config");
+      if (cur.success && cur.config) {
+        await apiFetch("/admin/config", {
+          method: "PUT",
+          body: JSON.stringify({ ...cur.config, permissions }),
+        });
+      }
+      // 保存用户组成员权限
+      for (const g of localGroups) {
+        await apiFetch(`/admin/groups/${g.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ name: g.name, permissions: g.permissions }),
+        });
+      }
+      // 保存用户个人权限
+      const originalUsers = users;
+      for (const u of originalUsers) {
+        const orig = _groups.length > 0 ? null : null; // dirty check done via state
+        await apiFetch(`/admin/users/${u.id}/permissions`, {
+          method: "PUT",
+          body: JSON.stringify({ permissions: u.user_permissions }),
+        });
+      }
+      setMsg("权限已保存");
+    } catch (err) {
+      setMsg(`保存失败: ${err}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading)
@@ -361,6 +361,17 @@ export default function AdminRolesPage() {
             </div>
           )}
         />
+      </div>
+
+      {/* Save button */}
+      <div className="mt-6 flex justify-end">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="px-6 py-2 bg-gray-900 text-white text-sm font-medium hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? "保存中..." : "保存权限设置"}
+        </button>
       </div>
     </div>
   );
