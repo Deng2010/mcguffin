@@ -28,7 +28,7 @@ RUN cargo build --release
 
 # ==================== Stage 3: Runtime ====================
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata sqlite wget \
+RUN apk add --no-cache ca-certificates tzdata sqlite wget su-exec \
     && addgroup -S mcguffin && adduser -S mcguffin -G mcguffin
 
 WORKDIR /app
@@ -42,8 +42,6 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 3000
 VOLUME ["/app/data"]
-
-USER mcguffin
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["/app/mcguffin-server"]

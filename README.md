@@ -168,7 +168,7 @@ docker run -d \
   -e SITE_URL=http://localhost:3000 \
   -e ADMIN_PASSWORD=change_me \
   -v mcguffin_data:/app/data \
-  ghcr.io/Deng2010/mcguffin
+  ghcr.io/deng2010/mcguffin
 ```
 
 ```bash
@@ -226,7 +226,7 @@ docker exec mcguffin /app/mcguffin backup create
 
 # 健康检查
 curl http://localhost:3000/api/health
-# → {"status":"ok","version":"0.2.1"}
+# → {"status":"ok","version":"0.2.2"}
 ```
 
 > **注意**：数据存储在 Docker volume `mcguffin_data` 中（映射到容器的 `/app/data`），

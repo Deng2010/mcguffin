@@ -16,6 +16,10 @@ pub const ADMIN_USER_ID: &str = "admin";
 /// Resolve the config file path with platform awareness.
 /// Priority: CWD 的 mcguffin.toml/config.toml > 平台默认路径。
 pub fn resolve_config_path() -> PathBuf {
+    // 0. MCGUFFIN_DATA_DIR 环境变量（Docker 场景）
+    if let Ok(data_dir) = std::env::var("MCGUFFIN_DATA_DIR") {
+        return PathBuf::from(&data_dir).join("config.toml");
+    }
     // 1. CWD 探索（开发环境便利）
     for name in &["mcguffin.toml", "config.toml"] {
         let cwd_path = PathBuf::from(name);

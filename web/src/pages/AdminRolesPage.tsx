@@ -20,6 +20,22 @@ interface AdminUser {
   created_at: string;
 }
 
+const DEFAULT_PERMISSIONS: Record<string, string[]> = {
+  admin: [
+    "view_showcase", "apply_join", "view_team", "manage_team",
+    "manage_members", "submit_problem", "view_problems", "approve_problem",
+    "manage_contests", "view_all_contests", "view_public_contests",
+    "edit_showcase", "view_discussions", "manage_discussions", "manage_tags",
+    "manage_notifications", "manage_backups", "view_stats", "manage_posts",
+  ],
+  member: [
+    "view_showcase", "apply_join", "view_team",
+    "submit_problem", "view_problems",
+    "view_public_contests", "view_discussions",
+  ],
+  guest: ["view_showcase", "apply_join", "view_public_contests"],
+};
+
 const ROLE_LABELS: Record<string, string> = {
   superadmin: "超级管理员",
   admin: "管理员",
@@ -147,7 +163,10 @@ export default function AdminRolesPage() {
         apiFetch<AdminUser[]>("/admin/users"),
       ]);
       if (cRes.success && cRes.config) {
-        setPermissions((cRes.config as any).permissions ?? {});
+        const rawPerms = (cRes.config as any).permissions ?? {};
+        setPermissions(
+          Object.keys(rawPerms).length > 0 ? rawPerms : DEFAULT_PERMISSIONS,
+        );
       }
       const g = Array.isArray(gRes) ? gRes : [];
       const u = Array.isArray(uRes) ? uRes : [];
@@ -165,10 +184,7 @@ export default function AdminRolesPage() {
     load();
   }, []);
 
-  const roles =
-    Object.keys(permissions).length > 0
-      ? Object.keys(permissions).filter((r) => r !== "superadmin")
-      : ["admin", "member", "guest"];
+  const roles = ["admin", "member", "guest"];
 
   const toggleRolePerm = (role: string, perm: string) => {
     const current = permissions[role] ?? [];

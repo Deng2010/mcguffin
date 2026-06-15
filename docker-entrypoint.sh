@@ -8,7 +8,12 @@ echo "→ McGuffin Docker Entrypoint"
 echo "   Data dir: ${DATA_DIR}"
 echo "   Config:   ${CONFIG_FILE}"
 
-# 确保数据目录存在
+# 修正数据目录权限（容器以 mcguffin 用户运行，volume 可能 root 持有）
+if [ "$(id -u)" = "0" ]; then
+    chown -R mcguffin:mcguffin "${DATA_DIR}" 2>/dev/null || true
+fi
+
+# 确保数据目录存在（mcguffin 用户可写）
 mkdir -p "${DATA_DIR}"
 
 # 如果配置文件不存在，用环境变量生成最小配置
@@ -41,4 +46,5 @@ export MCGUFFIN_DATA_DIR
 export MCGUFFIN_WEB_DIST="${MCGUFFIN_WEB_DIST:-/app/web/dist}"
 
 echo "→ 启动服务..."
-exec "$@"
+# 以 mcguffin 用户运行服务（非 root）
+exec su-exec mcguffin "$@"
