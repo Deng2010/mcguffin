@@ -36,8 +36,8 @@ RUN apk add --no-cache ca-certificates tzdata sqlite wget su-exec \
 
 WORKDIR /app
 
-COPY --from=backend /app/server/target/release/mcguffin-server /app/
-COPY --from=backend /app/server/target/release/mcguffin /app/
+COPY --from=builder /app/server/target/release/mcguffin-server /app/
+COPY --from=builder /app/server/target/release/mcguffin /app/
 COPY --from=frontend /app/web/dist/ /app/web/dist/
 
 COPY docker-entrypoint.sh /app/
