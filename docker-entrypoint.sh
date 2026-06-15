@@ -47,4 +47,4 @@ export MCGUFFIN_WEB_DIST="${MCGUFFIN_WEB_DIST:-/app/web/dist}"
 
 echo "→ 启动服务..."
 # 以 mcguffin 用户运行服务（非 root）
-exec su-exec mcguffin "$@"
+exec gosu mcguffin "$@"

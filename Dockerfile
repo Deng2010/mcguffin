@@ -34,9 +34,9 @@ RUN cargo build --release
 # ==================== Stage 3: Runtime ====================
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates tzdata sqlite3 wget su-exec \
+    ca-certificates tzdata sqlite3 wget gosu \
     && rm -rf /var/lib/apt/lists/* \
-    && addgroup --system mcguffin && adduser --system --ingroup mcguffin mcguffin
+    && groupadd --system mcguffin && useradd --system -g mcguffin mcguffin
 
 WORKDIR /app
 
