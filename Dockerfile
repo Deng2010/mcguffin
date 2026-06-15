@@ -11,18 +11,21 @@ COPY web/ ./
 RUN bun run build
 
 # ==================== Stage 2: Backend ====================
-FROM rust:1.86-alpine AS backend
+FROM rust:1.86-alpine AS chef
 RUN apk add --no-cache musl-dev sqlite-dev pkgconfig build-base
+RUN cargo install cargo-chef --locked
+
+FROM chef AS planner
 WORKDIR /app/server
+COPY server/ .
+RUN cargo chef prepare --recipe-path recipe.json
 
-# 依赖层缓存
-COPY server/Cargo.toml server/Cargo.lock ./
-COPY server/migrations/ ./migrations/
-RUN mkdir src && echo "fn main() {}" > src/main.rs \
-    && cargo build --release 2>/dev/null || true \
-    && rm -rf src
-
-# 正式构建
+FROM chef AS builder
+WORKDIR /app/server
+COPY --from=planner /app/server/recipe.json recipe.json
+# 只编译依赖，后续改源码跳过这层
+RUN cargo chef cook --release --recipe-path recipe.json
+# 复制源码并正式构建
 COPY server/ .
 RUN cargo build --release
 
