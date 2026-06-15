@@ -311,17 +311,7 @@ mcguffin/
 | [AGENTS.md](AGENTS.md) | AI 编程助手 | 代码库结构、开发约定与操作指南 |
 | [GUIDE.md](GUIDE.md)   | 人类开发者  | 技术架构、API 文档、最佳实践   |
 
----
-
-## 🌙 Nightly Builds
-
-每次推送到 `main` 分支，CI 会自动构建三平台的 nightly 版本并存为 Artifact：
-
-| 平台                    | 产物                                             | 保存时间 |
-| ----------------------- | ------------------------------------------------ | -------- |
-| Linux / macOS | `mcguffin-server` + `mcguffin` CLI + `web/dist/` | 7 天     |
-
----
+|---
 
 ## 📬 反馈与建议
 
