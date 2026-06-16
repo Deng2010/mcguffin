@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import MarkdownEditor from '../components/MarkdownEditor'
-import { useDifficulties, DiffBadge } from '../hooks/useDifficulties'
 
 interface ContestItem {
   id: string
@@ -15,24 +14,12 @@ interface ContestItem {
   created_at: string
   status: string
   link?: string | null
-  problem_order: string[]
-  visible_to?: string[]
-  editable_by?: string[]
-}
-
-interface ContestProblem {
-  id: string
-  title: string
-  author_name: string
-  difficulty: string
-  status: string
 }
 
 type TabId = 'all' | 'public' | 'draft'
 
 export default function ContestManagePage() {
   const { hasPermission } = useAuth()
-  const { difficultyMap } = useDifficulties()
   const isAdmin = hasPermission('approve_problem')
   const [contests, setContests] = useState<ContestItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -43,22 +30,8 @@ export default function ContestManagePage() {
   const [description, setDescription] = useState('')
   const [link, setLink] = useState('')
   const [error, setError] = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabId>('all')
   const [searchText, setSearchText] = useState('')
-
-  // Edit state — unified: contest info + problem order
-  const [editName, setEditName] = useState('')
-  const [editStartTime, setEditStartTime] = useState('')
-  const [editEndTime, setEditEndTime] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [editLink, setEditLink] = useState('')
-  const [editProblems, setEditProblems] = useState<ContestProblem[]>([])
-  const [editProblemsReady, setEditProblemsReady] = useState(false)
-  const [editSaving, setEditSaving] = useState(false)
-  const [allMembers, setAllMembers] = useState<{ id: string; username: string; display_name: string }[]>([])
-  const [editVisibleTo, setEditVisibleTo] = useState<string[]>([])
-  const [editEditableBy, setEditEditableBy] = useState<string[]>([])
 
   const loadContests = () => {
     apiFetch<ContestItem[]>('/contests')
@@ -80,10 +53,7 @@ export default function ContestManagePage() {
       if (!q) return true
       return c.name.toLowerCase().includes(q)
     })
-    .sort((a, b) => {
-      // Sort by start_time descending (most recent first)
-      return b.start_time.localeCompare(a.start_time)
-    })
+    .sort((a, b) => b.start_time.localeCompare(a.start_time))
 
   const counts = {
     public: contests.filter(c => c.status === 'public').length,
@@ -117,160 +87,12 @@ export default function ContestManagePage() {
     } catch (err) { alert(`删除失败: ${err}`) }
   }
 
-  // ====== Unified Edit ======
-
-  const startEdit = async (c: ContestItem) => {
-    setEditingId(c.id)
-    setEditName(c.name)
-    setEditStartTime(c.start_time)
-    setEditEndTime(c.end_time)
-    setEditDescription(c.description)
-    setEditLink(c.link || '')
-    setEditProblemsReady(false)
-    setError('')
-    setEditVisibleTo(c.visible_to || [])
-    setEditEditableBy(c.editable_by || [])
-    // Load members for ACL editor
-    if (isAdmin && allMembers.length === 0) {
-      apiFetch<{ id: string; username: string; display_name: string }[]>('/admin/users')
-        .then(setAllMembers)
-        .catch(() => {})
-    }
-    // Load problems for ordering
-    try {
-      const problems = await apiFetch<ContestProblem[]>(`/contests/${c.id}/problems`)
-      setEditProblems(problems)
-    } catch {
-      setEditProblems([])
-    } finally {
-      setEditProblemsReady(true)
-    }
-  }
-
-  const cancelEdit = () => {
-    setEditingId(null)
-    setEditProblems([])
-    setEditProblemsReady(false)
-    setError('')
-    setEditVisibleTo([])
-    setEditEditableBy([])
-  }
-
-  const moveProblem = (index: number, direction: -1 | 1) => {
-    const newIndex = index + direction
-    if (newIndex < 0 || newIndex >= editProblems.length) return
-    const newProblems = [...editProblems]
-    const temp = newProblems[index]
-    newProblems[index] = newProblems[newIndex]
-    newProblems[newIndex] = temp
-    setEditProblems(newProblems)
-  }
-
-  const toggleVisibleMember = (userId: string) => {
-    setEditVisibleTo(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId],
-    )
-  }
-
-  const toggleEditableMember = (userId: string) => {
-    setEditEditableBy(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId],
-    )
-  }
-
-  const handleSaveEdit = async () => {
-    if (!editingId) return
-    if (!editName.trim() || !editStartTime.trim() || !editEndTime.trim()) {
-      setError('请填写比赛名称、开始时间和结束时间')
-      return
-    }
-    setEditSaving(true)
-    setError('')
-    try {
-      // 1. Save contest info
-      const infoRes = await apiFetch<{ success: boolean; message: string }>(`/contests/${editingId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          name: editName,
-          start_time: editStartTime,
-          end_time: editEndTime,
-          description: editDescription,
-          link: editLink || undefined,
-        }),
-      })
-      if (!infoRes.success) { setError(infoRes.message); setEditSaving(false); return }
-
-      // 2. Save problem order
-      const problemIds = editProblems.map(p => p.id)
-      const orderRes = await apiFetch<{ success: boolean; message: string }>(
-        `/contests/${editingId}/problem-order`,
-        { method: 'POST', body: JSON.stringify({ problem_ids: problemIds }) },
-      )
-      if (!orderRes.success) { setError(orderRes.message); setEditSaving(false); return }
-
-      // 3. Save ACL (admin only)
-      if (isAdmin) {
-        const aclRes = await apiFetch<{ success: boolean; message: string }>(
-          `/admin/acl/contest/${editingId}`,
-          {
-            method: 'PUT',
-            body: JSON.stringify({
-              visible_to: editVisibleTo,
-              editable_by: editEditableBy,
-            }),
-          },
-        )
-        if (!aclRes.success) { setError(aclRes.message); setEditSaving(false); return }
-      }
-
-      cancelEdit()
-      loadContests()
-    } catch (err) {
-      setError(`保存失败: ${err}`)
-    } finally {
-      setEditSaving(false)
-    }
-  }
-
-  const handleToggleStatus = async (contest: ContestItem) => {
-    const currentStatus = contest.status
-    const newStatus = currentStatus === 'public' ? 'draft' : 'public'
-    const label = newStatus === 'public' ? '公开' : '取消公开'
-    if (newStatus === 'public' && !contest.link) {
-      const url = prompt('请输入比赛外部链接（如 https://codeforces.com/...）：', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ')
-      if (!url) return
-      if (!window.confirm(`确定要公开此比赛吗？`)) return
-      try {
-        const res = await apiFetch<{ success: boolean; message: string }>(`/contests/${contest.id}/status`, {
-          method: 'POST',
-          body: JSON.stringify({ status: newStatus, link: url }),
-        })
-        if (!res.success) { alert(res.message); return }
-        loadContests()
-      } catch (err) { alert(`操作失败: ${err}`) }
-      return
-    }
-    if (!window.confirm(`确定要${label}此比赛吗？`)) return
-    try {
-      const res = await apiFetch<{ success: boolean; message: string }>(`/contests/${contest.id}/status`, {
-        method: 'POST',
-        body: JSON.stringify({ status: newStatus }),
-      })
-      if (!res.success) { alert(res.message); return }
-      loadContests()
-    } catch (err) { alert(`操作失败: ${err}`) }
-  }
-
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">比赛</h1>
         <button
-          onClick={() => { setShowForm(!showForm); setEditingId(null); setError('') }}
+          onClick={() => { setShowForm(!showForm); setError('') }}
           className={`px-4 py-2 text-sm ${isAdmin ? 'bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600' : 'bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-700'}`}
           disabled={!isAdmin}
         >
@@ -281,7 +103,7 @@ export default function ContestManagePage() {
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-700 text-sm dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">{error}</div>}
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white border border-gray-300 p-6 mb-6 dark:bg-gray-900 dark:border-gray-700 shadow">
+        <form onSubmit={handleCreate} className="mg-box-shadow p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">创建新比赛</h2>
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
@@ -318,7 +140,7 @@ export default function ContestManagePage() {
               placeholder="https://..."
               className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
           </div>
-          <button type="submit" className="px-4 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600">创建</button>
+          <button type="submit" className="mg-btn mg-btn-primary mg-btn-md">创建</button>
         </form>
       )}
 
@@ -366,187 +188,42 @@ export default function ContestManagePage() {
       ) : (
         <div className="space-y-3">
           {filteredContests.map(c => (
-            <div key={c.id} className="bg-white border border-gray-300 p-4 dark:bg-gray-900 dark:border-gray-700 shadow">
-              {editingId === c.id ? (
-                <div>
-                  <h3 className="font-semibold text-gray-800 mb-4 dark:text-gray-100">编辑比赛 — {c.name}</h3>
-
-                  {/* Contest info fields */}
-                  <div className="grid grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">比赛名称</label>
-                      <input type="text" value={editName} onChange={e => setEditName(e.target.value)} required
-                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">开始时间</label>
-                      <input type="text" value={editStartTime} onChange={e => setEditStartTime(e.target.value)} required
-                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">结束时间</label>
-                      <input type="text" value={editEndTime} onChange={e => setEditEndTime(e.target.value)} required
-                        className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
-                    </div>
-                  </div>
-                  <div className="mb-4">
-                    <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">链接</label>
-                    <input type="url" value={editLink} onChange={e => setEditLink(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800" />
-                  </div>
-                  <div className="mb-6">
-                    <MarkdownEditor
-                      value={editDescription}
-                      onChange={setEditDescription}
-                      label="简介"
-rows={10}
-                    />
-                  </div>
-
-                  {/* Problem order section */}
-                  <div className="border-t border-gray-200 pt-4 mb-6 dark:border-gray-700">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-3 dark:text-gray-200">题目顺序</h4>
-                    {!editProblemsReady ? (
-                      <div className="text-sm text-gray-400 dark:text-gray-500">加载题目中...</div>
-                    ) : editProblems.length === 0 ? (
-                      <div className="text-sm text-gray-400 dark:text-gray-500">该比赛暂无题目</div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {editProblems.map((p, idx) => (
-                          <div
-                            key={p.id}
-                            className="flex items-center gap-3 p-2 bg-gray-50 border border-gray-200 text-sm dark:bg-gray-800/50 dark:border-gray-700"
-                          >
-                            <span className="w-6 text-center font-mono text-gray-500 dark:text-gray-400">{idx + 1}</span>
-                            <span className="flex-1 text-gray-800 dark:text-gray-100">{p.title}</span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">{p.author_name}</span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400"><DiffBadge difficulty={p.difficulty} map={difficultyMap} /></span>
-                            <button
-                              onClick={() => moveProblem(idx, -1)}
-                              disabled={idx === 0}
-                              className="px-2 py-1 text-xs border border-gray-300 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"
-                            >↑</button>
-                            <button
-                              onClick={() => moveProblem(idx, 1)}
-                              disabled={idx === editProblems.length - 1}
-                              className="px-2 py-1 text-xs border border-gray-300 text-gray-600 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700"
-                            >↓</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ACL editor — admin only */}
-                  {isAdmin && allMembers.length > 0 && (
-                    <div className="border-t border-gray-200 pt-4 mb-6 dark:border-gray-700">
-                      <h4 className="text-sm font-semibold text-gray-700 mb-3 dark:text-gray-200">访问控制</h4>
-                      <div className="mb-3">
-                        <label className="block text-xs font-medium mb-1.5 text-gray-600 dark:text-gray-300">可见成员（选择可查看此比赛的成员）</label>
-                        <div className="flex flex-wrap gap-2">
-                          {allMembers.map(m => (
-                            <label key={m.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={editVisibleTo.includes(m.id)}
-                                onChange={() => toggleVisibleMember(m.id)}
-                                className="accent-gray-800 dark:accent-gray-400"
-                              />
-                              {m.display_name || m.username}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium mb-1.5 text-gray-600 dark:text-gray-300">可编辑成员（选择可编辑此比赛的成员）</label>
-                        <div className="flex flex-wrap gap-2">
-                          {allMembers.map(m => (
-                            <label key={m.id} className="flex items-center gap-1.5 text-sm cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={editEditableBy.includes(m.id)}
-                                onChange={() => toggleEditableMember(m.id)}
-                                className="accent-gray-800 dark:accent-gray-400"
-                              />
-                              {m.display_name || m.username}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleSaveEdit}
-                      disabled={editSaving || !editProblemsReady}
-                      className="px-5 py-2 text-sm bg-gray-800 text-white hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600"
-                    >
-                      {editSaving ? '保存中...' : '保存全部'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelEdit}
-                      className="px-5 py-2 text-sm border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
-                    >
-                      取消
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
+            <div key={c.id} className="mg-box-shadow p-4">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <Link to={`/contests/${c.id}`} className="hover:text-blue-600 dark:hover:text-blue-400">
                     <h3 className="font-semibold text-gray-800 dark:text-gray-100">{c.name}
-                      <span className={`ml-2 px-2 py-0.5 text-xs font-medium ${c.status === 'public' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
+                      <span className={`ml-2 px-2 py-0.5 text-xs font-medium ${
+                        c.status === 'public'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                          : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                      }`}>
                         {c.status === 'public' ? '已公开' : '未公开'}
                       </span>
                     </h3>
-                    <div className="text-sm text-gray-500 mt-1 dark:text-gray-400">
-                      {c.start_time} ~ {c.end_time}
+                  </Link>
+                  <div className="text-sm text-gray-500 mt-1 dark:text-gray-400">{c.start_time} ~ {c.end_time}</div>
+                  {c.link && (
+                    <div className="text-sm mt-1">
+                      <a href={c.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">外部链接 ↗</a>
                     </div>
-                    {c.link && (
-                      <div className="text-sm mt-1">
-                        <a href={c.link} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">外部链接 ↗</a>
-                      </div>
-                    )}
-                    {c.description && (
-                      <div className="text-sm text-gray-600 mt-1 dark:text-gray-300 line-clamp-2">{c.description}</div>
-                    )}
-                    <div className="text-xs text-gray-400 mt-1 dark:text-gray-500">创建于 {c.created_at}</div>
-                  </div>
-                  <div className="flex gap-2 shrink-0 ml-4">
-                    {isAdmin ? (<>
-                    <button
-                      onClick={() => handleToggleStatus(c)}
-                      className={`px-3 py-1.5 text-xs border ${c.status === 'public' ? 'border-yellow-500 text-yellow-700 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-400 dark:hover:bg-yellow-900/20' : 'border-green-500 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/20'}`}
-                    >
-                      {c.status === 'public' ? '取消公开' : '公开'}
-                    </button>
-                    <button
-                      onClick={() => startEdit(c)}
-                      className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
-                    >
-                      编辑
-                    </button>
-                    <button
-                      onClick={() => handleDelete(c.id, c.name)}
-                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                    >
+                  )}
+                  {c.description && <div className="text-sm text-gray-600 mt-1 dark:text-gray-300 line-clamp-2">{c.description}</div>}
+                  <div className="text-xs text-gray-400 mt-1 dark:text-gray-500">创建于 {c.created_at}</div>
+                </div>
+                <div className="flex gap-2 shrink-0 ml-4">
+                  <Link to={`/contests/${c.id}`}
+                    className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800">
+                    查看
+                  </Link>
+                  {isAdmin && (
+                    <button onClick={() => handleDelete(c.id, c.name)}
+                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20">
                       删除
                     </button>
-                    </>) : (
-                      <Link
-                        to={`/contests/${c.id}`}
-                        className="px-3 py-1.5 text-xs border border-blue-500 text-blue-600 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                      >
-                        查看详情
-                      </Link>
-                    )}
-                  </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           ))}
         </div>
