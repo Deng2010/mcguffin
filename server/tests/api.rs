@@ -119,7 +119,7 @@ async fn test_oauth_config() {
 async fn test_admin_password_loaded() {
     let state = AppState::new().await;
     assert!(
-        !state.admin_password.is_empty(),
+        !state.admin_password.read().await.is_empty(),
         "admin password must be configured"
     );
 }
