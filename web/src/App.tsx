@@ -16,14 +16,13 @@ import ApplyPage from "./pages/ApplyPage";
 import ContestManagePage from "./pages/ContestManagePage";
 import ProfilePage from "./pages/ProfilePage";
 import AdminConfigPage from "./pages/AdminConfigPage";
-import AdminDiscussionsPage from "./pages/AdminDiscussionsPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
-import AdminGroupsPage from "./pages/AdminGroupsPage";
 import AdminRolesPage from "./pages/AdminRolesPage";
 import AdminBackupsPage from "./pages/AdminBackupsPage";
 import CommunityPage from "./pages/CommunityPage";
 import PostDetailPage from "./pages/PostDetailPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import AdminInitPage from "./pages/AdminInitPage";
 
 function Footer() {
   const { siteInfo } = useSite();
@@ -72,11 +71,15 @@ function AppContent() {
   return (
     <HashRouter>
       <Routes>
+        {/* Init page — outside MainLayout, no navbar/footer */}
+        <Route path="/admin/init" element={<AdminInitPage />} />
+
         {/* Main site routes */}
         <Route element={<MainLayout />}>
           <Route path="/" element={<ShowcasePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route path="/admin/init" element={<AdminInitPage />} />
           <Route path="/problems" element={<ProblemsPage />} />
           <Route
             path="/problems/:id"
@@ -121,9 +124,7 @@ function AppContent() {
         <Route path="/admin" element={<AdminGuardLayout />}>
           <Route index element={<Navigate to="/admin/config" replace />} />
           <Route path="config" element={<AdminConfigPage />} />
-          <Route path="discussions" element={<AdminDiscussionsPage />} />
           <Route path="users" element={<AdminUsersPage />} />
-          <Route path="groups" element={<AdminGroupsPage />} />
           <Route path="roles" element={<AdminRolesPage />} />
           <Route path="backups" element={<AdminBackupsPage />} />
         </Route>

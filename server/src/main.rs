@@ -285,6 +285,8 @@ async fn main() {
         )
         // Admin config
         .route("/api/admin/config", get(get_config).put(update_config))
+        .route("/api/admin/init-status", get(init_admin_status))
+        .route("/api/admin/init", post(init_admin))
         .route("/api/admin/restart", post(restart_service))
         // Admin backup
         .route("/api/admin/backup", post(create_backup))
@@ -303,6 +305,7 @@ async fn main() {
         )
         // Admin export
         .route("/api/admin/export/data", get(export_data))
+        .route("/api/admin/export/db", get(export_db))
         .route("/api/admin/export/config", get(export_config))
         // Admin import
         .route("/api/admin/import/data", post(import_data))

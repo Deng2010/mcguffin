@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { useSite } from '../SiteContext'
+import { apiFetch } from '../api'
 
 export default function LoginPage() {
   const { login, accountLogin } = useAuth()
@@ -14,6 +15,24 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [notInitialized, setNotInitialized] = useState(false)
+  const [checkingInit, setCheckingInit] = useState(true)
+
+  useEffect(() => {
+    const checkInit = async () => {
+      try {
+        const res = await apiFetch<{ initialized: boolean }>('/admin/init-status')
+        if (!res.initialized) {
+          setNotInitialized(true)
+        }
+      } catch {
+        // API might not exist yet, ignore
+      } finally {
+        setCheckingInit(false)
+      }
+    }
+    checkInit()
+  }, [])
 
   const siteName = siteInfo?.name || 'McGuffin'
 
@@ -35,6 +54,18 @@ export default function LoginPage() {
       <div className="bg-white dark:bg-gray-900 p-8 w-full max-w-md border border-gray-300 dark:border-gray-700">
         <h1 className="text-2xl font-bold mb-2 text-gray-800 dark:text-gray-100">{siteName}</h1>
         <p className="text-gray-500 dark:text-gray-400 mb-6">算法竞赛出题团队工具</p>
+
+        {!checkingInit && notInitialized && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 text-yellow-800 text-sm dark:bg-yellow-900/30 dark:border-yellow-800 dark:text-yellow-300">
+            <p className="mb-2">尚未初始化管理员</p>
+            <button
+              onClick={() => navigate('/admin/init')}
+              className="underline font-medium hover:text-yellow-600 dark:hover:text-yellow-200"
+            >
+              点击设置
+            </button>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-700 text-sm dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">

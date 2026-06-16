@@ -143,6 +143,31 @@ export default function AdminBackupsPage() {
     }
   };
 
+  const exportDb = async () => {
+    try {
+      const res = await apiFetch<any>("/admin/export/db");
+      if (!res.success) {
+        setMsg(`导出失败: ${res.message}`);
+        return;
+      }
+      const blob = new Blob(
+        [Uint8Array.from(atob(res.content), (c) => c.charCodeAt(0))],
+        { type: res.mime },
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = res.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setMsg(`已导出: ${res.filename}`);
+    } catch (err) {
+      setMsg(`导出失败: ${err}`);
+    }
+  };
+
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -220,15 +245,9 @@ export default function AdminBackupsPage() {
       )}
 
       <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-5 mb-6">
-        <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
-          导出
-        </h2>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-          导出当前数据或配置文件，下载到本地。
-        </p>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => doExport("data")}
+            onClick={exportDb}
             className="px-5 py-2 bg-white dark:bg-gray-900 border border-gray-800 dark:border-gray-600 text-gray-800 dark:text-gray-200 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800"
           >
             <span className="flex items-center gap-2">
@@ -248,32 +267,6 @@ export default function AdminBackupsPage() {
               导出数据文件
             </span>
           </button>
-          <button
-            onClick={() => doExport("config")}
-            className="px-5 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow text-gray-700 dark:text-gray-200 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-          >
-            <span className="flex items-center gap-2">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-              导出配置文件
-            </span>
-          </button>
-        </div>
-        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-xs text-gray-500 dark:text-gray-400 mr-2">
-            导入：
-          </p>
           <input
             ref={importFileRef}
             type="file"

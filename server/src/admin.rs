@@ -735,6 +735,13 @@ pub async fn update_config(
         ));
     }
 
+    // Validate admin password is not empty
+    if payload.admin.password.trim().is_empty() {
+        return Ok(Json(
+            serde_json::json!({"success": false, "message": "管理员密码不能为空"}),
+        ));
+    }
+
     // Validate admin display_name uniqueness: no user's display_name or username matches
     {
         let admin_dn = payload.admin.display_name.trim();
@@ -874,6 +881,177 @@ pub async fn update_config(
         }
         Err(e) => Ok(Json(serde_json::json!({"success": false, "message": e}))),
     }
+}
+
+// ============== Admin Initialization ==============
+
+#[derive(serde::Deserialize)]
+pub struct InitAdminPayload {
+    pub display_name: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    pub password: String,
+}
+
+/// GET /api/admin/init-status
+/// No auth required — returns whether admin initialization is needed.
+pub async fn init_admin_status(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    // Check if config admin.password is set and non-empty
+    let raw = read_config_raw().unwrap_or_default();
+    let config_pw_set = {
+        let doc = raw.parse::<toml_edit::DocumentMut>().ok();
+        doc.and_then(|d| {
+            d.get("admin")
+                .and_then(|s| s.get("password"))
+                .and_then(|v| v.as_str())
+                .map(|s| !s.trim().is_empty())
+        })
+        .unwrap_or(false)
+    };
+
+    // Check if admin user has password_hash set
+    let user_has_hash = {
+        let users = state.users.lock().await;
+        users
+            .get(crate::state::ADMIN_USER_ID)
+            .and_then(|u| u.password_hash.as_ref())
+            .map(|h| !h.is_empty())
+            .unwrap_or(false)
+    };
+
+    let initialized = config_pw_set || user_has_hash;
+
+    Json(serde_json::json!({"initialized": initialized}))
+}
+
+/// POST /api/admin/init
+/// No auth required, only works when NOT initialized.
+/// Sets up the admin user with a password and display name.
+pub async fn init_admin(
+    State(state): State<AppState>,
+    Json(payload): Json<InitAdminPayload>,
+) -> Json<serde_json::Value> {
+    // Check not already initialized
+    let raw = read_config_raw().unwrap_or_default();
+    let already_initialized = {
+        let doc = raw.parse::<toml_edit::DocumentMut>().ok();
+        let config_pw = doc
+            .and_then(|d| {
+                d.get("admin")
+                    .and_then(|s| s.get("password"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| !s.trim().is_empty())
+            })
+            .unwrap_or(false);
+        if config_pw {
+            true
+        } else {
+            let users = state.users.lock().await;
+            users
+                .get(crate::state::ADMIN_USER_ID)
+                .and_then(|u| u.password_hash.as_ref())
+                .map(|h| !h.is_empty())
+                .unwrap_or(false)
+        }
+    };
+
+    if already_initialized {
+        return Json(serde_json::json!({
+            "success": false,
+            "message": "管理员已初始化，无法重复初始化"
+        }));
+    }
+
+    // Validate password and display_name
+    if payload.password.trim().is_empty() {
+        return Json(serde_json::json!({
+            "success": false,
+            "message": "密码不能为空"
+        }));
+    }
+    if payload.display_name.trim().is_empty() {
+        return Json(serde_json::json!({
+            "success": false,
+            "message": "显示名称不能为空"
+        }));
+    }
+
+    // Hash password
+    let password_hash = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
+        Ok(h) => h,
+        Err(e) => {
+            return Json(serde_json::json!({
+                "success": false,
+                "message": format!("密码加密失败: {}", e)
+            }));
+        }
+    };
+
+    // Read config, update admin.password + admin.display_name, write config
+    let updated_config = {
+        let mut doc = match raw.parse::<toml_edit::DocumentMut>() {
+            Ok(d) => d,
+            Err(e) => {
+                return Json(serde_json::json!({
+                    "success": false,
+                    "message": format!("配置文件格式错误: {}", e)
+                }));
+            }
+        };
+        if let Some(t) = doc.get_mut("admin").and_then(|s| s.as_table_mut()) {
+            t["password"] = toml_edit::Item::Value(toml_edit::Value::from(&payload.password));
+            t["display_name"] =
+                toml_edit::Item::Value(toml_edit::Value::from(payload.display_name.trim()));
+        }
+        doc.to_string()
+    };
+
+    if let Err(e) = write_config_raw(&updated_config) {
+        return Json(serde_json::json!({
+            "success": false,
+            "message": format!("写入配置文件失败: {}", e)
+        }));
+    }
+
+    // Update admin user in memory and SQLite
+    {
+        let mut users = state.users.lock().await;
+        if let Some(admin_user) = users.get_mut(crate::state::ADMIN_USER_ID) {
+            admin_user.display_name = payload.display_name.trim().to_string();
+            if let Some(url) = &payload.avatar_url {
+                if !url.trim().is_empty() {
+                    admin_user.avatar_url = Some(url.trim().to_string());
+                }
+            }
+            admin_user.password_hash = Some(password_hash.clone());
+            // Clone for SQLite update
+            let updated_user = admin_user.clone();
+            // Release lock before SQLite call
+            drop(users);
+
+            // Write to SQLite using upsert_user
+            state.upsert_user(&updated_user).await;
+        } else {
+            drop(users);
+            return Json(serde_json::json!({
+                "success": false,
+                "message": "系统错误：找不到管理员用户"
+            }));
+        }
+    }
+
+    // Update in-memory state.admin_password for immediate effect
+    // Note: State gives a clone of AppState, so this doesn't propagate
+    // to the router's original state. The config.toml has been written
+    // to disk and will be loaded on next restart. Auth will use the
+    // bcrypt hash in the DB immediately.
+    
+    Json(serde_json::json!({
+        "success": true,
+        "message": "管理员已初始化"
+    }))
 }
 
 /// POST /api/admin/restart
@@ -1351,6 +1529,39 @@ pub async fn export_data(
         "filename": filename,
         "mime": "application/json",
     })))
+}
+
+/// GET /api/admin/export/db
+/// manage_site permission required — exports the SQLite database as .db download.
+pub async fn export_db(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
+
+    // Sync HashMap → SQLite first so the export is up-to-date
+    state.sync_to_db().await;
+
+    match std::fs::read(&state.db_path) {
+        Ok(bytes) => {
+            use base64::Engine;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            let filename = format!(
+                "mcguffin_data_{}.db",
+                Local::now().format("%Y%m%d_%H%M%S")
+            );
+            Ok(Json(serde_json::json!({
+                "success": true,
+                "content": encoded,
+                "filename": filename,
+                "mime": "application/octet-stream",
+                "encoding": "base64",
+            })))
+        }
+        Err(e) => Ok(Json(
+            serde_json::json!({"success": false, "message": format!("读取数据库文件失败: {}", e)}),
+        )),
+    }
 }
 
 /// GET /api/admin/export/config
