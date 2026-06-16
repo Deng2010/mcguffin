@@ -536,7 +536,11 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         if let Some(dir) = &payload.backup.backup_directory {
             if !dir.trim().is_empty() {
                 set_str(t, "backup_directory", dir.trim());
+            } else {
+                t.remove("backup_directory");
             }
+        } else {
+            t.remove("backup_directory");
         }
     }
 
@@ -872,9 +876,7 @@ pub async fn update_config(
                 }
             }
             // Update in-memory backup_directory immediately if changed
-            if let Some(dir) = &payload.backup.backup_directory {
-                *state.backup_directory.write().await = Some(dir.clone());
-            }
+            *state.backup_directory.write().await = payload.backup.backup_directory.clone();
             Ok(Json(
                 serde_json::json!({"success": true, "message": "配置已保存，立即生效"}),
             ))

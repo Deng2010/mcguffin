@@ -5,9 +5,7 @@ import { useDarkMode } from '../DarkModeContext'
 
 const navItems = [
   { path: '/admin/config', label: '配置' },
-  { path: '/admin/discussions', label: '讨论管理' },
   { path: '/admin/users', label: '用户管理' },
-  { path: '/admin/groups', label: '成员组' },
   { path: '/admin/roles', label: '角色权限' },
   { path: '/admin/backups', label: '备份管理' },
 ]
