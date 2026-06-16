@@ -2,25 +2,18 @@ version: "3.9"
 
 services:
   mcguffin:
-    image: mcguffin:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/deng2010/mcguffin:v0.2.3
     container_name: mcguffin
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      # 必要配置
-      - SITE_URL=http://localhost:3000
-      - ADMIN_PASSWORD=***      # 可选配置
-      - SITE_NAME=McGuffin
-      - ADMIN_DISPLAY_NAME=管理员
+      - SITE_URL=https://lba-oi.team
+      - SITE_NAME=『LBA-OI』
       - MCGUFFIN_DATA_DIR=/app/data
-      - MCGUFFIN_WEB_DIST=/app/web/dist
       - TZ=Asia/Shanghai
     volumes:
-      - mcguffin_data:/app/data
+      - /usr/local/lib/mcguffin:/app/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 30s

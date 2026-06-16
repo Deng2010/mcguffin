@@ -582,7 +582,7 @@ export default function ShowcasePage() {
               return announcements.slice(0, showCount).map((a) => (
                 <div
                   key={a.id}
-                  className={`bg-white dark:bg-gray-900 shadow border ${a.pinned ? "border-yellow-400" : "border-gray-300 dark:border-gray-700"} p-4`}
+                  className={`mg-box-shadow ${a.pinned ? "border-yellow-400" : ""} p-4`}
                 >
                   <div className="flex items-center gap-2 mb-1">
                     {a.pinned && (

@@ -415,9 +415,9 @@ export default function ProblemsPage() {
 
   // Card wrapper — clickable to navigate to problem detail
   const cardClass =
-    "p-4 bg-white border border-gray-300 cursor-pointer hover:bg-gray-50 transition-colors dark:bg-gray-900 dark:border-gray-700 shadow dark:hover:bg-gray-800/50";
+    "mg-box-shadow p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors";
   const guestCardClass =
-    "p-4 bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow";
+    "mg-box-shadow p-4";
   const goDetail = (problemId: string) => (e: React.MouseEvent) => {
     navigate(`/problems/${problemId}`);
   };
@@ -465,7 +465,7 @@ export default function ProblemsPage() {
   const renderFilterBar = () => {
     const hasActiveFilters = searchText || filterDifficulty || filterAuthor;
     return (
-      <div className="bg-white border border-gray-300 p-4 mb-4 space-y-3 dark:bg-gray-900 dark:border-gray-700 shadow">
+      <div className="mg-box-shadow p-4 mb-4 space-y-3">
         {/* Search row */}
         <div className="flex items-center gap-2">
           <svg
