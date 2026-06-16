@@ -11,10 +11,8 @@ COPY web/ ./
 RUN bun run build
 
 # ==================== Stage 2: Backend ====================
-FROM rust:1.86-slim-bookworm AS chef
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsqlite3-dev pkg-config build-essential \
-    && rm -rf /var/lib/apt/lists/*
+FROM rust:1.88-alpine AS chef
+RUN apk add --no-cache musl-dev sqlite-dev pkgconfig build-base
 RUN cargo install cargo-chef --locked
 
 FROM chef AS planner
@@ -32,11 +30,9 @@ COPY server/ .
 RUN cargo build --release
 
 # ==================== Stage 3: Runtime ====================
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates tzdata sqlite3 wget gosu \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system mcguffin && useradd --system -g mcguffin mcguffin
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata sqlite wget su-exec \
+    && addgroup -S mcguffin && adduser -S mcguffin -G mcguffin
 
 WORKDIR /app
 
