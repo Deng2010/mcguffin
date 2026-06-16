@@ -244,7 +244,7 @@ export default function AdminBackupsPage() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-5 mb-6">
+      <div className="mg-box-shadow p-5 mb-6">
         <div className="flex items-center gap-3">
           <button
             onClick={exportDb}
@@ -305,7 +305,7 @@ export default function AdminBackupsPage() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-5">
+      <div className="mg-box-shadow p-5">
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
           备份管理
         </h2>

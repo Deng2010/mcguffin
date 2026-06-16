@@ -157,7 +157,7 @@ export default function TeamPage() {
             {requests.map((req) => (
               <div
                 key={req.id}
-                className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow"
+                className="flex items-center justify-between p-4 mg-box-shadow"
               >
                 <div>
                   <span className="font-medium">{req.user_name}</span>
@@ -232,7 +232,7 @@ export default function TeamPage() {
           filteredMembers.map((m) => (
             <div
               key={m.id}
-              className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+              className="flex items-center justify-between p-4 mg-box-shadow cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
               onClick={() => navigate(`/profile/${m.username}`)}
             >
               <div

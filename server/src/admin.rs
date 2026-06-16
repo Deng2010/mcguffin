@@ -1047,6 +1047,19 @@ pub async fn init_admin(
     // Update in-memory state.admin_password for immediate effect
     // Arc<RwLock> allows cross-clone sharing
     *state.admin_password.write().await = payload.password.clone();
+
+    // Ensure admin is a team member
+    {
+        let members = state.team_members.read().await;
+        if !members.values().any(|m| m.user_id == crate::state::ADMIN_USER_ID) {
+            drop(members);
+            state.insert_team_member(&crate::types::TeamMember {
+                id: crate::state::ADMIN_USER_ID.to_string(),
+                user_id: crate::state::ADMIN_USER_ID.to_string(),
+                joined_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+            }).await;
+        }
+    }
     
     Json(serde_json::json!({
         "success": true,

@@ -21,7 +21,7 @@ export default function NotFoundPage() {
         ← 返回首页
       </Link>
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-6">
+      <div className="mg-box-shadow p-6">
         {/* Problem header */}
         <div className="flex items-start justify-between mb-4">
           <div>

@@ -101,7 +101,7 @@ function ProblemCard({
   return (
     <Link
       to={`/problems/${p.id}`}
-      className="block bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+      className="mg-box-shadow p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
     >
       <div className="flex items-center justify-between">
         <div>
@@ -364,7 +364,7 @@ export default function ShowcasePage() {
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-8">
       {/* ===== 团队简介 ===== */}
-      <section className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-6">
+      <section className="mg-box-shadow p-6">
         <div className="flex items-center justify-between mb-3">
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
             {siteInfo?.name || "McGuffin"}
@@ -426,7 +426,7 @@ export default function ShowcasePage() {
 
       {/* ===== 展板管理面板 ===== */}
       {showcaseMode && (
-        <section className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-5">
+        <section className="mg-box-shadow p-5">
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-1">
             展板管理
           </h2>
@@ -668,7 +668,7 @@ export default function ShowcasePage() {
                 return (
                   <div
                     key={c.id}
-                    className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-5"
+                    className="mg-box-shadow p-5"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div>
