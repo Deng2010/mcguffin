@@ -1043,10 +1043,8 @@ pub async fn init_admin(
     }
 
     // Update in-memory state.admin_password for immediate effect
-    // Note: State gives a clone of AppState, so this doesn't propagate
-    // to the router's original state. The config.toml has been written
-    // to disk and will be loaded on next restart. Auth will use the
-    // bcrypt hash in the DB immediately.
+    // Arc<RwLock> allows cross-clone sharing
+    *state.admin_password.write().await = payload.password.clone();
     
     Json(serde_json::json!({
         "success": true,

@@ -441,7 +441,7 @@ pub struct AppState {
     pub cpoauth_client_id: String,
     pub cpoauth_client_secret: String,
     pub cpoauth_redirect_uri: String,
-    pub admin_password: String,
+    pub admin_password: Arc<RwLock<String>>,
     pub site_name: String,
     pub site_title: String,
     pub site_version: String,
@@ -796,7 +796,7 @@ impl AppState {
             cpoauth_client_id: config.oauth.cp_client_id,
             cpoauth_client_secret: config.oauth.cp_client_secret,
             cpoauth_redirect_uri: redirect_uri,
-            admin_password: config.admin.password,
+            admin_password: Arc::new(RwLock::new(config.admin.password)),
             site_name: config
                 .site
                 .name

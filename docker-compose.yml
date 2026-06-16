@@ -13,8 +13,7 @@ services:
     environment:
       # 必要配置
       - SITE_URL=http://localhost:3000
-      - ADMIN_PASSWORD=admin123
-      # 可选配置
+      - ADMIN_PASSWORD=***      # 可选配置
       - SITE_NAME=McGuffin
       - ADMIN_DISPLAY_NAME=管理员
       - MCGUFFIN_DATA_DIR=/app/data

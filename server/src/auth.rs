@@ -103,7 +103,7 @@ pub async fn login(
                 let password_ok = match &user.password_hash {
                     Some(hash) => bcrypt::verify(&payload.password, hash).unwrap_or(false),
                     // 若用户未设密码哈希，管理员（admin）可回退到配置密码
-                    None if user.id == ADMIN_USER_ID => payload.password == state.admin_password,
+                    None if user.id == ADMIN_USER_ID => payload.password == *state.admin_password.read().await,
                     None => false,
                 };
                 if password_ok {
@@ -135,7 +135,7 @@ pub async fn login(
         }
     } else {
         // No identifier — admin password login (backward compatible)
-        if payload.password != state.admin_password {
+        if payload.password != *state.admin_password.read().await {
             return Json(LoginResponse {
                 success: false,
                 message: "密码错误".to_string(),
