@@ -43,9 +43,10 @@ export default function Navbar() {
     )
   }
 
-  const showProblems = hasPermission('view_problems')
+  // 游客也能看到题目和比赛（页面自身有权限控制）
+  const showProblems = true
   const showTeam = hasPermission('view_team')
-  const showManageContests = hasPermission('view_problems')
+  const showManageContests = true
   const showSuggestions = hasPermission('view_discussions')
   const canUseCommunity = showSuggestions || true // discussions is public
   const showApply = isAuthenticated && user?.team_status !== 'joined'

@@ -14,6 +14,7 @@ import ProblemDetailPage from "./pages/ProblemDetailPage";
 import TeamPage from "./pages/TeamPage";
 import ApplyPage from "./pages/ApplyPage";
 import ContestManagePage from "./pages/ContestManagePage";
+import ContestDetailPage from "./pages/ContestDetailPage";
 import ProfilePage from "./pages/ProfilePage";
 import AdminConfigPage from "./pages/AdminConfigPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
@@ -106,6 +107,7 @@ function AppContent() {
             }
           />
           <Route path="/contests" element={<ContestManagePage />} />
+          <Route path="/contests/:id" element={<ContestDetailPage />} />
           <Route path="/community" element={<CommunityPage />} />
           <Route path="/post/:id" element={<PostDetailPage />} />
           <Route

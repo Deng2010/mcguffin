@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { apiFetch } from '../api'
 import MarkdownEditor from '../components/MarkdownEditor'
@@ -496,7 +497,7 @@ rows={10}
                 </div>
               ) : (
                 <div className="flex items-start justify-between">
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-gray-800 dark:text-gray-100">{c.name}
                       <span className={`ml-2 px-2 py-0.5 text-xs font-medium ${c.status === 'public' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'}`}>
                         {c.status === 'public' ? '已公开' : '未公开'}
@@ -511,12 +512,12 @@ rows={10}
                       </div>
                     )}
                     {c.description && (
-                      <div className="text-sm text-gray-600 mt-1 dark:text-gray-300">{c.description}</div>
+                      <div className="text-sm text-gray-600 mt-1 dark:text-gray-300 line-clamp-2">{c.description}</div>
                     )}
                     <div className="text-xs text-gray-400 mt-1 dark:text-gray-500">创建于 {c.created_at}</div>
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    {isAdmin && (<>
+                  <div className="flex gap-2 shrink-0 ml-4">
+                    {isAdmin ? (<>
                     <button
                       onClick={() => handleToggleStatus(c)}
                       className={`px-3 py-1.5 text-xs border ${c.status === 'public' ? 'border-yellow-500 text-yellow-700 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-400 dark:hover:bg-yellow-900/20' : 'border-green-500 text-green-700 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/20'}`}
@@ -535,7 +536,14 @@ rows={10}
                     >
                       删除
                     </button>
-                    </>)}
+                    </>) : (
+                      <Link
+                        to={`/contests/${c.id}`}
+                        className="px-3 py-1.5 text-xs border border-blue-500 text-blue-600 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/20"
+                      >
+                        查看详情
+                      </Link>
+                    )}
                   </div>
                 </div>
               )}
