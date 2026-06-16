@@ -106,7 +106,7 @@ export default function ProfilePage() {
     return (
       <div className="p-6 max-w-2xl mx-auto">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">个人主页</h1>
-        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
+        <div className="mg-box-shadow p-6">
           <div className="flex items-start gap-6 mb-6">
             <div className="shrink-0">
               {publicProfile.avatar_url ? (
@@ -257,7 +257,7 @@ export default function ProfilePage() {
         </div>
       )}
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
+      <div className="mg-box-shadow p-6">
         {/* Avatar & Basic Info */}
         <div className="flex items-start gap-6 mb-6">
           <div className="shrink-0">
@@ -402,13 +402,13 @@ export default function ProfilePage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-6 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
+                className="mg-btn mg-btn-primary mg-btn-lg"
               >
                 {saving ? '保存中...' : '保存'}
               </button>
               <button
                 onClick={cancelEdit}
-                className="px-6 py-2 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="mg-btn mg-btn-ghost mg-btn-lg"
               >
                 取消
               </button>

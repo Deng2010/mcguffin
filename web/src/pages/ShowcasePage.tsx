@@ -75,7 +75,7 @@ function ProblemCard({
         href={p.link}
         target="_blank"
         rel="noopener noreferrer"
-        className="block bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+        className="block mg-box-shadow p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
       >
         <div className="flex items-center justify-between">
           <div>
@@ -400,13 +400,13 @@ export default function ShowcasePage() {
             <div className="flex gap-2">
               <button
                 onClick={handleSaveDescription}
-                className="px-4 py-2 text-sm bg-gray-800 dark:bg-gray-700 text-white hover:bg-gray-700 dark:hover:bg-gray-600"
+                className="mg-btn mg-btn-primary mg-btn-sm"
               >
                 保存
               </button>
               <button
                 onClick={() => setEditing(false)}
-                className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="mg-btn mg-btn-ghost mg-btn-sm"
               >
                 取消
               </button>
@@ -549,7 +549,7 @@ export default function ShowcasePage() {
             <button
               onClick={handleSaveShowcase}
               disabled={showcaseSaving}
-              className="px-5 py-2 bg-gray-800 text-white text-sm hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600"
+              className="mg-btn mg-btn-primary mg-btn-md"
             >
               {showcaseSaving ? "保存中..." : "保存展板"}
             </button>

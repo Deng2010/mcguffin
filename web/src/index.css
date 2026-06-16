@@ -69,3 +69,50 @@ body.dark {
 .dark .mention {
   color: #60a5fa;
 }
+
+/* ============== McGuffin Component Classes ============== */
+
+@layer components {
+  .mg-box {
+    @apply bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700;
+  }
+  .mg-box-shadow {
+    @apply mg-box shadow;
+  }
+
+  .mg-btn {
+    @apply inline-flex items-center justify-center font-medium
+           transition-colors cursor-pointer select-none
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Sizes */
+  .mg-btn-xs { @apply px-2 py-1 text-xs; }
+  .mg-btn-sm { @apply px-3 py-1.5 text-sm; }
+  .mg-btn-md { @apply px-5 py-2 text-sm; }
+  .mg-btn-lg { @apply px-6 py-2.5 text-base; }
+
+  /* Colors */
+  .mg-btn-primary {
+    @apply bg-gray-800 text-white hover:bg-gray-700
+           dark:bg-gray-700 dark:hover:bg-gray-600;
+  }
+  .mg-btn-ghost {
+    @apply border border-gray-300 dark:border-gray-700
+           text-gray-700 dark:text-gray-200
+           hover:bg-gray-100 dark:hover:bg-gray-800;
+  }
+  .mg-btn-danger {
+    @apply border border-red-300 dark:border-red-800
+           text-red-600 dark:text-red-400
+           hover:bg-red-50 dark:hover:bg-red-900/20;
+  }
+  .mg-btn-warning {
+    @apply border border-yellow-500 dark:border-yellow-800
+           text-yellow-700 dark:text-yellow-400
+           hover:bg-yellow-50 dark:hover:bg-yellow-900/20;
+  }
+  .mg-btn-success {
+    @apply bg-green-600 text-white hover:bg-green-700;
+  }
+}
