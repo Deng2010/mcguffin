@@ -77,7 +77,7 @@ body.dark {
     @apply bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700;
   }
   .mg-box-shadow {
-    @apply mg-box shadow dark:shadow-lg dark:shadow-black/30 dark:ring-1 dark:ring-white/[0.06];
+    @apply mg-box shadow-md dark:shadow-xl dark:shadow-black/50 dark:ring-1 dark:ring-white/[0.08];
   }
 
   .mg-btn {

@@ -8,5 +8,11 @@ export default {
   theme: {
     extend: {},
   },
+  safelist: [
+    'dark:shadow-xl',
+    'dark:shadow-black/50',
+    'dark:ring-1',
+    'dark:ring-white/[0.08]',
+  ],
   plugins: [],
 }
