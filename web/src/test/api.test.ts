@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { getToken, setToken, clearToken } from '../api'
+import { getToken, setToken, clearToken } from '../services/api'
 
 describe('Token Management', () => {
   beforeEach(() => {

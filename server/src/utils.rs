@@ -219,15 +219,7 @@ pub async fn require_permission_json(
             })))
         }
     };
-    let perms = state.role_permissions.read().await;
-    let has_perm = perms
-        .get(&user.role)
-        .map(|p| {
-            p.iter()
-                .any(|p| p == types::PERM_WILDCARD || p == permission)
-        })
-        .unwrap_or(false);
-    if has_perm {
+    if check_permission(state, &user, permission).await {
         Ok((uid, user))
     } else {
         state

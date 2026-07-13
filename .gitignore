@@ -29,6 +29,7 @@ web/package-lock.json
 .env
 restart.sh
 server/mcguffin_data*
+.omo
 
 # ========== AI-Generated Python Script ==========
 server/*.py
@@ -36,3 +37,5 @@ web/*.py
 backups/
 mcguffin_data.db*
 nohup.out
+
+REFACTOR.md

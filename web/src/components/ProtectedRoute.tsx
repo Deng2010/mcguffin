@@ -1,5 +1,5 @@
 import { Navigate, useLocation } from 'react-router-dom'
-import { useAuth } from '../AuthContext'
+import { useAuthStore } from '../stores/authStore'
 import type { Permission } from '../types'
 import type { ReactNode } from 'react'
 
@@ -10,7 +10,7 @@ export default function ProtectedRoute({
   children: ReactNode
   requiredPermission?: Permission
 }) {
-  const { hasPermission, isAuthenticated, loading } = useAuth()
+  const { hasPermission, isAuthenticated, loading } = useAuthStore()
   const location = useLocation()
 
   if (loading) {

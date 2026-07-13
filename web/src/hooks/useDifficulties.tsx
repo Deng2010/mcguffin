@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useDarkMode } from '../DarkModeContext'
+import { useThemeStore } from '../stores/themeStore'
 
 export interface DifficultyInfo {
   name: string
@@ -82,7 +82,7 @@ export function DiffBadge({ difficulty, map, className = '' }: {
   map: Map<string, DifficultyInfo>
   className?: string
 }) {
-  const { isDark } = useDarkMode()
+  const { isDark } = useThemeStore()
   const info = map.get(difficulty)
   const rawColor = info?.color || '#888888'
   const label = info?.label || difficulty

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
-import { useAuth } from './AuthContext'
-import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from './api'
+import { useAuthStore } from './stores/authStore'
+import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from './services/notification.service'
 import type { Notification } from './types'
 
 interface NotificationContextType {
@@ -14,7 +14,7 @@ interface NotificationContextType {
 const NotificationContext = createContext<NotificationContextType | null>(null)
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)

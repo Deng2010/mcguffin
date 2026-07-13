@@ -1,15 +1,15 @@
 import { Link, useLocation } from 'react-router-dom'
-import { useAuth } from '../AuthContext'
-import { useSite } from '../SiteContext'
-import { useDarkMode } from '../DarkModeContext'
+import { useAuthStore } from '../stores/authStore'
+import { useSiteStore } from '../stores/siteStore'
+import { useThemeStore } from '../stores/themeStore'
 import { useState, useRef, useEffect } from 'react'
 import { useNotifications } from '../NotificationContext'
 import NotificationDropdown from './NotificationDropdown'
 
 export default function Navbar() {
-  const { user, isAuthenticated, logout, hasPermission } = useAuth()
-  const { siteInfo } = useSite()
-  const { isDark, toggle } = useDarkMode()
+  const { user, isAuthenticated, logout, hasPermission } = useAuthStore()
+  const { siteInfo } = useSiteStore()
+  const { isDark, toggle } = useThemeStore()
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
   const location = useLocation()
   const [showNotifications, setShowNotifications] = useState(false)

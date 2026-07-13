@@ -18,7 +18,7 @@ use tracing;
 
 use chrono::Utc;
 
-use crate::state::SavedData;
+use crate::infra::persistence::SavedData;
 use crate::types::*;
 
 // ============== 初始化 ==============
@@ -422,7 +422,7 @@ pub(crate) async fn export_db_to_json_string(pool: &SqlitePool) -> Result<String
 pub async fn import_json_to_db(json_path: &str, db_path: &str) -> Result<u32, String> {
     let json =
         std::fs::read_to_string(json_path).map_err(|e| format!("无法读取 JSON 文件: {}", e))?;
-    let data: crate::state::SavedData =
+    let data: crate::infra::persistence::SavedData =
         serde_json::from_str(&json).map_err(|e| format!("JSON 解析失败: {}", e))?;
 
     let pool = init_db(db_path)
@@ -683,9 +683,6 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
         showcase_problem_ids: Vec::new(),
         showcase_contest_ids: Vec::new(),
         posts: HashMap::new(),
-        suggestions: HashMap::new(),
-        announcements: HashMap::new(),
-        discussions: HashMap::new(),
         member_groups: HashMap::new(),
     };
 
@@ -1198,9 +1195,7 @@ mod tests {
             showcase_problem_ids: vec!["prob-001".to_string()],
             showcase_contest_ids: vec!["contest-001".to_string()],
             posts,
-            suggestions: HashMap::new(),
-            announcements: HashMap::new(),
-            discussions: HashMap::new(),
+
             member_groups: HashMap::new(),
         }
     }
@@ -1479,9 +1474,7 @@ mod tests {
             showcase_problem_ids: vec![],
             showcase_contest_ids: vec![],
             posts: HashMap::new(),
-            suggestions: HashMap::new(),
-            announcements: HashMap::new(),
-            discussions: HashMap::new(),
+
             member_groups: HashMap::new(),
         };
 
@@ -1513,9 +1506,7 @@ mod tests {
             showcase_problem_ids: vec![],
             showcase_contest_ids: vec![],
             posts: HashMap::new(),
-            suggestions: HashMap::new(),
-            announcements: HashMap::new(),
-            discussions: HashMap::new(),
+
             member_groups: HashMap::new(),
         };
 
