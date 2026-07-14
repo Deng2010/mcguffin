@@ -29,7 +29,7 @@ export default function AdminPluginsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<PluginsListResponse>("/api/plugins");
+      const res = await apiFetch<PluginsListResponse>("/plugins");
       setPlugins(res.plugins);
     } catch (err) {
       setMsg(`加载插件列表失败: ${err}`);
@@ -50,7 +50,7 @@ export default function AdminPluginsPage() {
         reloaded: boolean;
         plugins_loaded: number;
         plugins_removed: number;
-      }>("/api/plugins/reload", { method: "POST" });
+      }>("/plugins/reload", { method: "POST" });
       if (res.reloaded) {
         setMsg(
           `✅ 已刷新：加载 ${res.plugins_loaded} 个，移除 ${res.plugins_removed} 个`,
@@ -113,7 +113,7 @@ export default function AdminPluginsPage() {
         success: boolean;
         message?: string;
         plugin?: PluginManifest;
-      }>(`/api/admin/plugins/install-url?id=${encodeURIComponent(id)}&url=${encodeURIComponent(url)}`, {
+      }>(`/admin/plugins/install-url?id=${encodeURIComponent(id)}&url=${encodeURIComponent(url)}`, {
         method: "POST",
       });
       if (!res.success) {
@@ -137,7 +137,7 @@ export default function AdminPluginsPage() {
     setMsg(`正在卸载 ${pluginName}...`);
     try {
       const res = await apiFetch<{ success: boolean; message?: string }>(
-        `/api/admin/plugins/${encodeURIComponent(pluginId)}`,
+        `/admin/plugins/${encodeURIComponent(pluginId)}`,
         { method: "DELETE" },
       );
       if (!res.success) {
