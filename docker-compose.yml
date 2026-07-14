@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   mcguffin:
-    image: ghcr.io/deng2010/mcguffin:v0.2.3
+    image: ghcr.io/deng2010/mcguffin:v0.3.0
     container_name: mcguffin
     restart: unless-stopped
     ports:

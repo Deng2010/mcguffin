@@ -5,6 +5,9 @@ import { useThemeStore } from '../stores/themeStore'
 import { useState, useRef, useEffect } from 'react'
 import { useNotifications } from '../NotificationContext'
 import NotificationDropdown from './NotificationDropdown'
+import { PluginRegistry } from '../plugins/registry'
+import type { PluginRouteDef } from '../plugins/types'
+import type { Permission } from '../types'
 
 export default function Navbar() {
   const { user, isAuthenticated, logout, hasPermission } = useAuthStore()
@@ -13,7 +16,15 @@ export default function Navbar() {
   const { notifications, unreadCount, markRead, markAllRead } = useNotifications()
   const location = useLocation()
   const [showNotifications, setShowNotifications] = useState(false)
+  const [pluginNavItems, setPluginNavItems] = useState<PluginRouteDef[]>([])
   const notifRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const registry = PluginRegistry.getInstance()
+    const update = () => setPluginNavItems(registry.getMainNavItems())
+    update()
+    return registry.subscribe(update)
+  }, [])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -64,6 +75,14 @@ export default function Navbar() {
             {canUseCommunity && navLink('/community', '社区')}
             {showAdminConfig && navLink('/admin/config', '配置')}
             {showApply && navLink('/apply', '申请加入')}
+            {pluginNavItems.map(item => (
+              item.required_permission && !hasPermission(item.required_permission as Permission) ? null : (
+                <Link key={item.path} to={item.path} className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                  {item.icon && <span className="mr-1">{item.icon}</span>}
+                  {item.label}
+                </Link>
+              )
+            ))}
           </div>
         </div>
         <div className="flex items-center gap-3">

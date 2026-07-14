@@ -14,6 +14,8 @@ use crate::infra::config::{
     load_config, load_difficulty_config, load_discussion_emojis, load_discussion_tags,
     load_member_groups,
 };
+use crate::plugin::builtins::SystemInfoPlugin;
+use crate::plugin::{PluginContext, PluginManager};
 use crate::state::{AppState, ADMIN_USER_ID, resolve_config_path};
 use crate::types::*;
 
@@ -1027,6 +1029,11 @@ impl AppState {
             default_role_permissions()
         };
 
+        let plugins_dir = std::env::var("MCGUFFIN_PLUGINS_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("plugins"));
+        let _ = std::fs::create_dir_all(&plugins_dir);
+
         let app_state = Self {
             users: Arc::new(Mutex::new(users)),
             sessions: Arc::new(RwLock::new(sessions)),
@@ -1075,7 +1082,25 @@ impl AppState {
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("创建 HTTP 客户端失败"),
+            plugins: PluginManager::new(plugins_dir),
         };
+
+        {
+            let plugin_ctx = PluginContext {
+                db: app_state.db.clone(),
+                http_client: app_state.http_client.clone(),
+                plugin_data: app_state.plugins.plugin_data.clone(),
+                base_url: app_state.site_url.clone(),
+            };
+            if let Err(e) = app_state
+                .plugins
+                .register_builtin(Box::new(SystemInfoPlugin), plugin_ctx)
+                .await
+            {
+                tracing::warn!("Failed to register SystemInfoPlugin: {}", e);
+            }
+            app_state.plugins.start_hot_reload_task().await;
+        }
 
         // SQLite 是权威数据源，确保 admin 存在于数据库中
         {

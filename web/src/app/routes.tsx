@@ -1,7 +1,11 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useSyncExternalStore } from 'react'
 import ProtectedRoute from '../components/ProtectedRoute'
 import MainLayout from './layouts/MainLayout'
 import AdminLayout from './layouts/AdminLayout'
+import { PluginRegistry } from '../plugins/registry'
+import PluginPage from '../plugins/PluginPage'
+import type { Permission } from '../types'
 import LoginPage from '../features/auth/LoginPage'
 import AuthCallbackPage from '../features/auth/AuthCallbackPage'
 import ShowcasePage from '../features/showcase/ShowcasePage'
@@ -31,6 +35,11 @@ function AdminGuardLayout() {
 }
 
 export default function AppRoutes() {
+  const pluginRoutes = useSyncExternalStore(
+    (cb) => PluginRegistry.getInstance().subscribe(cb),
+    () => PluginRegistry.getInstance().getPluginRoutes(),
+  )
+
   return (
     <HashRouter>
       <Routes>
@@ -80,6 +89,16 @@ export default function AppRoutes() {
             }
           />
           <Route path="/profile/:username" element={<ProfilePage />} />
+          {pluginRoutes.map(({ pluginId, route }) => {
+            const element = route.required_permission ? (
+              <ProtectedRoute requiredPermission={route.required_permission as Permission}>
+                <PluginPage pluginId={pluginId} />
+              </ProtectedRoute>
+            ) : (
+              <PluginPage pluginId={pluginId} />
+            )
+            return <Route key={pluginId} path={route.path.replace(/^\//, '')} element={element} />
+          })}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 

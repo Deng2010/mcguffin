@@ -5,6 +5,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 use tokio::sync::{Mutex, RwLock};
 
+use crate::plugin::PluginManager;
 use crate::types::{
     Contest, DiscussionEmoji, DiscussionTag, JoinRequest, MemberGroup, Notification, Post, Problem,
     SessionEntry, TeamMember, User,
@@ -115,6 +116,7 @@ pub struct AppState {
     pub backup_directory: Arc<RwLock<Option<String>>>,
     /// 复用 HTTP 客户端（带超时，连接池共享）
     pub http_client: reqwest::Client,
+    pub plugins: PluginManager,
 }
 
 
