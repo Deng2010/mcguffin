@@ -41,9 +41,16 @@ EOF
     echo "✓ 配置文件已生成: ${CONFIG_FILE}"
 fi
 
-# 设置 MCGUFFIN_DATA_DIR 环境变量供 mcguffin-server 使用
-export MCGUFFIN_DATA_DIR
+# 设置环境变量供 mcguffin-server 使用（export 必须带上值）
+export MCGUFFIN_DATA_DIR="${DATA_DIR}"
+export MCGUFFIN_PLUGINS_DIR="${DATA_DIR}/plugins"
 export MCGUFFIN_WEB_DIST="${MCGUFFIN_WEB_DIST:-/app/web/dist}"
+
+# 确保插件目录存在且可写
+mkdir -p "${MCGUFFIN_PLUGINS_DIR}"
+if [ "$(id -u)" = "0" ]; then
+    chown -R mcguffin:mcguffin "${MCGUFFIN_PLUGINS_DIR}" 2>/dev/null || true
+fi
 
 echo "→ 启动服务..."
 # 以 mcguffin 用户运行服务（非 root）
