@@ -21,8 +21,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
-  # 必须全小写 — Docker 不允许大写字母的 tag
-  IMAGE_NAME: ${{ lower(github.repository) }}
 
 jobs:
   build:
@@ -56,23 +54,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 确定本平台对应的 tag 后缀
-      - name: 🏷️ Resolve tags
+      # GitHub 仓库名可能含大写字母，Docker tag 必须全小写
+      - name: 🏷️ Resolve lowercased image name and tags
         id: tags
         shell: bash
         run: |
           REGISTRY="${{ env.REGISTRY }}"
-          IMAGE="${{ env.IMAGE_NAME }}"
+          IMAGE="${GITHUB_REPOSITORY,,}"
 
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             VERSION_TAG="${GITHUB_REF_NAME}"
-            MAIN_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}"
-            echo "push-tag=${MAIN_TAG}-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
-            echo "version=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+            echo "push-tag=${REGISTRY}/${IMAGE}:${VERSION_TAG}-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
           else
             # 分支推送（main），推 latest 系列
-            echo "push-tag=$REGISTRY/$IMAGE:latest-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
-            echo "version=latest" >> "$GITHUB_OUTPUT"
+            echo "push-tag=${REGISTRY}/${IMAGE}:latest-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 🔨 Build and push (native ${{ matrix.platform_slug }})
@@ -109,34 +104,34 @@ jobs:
         shell: bash
         run: |
           REGISTRY="${{ env.REGISTRY }}"
-          IMAGE="$REGISTRY/${{ env.IMAGE_NAME }}"
+          IMAGE="${GITHUB_REPOSITORY,,}"
 
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF_NAME}"
-            echo "→ 创建多架构 manifest: $IMAGE:$TAG (amd64 + arm64)"
+            echo "→ 创建多架构 manifest: ${REGISTRY}/${IMAGE}:${TAG} (amd64 + arm64)"
 
             docker buildx imagetools create \
-              -t "$IMAGE:$TAG" \
-              "$IMAGE:$TAG-linux-amd64" \
-              "$IMAGE:$TAG-linux-arm64"
+              -t "${REGISTRY}/${IMAGE}:${TAG}" \
+              "${REGISTRY}/${IMAGE}:${TAG}-linux-amd64" \
+              "${REGISTRY}/${IMAGE}:${TAG}-linux-arm64"
 
-            echo "✓ 多架构 manifest 推送完成: $IMAGE:$TAG"
+            echo "✓ 多架构 manifest 推送完成: ${REGISTRY}/${IMAGE}:${TAG}"
           else
-            echo "→ 创建多架构 manifest: $IMAGE:latest (amd64 + arm64)"
+            echo "→ 创建多架构 manifest: ${REGISTRY}/${IMAGE}:latest (amd64 + arm64)"
 
             docker buildx imagetools create \
-              -t "$IMAGE:latest" \
-              "$IMAGE:latest-linux-amd64" \
-              "$IMAGE:latest-linux-arm64"
+              -t "${REGISTRY}/${IMAGE}:latest" \
+              "${REGISTRY}/${IMAGE}:latest-linux-amd64" \
+              "${REGISTRY}/${IMAGE}:latest-linux-arm64"
 
-            echo "✓ 多架构 manifest 推送完成: $IMAGE:latest"
+            echo "✓ 多架构 manifest 推送完成: ${REGISTRY}/${IMAGE}:latest"
           fi
 
       - name: 🔍 Verify manifest
         shell: bash
         run: |
           REGISTRY="${{ env.REGISTRY }}"
-          IMAGE="$REGISTRY/${{ env.IMAGE_NAME }}"
+          IMAGE="${GITHUB_REPOSITORY,,}"
 
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF_NAME}"
@@ -144,5 +139,5 @@ jobs:
             TAG="latest"
           fi
 
-          echo "→ 验证 manifest: $IMAGE:$TAG"
-          docker buildx imagetools inspect "$IMAGE:$TAG"
+          echo "→ 验证 manifest: ${REGISTRY}/${IMAGE}:${TAG}"
+          docker buildx imagetools inspect "${REGISTRY}/${IMAGE}:${TAG}"
