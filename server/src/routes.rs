@@ -24,7 +24,10 @@ use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
 use crate::handlers::pages::{login_page, portfolio_page};
-use crate::handlers::plugin::{get_plugin_routes, get_plugins, reload_plugins};
+use crate::handlers::plugin::{
+    get_plugin_routes, get_plugins, install_plugin_from_url, install_plugin_upload,
+    reload_plugins, uninstall_plugin,
+};
 use crate::handlers::post::{
     create_announcement, create_post, create_suggestion, delete_announcement, delete_post,
     delete_post_reply, delete_suggestion, delete_suggestion_reply, get_announcement_detail,
@@ -197,7 +200,11 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/plugins", get(get_plugins))
         .route("/plugins/routes", get(get_plugin_routes))
-        .route("/plugins/reload", post(reload_plugins));
+        .route("/plugins/reload", post(reload_plugins))
+        // Plugin install/uninstall (admin only)
+        .route("/admin/plugins/install-url", post(install_plugin_from_url))
+        .route("/admin/plugins/install", post(install_plugin_upload))
+        .route("/admin/plugins/{id}", delete(uninstall_plugin));
 
     let plugin_router = state.plugins.build_plugin_router(state.clone());
     let api_router = api_router.merge(plugin_router);

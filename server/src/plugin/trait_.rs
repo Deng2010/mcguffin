@@ -1,15 +1,8 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use axum::Router;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use tokio::sync::RwLock;
-
-use crate::state::AppState;
 
 /// Metadata describing a plugin.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,75 +43,31 @@ pub struct PluginRouteDef {
     pub nav_placement: NavPlacement,
 }
 
-/// How a plugin is implemented.
+/// How a plugin is loaded.
+#[derive(Clone, Debug)]
 pub enum PluginSource {
-    BuiltIn(Box<dyn Plugin>),
-    Wasm { path: PathBuf },
+    Wasm { path: std::path::PathBuf },
     Sidecar { url: String },
 }
 
-impl Clone for PluginSource {
-    fn clone(&self) -> Self {
-        match self {
-            Self::BuiltIn(plugin) => Self::BuiltIn(plugin.clone_box()),
-            Self::Wasm { path } => Self::Wasm { path: path.clone() },
-            Self::Sidecar { url } => Self::Sidecar { url: url.clone() },
-        }
-    }
-}
-
-/// Runtime context passed to plugins.
+/// Runtime context passed to WASM plugin calls.
+///
+/// Serialized to JSON and passed as a string to the WASM guest's
+/// `_plugin_on_load`, `_plugin_on_unload`, and `_plugin_handle_request` exports.
 #[derive(Clone)]
 pub struct PluginContext {
-    pub db: SqlitePool,
-    pub http_client: Client,
-    pub plugin_data: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     pub base_url: String,
+    pub plugin_data: Arc<RwLock<HashMap<String, serde_json::Value>>>,
 }
 
-/// Response returned by a plugin's generic request handler.
-#[derive(Clone)]
+/// Response returned by a plugin's request handler.
+/// Serialized from the JSON string returned by the WASM guest's
+/// `_plugin_handle_request` export.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginResponse {
     pub status: u16,
+    #[serde(default)]
     pub headers: Vec<(String, String)>,
     pub body: String,
-}
-
-/// Plugin trait.
-///
-/// Note: `register_routes` takes `AppState` so that built-in plugins can
-/// register Axum handlers using `State<AppState>`. The original framework
-/// sketch omitted this parameter, but it is required for type-safe Axum
-/// router construction without a dummy state placeholder.
-#[async_trait]
-pub trait Plugin: Send + Sync + 'static {
-    fn manifest(&self) -> PluginManifest;
-    fn source(&self) -> PluginSource;
-    fn permissions(&self) -> Vec<PermissionDef> {
-        Vec::new()
-    }
-    fn frontend_routes(&self) -> Vec<PluginRouteDef> {
-        Vec::new()
-    }
-    async fn on_load(&self, _ctx: &PluginContext) -> Result<(), String> {
-        Ok(())
-    }
-    async fn on_unload(&self, _ctx: &PluginContext) -> Result<(), String> {
-        Ok(())
-    }
-    async fn handle_request(
-        &self,
-        _ctx: &PluginContext,
-        _method: &str,
-        _path: &str,
-        _query: &str,
-        _body: Option<&str>,
-        _headers: Vec<(String, String)>,
-    ) -> Result<PluginResponse, String> {
-        Err("not implemented".into())
-    }
-    fn register_routes(&self, state: AppState) -> Router<AppState> {
-        Router::new().with_state(state)
-    }
-    fn clone_box(&self) -> Box<dyn Plugin>;
 }
