@@ -21,7 +21,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # 必须全小写 — Docker 不允许大写字母的 tag
+  IMAGE_NAME: ${{ lower(github.repository) }}
 
 jobs:
   build:
