@@ -7,6 +7,7 @@ const navItems = [
   { path: '/admin/config', label: '配置' },
   { path: '/admin/users', label: '用户管理' },
   { path: '/admin/roles', label: '角色权限' },
+  { path: '/admin/plugins', label: '插件管理' },
   { path: '/admin/backups', label: '备份管理' },
 ]
 

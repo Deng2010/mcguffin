@@ -63,8 +63,8 @@ class PluginRegistry {
   async discover(): Promise<void> {
     try {
       const [manifestsRes, routesRes] = await Promise.all([
-        apiFetch<PluginsListResponse>('/v1/plugins'),
-        apiFetch<PluginApiResponse>('/v1/plugins/routes'),
+        apiFetch<PluginsListResponse>('/api/plugins'),
+        apiFetch<PluginApiResponse>('/api/plugins/routes'),
       ])
 
       const manifests = new Map<string, PluginManifest>()
