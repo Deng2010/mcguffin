@@ -157,6 +157,43 @@ init-config:
     cargo run --bin mcguffin -- init
     @echo "提示: 也可在当前目录放 config.toml 供开发使用"
 
+# ---------- Docker ----------
+
+# Docker 镜像仓库
+docker_registry := env("DOCKER_REGISTRY", "ghcr.io/deng2010")
+docker_tag := env("DOCKER_TAG", "mcguffin:latest")
+
+# 构建 Docker 镜像（本地默认架构）
+docker-build:
+    @echo "── 构建 Docker 镜像 ──"
+    docker buildx build \
+      --tag {{ docker_registry }}/{{ docker_tag }} \
+      --load \
+      .
+    @echo "✓ Docker 镜像构建完成: {{ docker_registry }}/{{ docker_tag }}"
+    docker images --filter reference="{{ docker_registry }}/{{ docker_tag }}*"
+
+# 构建多架构 Docker 镜像（amd64 + arm64）
+docker-build-multi:
+    @echo "── 构建多架构 Docker 镜像 (amd64 + arm64) ──"
+    docker buildx build \
+      --tag {{ docker_registry }}/{{ docker_tag }} \
+      --platform linux/amd64,linux/arm64 \
+      --load \
+      .
+    @echo "✓ 多架构镜像构建完成"
+
+# 构建并推送多架构 Docker 镜像
+docker-push:
+    @echo "── 构建并推送多架构 Docker 镜像 ──"
+    docker buildx build \
+      --tag {{ docker_registry }}/{{ docker_tag }} \
+      --platform linux/amd64,linux/arm64 \
+      --push \
+      --provenance=false \
+      .
+    @echo "✓ 镜像已推送: {{ docker_registry }}/{{ docker_tag }}"
+
 # ---------- 清理 ----------
 
 # 清理所有构建产物

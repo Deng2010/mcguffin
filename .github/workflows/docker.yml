@@ -1,7 +1,12 @@
 # ==========================================================
-# McGuffin Docker Image Build & Push
-# Builds and publishes multi-arch Docker images to GitHub
-# Container Registry on version tags and main branch.
+# McGuffin Docker Image Build & Push (多架构原生构建)
+# ==========================================================
+# 工作流说明：
+#   1. build — 在原生 runner 上并行构建各架构，推送到 ghcr
+#   2. merge — 合并各架构为多架构 manifest
+#
+# 优势：使用原生 ARM runner (ubuntu-24.04-arm) 而非 QEMU
+# 模拟，arm64 构建速度提升 2-5 倍（尤其 Rust 编译）。
 # ==========================================================
 
 name: Docker
@@ -19,8 +24,19 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  docker:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            platform_slug: linux-amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            platform_slug: linux-arm64
+    runs-on: ${{ matrix.runner }}
+
     permissions:
       contents: read
       packages: write
@@ -39,22 +55,93 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🏷️ Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable={{is_default_branch}}
+      # 确定本平台对应的 tag 后缀
+      - name: 🏷️ Resolve tags
+        id: tags
+        shell: bash
+        run: |
+          REGISTRY="${{ env.REGISTRY }}"
+          IMAGE="${{ env.IMAGE_NAME }}"
 
-      - name: 🔨 Build and push
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION_TAG="${GITHUB_REF_NAME}"
+            MAIN_TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION_TAG}"
+            echo "push-tag=${MAIN_TAG}-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+          else
+            # 分支推送（main），推 latest 系列
+            echo "push-tag=$REGISTRY/$IMAGE:latest-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
+            echo "version=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 🔨 Build and push (native ${{ matrix.platform_slug }})
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64
+          tags: ${{ steps.tags.outputs.push-tag }}
+          platforms: ${{ matrix.platform }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+
+  #
+  # Job 2: 合并各平台为多架构 manifest
+  #
+  merge:
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: 🔑 Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔗 Create multi-arch manifest
+        shell: bash
+        run: |
+          REGISTRY="${{ env.REGISTRY }}"
+          IMAGE="$REGISTRY/${{ env.IMAGE_NAME }}"
+
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            echo "→ 创建多架构 manifest: $IMAGE:$TAG (amd64 + arm64)"
+
+            docker buildx imagetools create \
+              -t "$IMAGE:$TAG" \
+              "$IMAGE:$TAG-linux-amd64" \
+              "$IMAGE:$TAG-linux-arm64"
+
+            echo "✓ 多架构 manifest 推送完成: $IMAGE:$TAG"
+          else
+            echo "→ 创建多架构 manifest: $IMAGE:latest (amd64 + arm64)"
+
+            docker buildx imagetools create \
+              -t "$IMAGE:latest" \
+              "$IMAGE:latest-linux-amd64" \
+              "$IMAGE:latest-linux-arm64"
+
+            echo "✓ 多架构 manifest 推送完成: $IMAGE:latest"
+          fi
+
+      - name: 🔍 Verify manifest
+        shell: bash
+        run: |
+          REGISTRY="${{ env.REGISTRY }}"
+          IMAGE="$REGISTRY/${{ env.IMAGE_NAME }}"
+
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="latest"
+          fi
+
+          echo "→ 验证 manifest: $IMAGE:$TAG"
+          docker buildx imagetools inspect "$IMAGE:$TAG"

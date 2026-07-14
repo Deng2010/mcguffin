@@ -49,7 +49,8 @@ mcguffin/
 ├── AGENTS.md                 # 本文件
 ├── GUIDE.md                  # 开发者指南（人类）
 ├── README.md                 # 项目主页
-├── Dockerfile                # Docker 构建
+├── Dockerfile                # Docker 构建（多架构: amd64 + arm64）
+├── .dockerignore             # Docker 构建上下文排除
 ├── docker-compose.yml        # Docker Compose
 ├── docker-entrypoint.sh      # 容器入口
 ├── web/                      # 前端 SPA
@@ -94,10 +95,10 @@ mcguffin/
 │   │   ├── utils.rs          # 认证工具函数
 │   │   └── bin/mcguffin.rs   # CLI 工具
 │   └── tests/api.rs          # 集成测试
-└── .github/workflows/
+├── .github/workflows/
     ├── test.yml              # PR/Push 测试
     ├── release.yml           # Tag 触发发布
-    └── docker.yml            # Docker 构建
+    └── docker.yml            # Docker 多架构构建（原生 amd64 + arm64 并行）
 ```
 
 ---
