@@ -16,30 +16,19 @@ body {
 /* ============== Font Size System ============== */
 
 html {
-  /* small / default / large — each adjusts the Tailwind text-size scale */
-  --fs-sm: 0.75rem;     /* 12px */
-  --fs-base: 0.875rem;  /* 14px */
-  --fs-lg: 1rem;        /* 16px */
-  --fs-xl: 1.125rem;    /* 18px */
-  --fs-2xl: 1.25rem;    /* 20px */
+  /* 基准字号：调整此值会等比缩放所有 Tailwind text-* 类 */
+  font-size: 16px;
+  transition: font-size 0.15s ease;
 }
 
-/* Small — one step down */
+/* Small — 缩小 1 级字号 */
 html[data-font-size="small"] {
-  --fs-sm: 0.625rem;    /* 10px */
-  --fs-base: 0.75rem;   /* 12px */
-  --fs-lg: 0.875rem;    /* 14px */
-  --fs-xl: 1rem;        /* 16px */
-  --fs-2xl: 1.125rem;   /* 18px */
+  font-size: 14px;
 }
 
-/* Large — one step up */
+/* Large — 放大 1 级字号 */
 html[data-font-size="large"] {
-  --fs-sm: 0.875rem;    /* 14px */
-  --fs-base: 1rem;      /* 16px */
-  --fs-lg: 1.125rem;    /* 18px */
-  --fs-xl: 1.25rem;     /* 20px */
-  --fs-2xl: 1.375rem;   /* 22px */
+  font-size: 18px;
 }
 
 .dark body,
