@@ -2,6 +2,7 @@ import { Link, Outlet, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../stores/authStore'
 import { useSiteStore } from '../../stores/siteStore'
 import DarkModeToggle from '../../components/ui/DarkModeToggle'
+import FontSizeToggle from '../../components/ui/FontSizeToggle'
 
 const navItems = [
   { path: '/admin/config', label: '配置' },
@@ -77,7 +78,10 @@ export default function AdminLayout() {
             >
               返回主站
             </Link>
-            <DarkModeToggle />
+            <div className="flex items-center gap-1">
+              <FontSizeToggle />
+              <DarkModeToggle />
+            </div>
           </div>
         </div>
       </aside>

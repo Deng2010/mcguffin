@@ -13,6 +13,35 @@ body {
   color: #333;
 }
 
+/* ============== Font Size System ============== */
+
+html {
+  /* small / default / large — each adjusts the Tailwind text-size scale */
+  --fs-sm: 0.75rem;     /* 12px */
+  --fs-base: 0.875rem;  /* 14px */
+  --fs-lg: 1rem;        /* 16px */
+  --fs-xl: 1.125rem;    /* 18px */
+  --fs-2xl: 1.25rem;    /* 20px */
+}
+
+/* Small — one step down */
+html[data-font-size="small"] {
+  --fs-sm: 0.625rem;    /* 10px */
+  --fs-base: 0.75rem;   /* 12px */
+  --fs-lg: 0.875rem;    /* 14px */
+  --fs-xl: 1rem;        /* 16px */
+  --fs-2xl: 1.125rem;   /* 18px */
+}
+
+/* Large — one step up */
+html[data-font-size="large"] {
+  --fs-sm: 0.875rem;    /* 14px */
+  --fs-base: 1rem;      /* 16px */
+  --fs-lg: 1.125rem;    /* 18px */
+  --fs-xl: 1.25rem;     /* 20px */
+  --fs-2xl: 1.375rem;   /* 22px */
+}
+
 .dark body,
 body.dark {
   background-color: #0a0a0a;

@@ -5,6 +5,7 @@ import { useThemeStore } from '../stores/themeStore'
 import { useState, useRef, useEffect } from 'react'
 import { useNotifications } from '../NotificationContext'
 import NotificationDropdown from './NotificationDropdown'
+import FontSizeToggle from './ui/FontSizeToggle'
 import { PluginRegistry } from '../plugins/registry'
 import type { PluginRouteDef } from '../plugins/types'
 import type { Permission } from '../types'
@@ -102,6 +103,9 @@ export default function Navbar() {
               </svg>
             )}
           </button>
+
+          {/* Font size toggle */}
+          <FontSizeToggle />
 
           {/* Notification bell */}
           {isAuthenticated && (
