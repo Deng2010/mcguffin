@@ -62,6 +62,9 @@ jobs:
           REGISTRY="${{ env.REGISTRY }}"
           IMAGE="${GITHUB_REPOSITORY,,}"
 
+          # Cache image tag — per-platform, persistent registry cache
+          echo "cache-image=${REGISTRY}/${IMAGE}:cache-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
+
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             VERSION_TAG="${GITHUB_REF_NAME}"
             echo "push-tag=${REGISTRY}/${IMAGE}:${VERSION_TAG}-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
@@ -77,8 +80,9 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.push-tag }}
           platforms: ${{ matrix.platform }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # 使用 registry 缓存：持久化到 ghcr.io，跨 runner 共享
+          cache-from: type=registry,ref=${{ steps.tags.outputs.cache-image }}
+          cache-to: type=registry,ref=${{ steps.tags.outputs.cache-image }},mode=max
           provenance: false
 
   #

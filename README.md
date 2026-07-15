@@ -328,10 +328,23 @@ mcguffin/
 
 ## 📚 文档索引
 
-| 文档                   | 适用对象    | 说明                           |
-| ---------------------- | ----------- | ------------------------------ |
-| [AGENTS.md](AGENTS.md) | AI 编程助手 | 代码库结构、开发约定与操作指南 |
-| [GUIDE.md](GUIDE.md)   | 人类开发者  | 技术架构、API 文档、最佳实践   |
+| 文档                                                | 适用对象     | 说明                             |
+| --------------------------------------------------- | ------------ | -------------------------------- |
+| [📖 文档首页](docs/README.md)                       | 所有人       | 完整文档索引，含部署/管理/使用   |
+| [📦 快速部署](docs/guide/quick-start.md)            | 运维 / 站长  | Docker 一键启动、源码编译安装    |
+| [⚙️ 配置详解](docs/guide/configuration.md)          | 运维 / 站长  | 配置项说明、环境变量、运行时修改 |
+| [🛠️ 开发环境搭建](docs/guide/development.md)        | 开发者       | Rust + Bun 环境、本地开发        |
+| [🚢 生产部署](docs/guide/deployment.md)              | 运维 / 站长  | 反向代理、HTTPS、系统服务        |
+| [👥 管理后台总览](docs/admin/overview.md)           | 管理员       | 后台功能概览、导航说明           |
+| [🔐 用户与权限管理](docs/admin/users.md)            | 管理员       | 角色、权限组、成员管理           |
+| [🏆 赛事管理](docs/admin/contests.md)               | 管理员       | 赛事创建、状态流转、题目编排     |
+| [🧩 插件管理](docs/admin/plugins.md)                | 管理员       | 插件安装/卸载/开发               |
+| [💾 备份与恢复](docs/admin/backups.md)              | 管理员       | 自动备份、手动操作、导入导出     |
+| [🚀 新手上路](docs/user/getting-started.md)         | 普通用户     | 注册登录、团队申请、基本操作     |
+| [📝 题目系统](docs/user/problems.md)                | 出题人       | 投稿、审核流程、题目认领         |
+| [💬 社区讨论](docs/user/community.md)               | 全体用户     | 帖子、标签、社区动态             |
+| [AGENTS.md](AGENTS.md)                              | AI 编程助手  | 代码库结构、开发约定与操作指南   |
+| [GUIDE.md](GUIDE.md)                                | 人类开发者   | 技术架构、API 文档、最佳实践     |
 
 |---
 

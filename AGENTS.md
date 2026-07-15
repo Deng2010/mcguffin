@@ -45,6 +45,11 @@ mcguffin start           # 启动服务
 
 ```
 mcguffin/
+├── docs/                     # 文档（部署/管理/使用）
+│   ├── README.md             # 文档索引
+│   ├── guide/                # 部署与开发指南
+│   ├── admin/                # 管理后台手册
+│   └── user/                 # 用户手册
 ├── justfile                  # 构建命令
 ├── AGENTS.md                 # 本文件
 ├── GUIDE.md                  # 开发者指南（人类）
