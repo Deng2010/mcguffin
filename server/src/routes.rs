@@ -19,15 +19,17 @@ use crate::handlers::contest::{
     create_contest, delete_contest, get_contest_problems, get_contests, set_contest_status,
     set_problem_order, update_contest,
 };
-use crate::handlers::info::{get_difficulties, get_site_info, update_site_description};
+use crate::handlers::info::{
+    get_difficulties, get_site_info, update_site_description,
+};
 use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
-use crate::handlers::pages::{login_page, portfolio_page};
 use crate::handlers::plugin::{
-    get_plugin_routes, get_plugins, install_plugin_from_url, install_plugin_upload,
-    reload_plugins, uninstall_plugin,
+    get_plugin_permissions, get_plugin_routes, get_plugins, install_plugin_from_url,
+    install_plugin_upload, reload_plugins, uninstall_plugin,
 };
+use crate::handlers::plugin_call::call_plugin;
 use crate::handlers::post::{
     create_announcement, create_post, create_suggestion, delete_announcement, delete_post,
     delete_post_reply, delete_suggestion, delete_suggestion_reply, get_announcement_detail,
@@ -199,8 +201,10 @@ pub fn build_router(state: AppState) -> Router {
             put(set_resource_acl),
         )
         .route("/plugins", get(get_plugins))
+        .route("/plugins/permissions", get(get_plugin_permissions))
         .route("/plugins/routes", get(get_plugin_routes))
         .route("/plugins/reload", post(reload_plugins))
+        .route("/plugins/{plugin_id}/call", post(call_plugin))
         // Plugin install/uninstall (admin only)
         .route("/admin/plugins/install-url", post(install_plugin_from_url))
         .route("/admin/plugins/install", post(install_plugin_upload))
@@ -255,11 +259,6 @@ pub fn build_router(state: AppState) -> Router {
         )
         .with_state(state.clone());
 
-    let pages_router = Router::new()
-        .route("/login", get(login_page))
-        .route("/portfolio", get(portfolio_page))
-        .with_state(state.clone());
-
     let api_with_legacy = Router::new()
         .merge(api_router.clone())
         .merge(legacy_router);
@@ -267,5 +266,4 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .nest("/api/v1", api_router)
         .nest("/api", api_with_legacy)
-        .merge(pages_router)
 }

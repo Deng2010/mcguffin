@@ -54,7 +54,9 @@ export type Permission =
   /** View statistics */
   | "view_stats"
   /** Manage community posts */
-  | "manage_posts";
+  | "manage_posts"
+  /** Plugin-declared permissions (arbitrary string) */
+  | (string & {});
 
 /** Default role→permissions mapping (fallback when backend unavailable). */
 export const defaultRolePermissions: Record<string, Permission[]> = {

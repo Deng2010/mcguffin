@@ -112,6 +112,8 @@ pub struct AppState {
     pub member_groups: Arc<RwLock<HashMap<String, MemberGroup>>>,
     /// SQLite 连接池（双写模式：SQLite + HashMap）
     pub db: SqlitePool,
+    /// 插件持久化数据：外层 key 为 "{plugin_id}:{namespace}"，内层为 key→JSON value
+    pub plugin_data: Arc<RwLock<HashMap<String, HashMap<String, String>>>>,
     /// 自定义备份目录（None 时使用默认路径）
     pub backup_directory: Arc<RwLock<Option<String>>>,
     /// 复用 HTTP 客户端（带超时，连接池共享）

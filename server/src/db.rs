@@ -684,6 +684,7 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
         showcase_contest_ids: Vec::new(),
         posts: HashMap::new(),
         member_groups: HashMap::new(),
+        plugin_data: HashMap::new(),
     };
 
     // ── 读取站点描述 ──
@@ -984,6 +985,23 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
         }
     }
 
+    // 读取插件数据
+    if let Ok(rows) = sqlx::query("SELECT plugin_id, namespace, key, value FROM plugin_data")
+        .fetch_all(pool)
+        .await
+    {
+        for row in rows {
+            let pid: String = row.get("plugin_id");
+            let ns: String = row.get("namespace");
+            let key: String = row.get("key");
+            let value: String = row.get("value");
+            data.plugin_data
+                .entry(format!("{}:{}", pid, ns))
+                .or_default()
+                .insert(key, value);
+        }
+    }
+
     Ok(data)
 }
 
@@ -1195,8 +1213,8 @@ mod tests {
             showcase_problem_ids: vec!["prob-001".to_string()],
             showcase_contest_ids: vec!["contest-001".to_string()],
             posts,
-
             member_groups: HashMap::new(),
+            plugin_data: HashMap::new(),
         }
     }
 
@@ -1474,8 +1492,8 @@ mod tests {
             showcase_problem_ids: vec![],
             showcase_contest_ids: vec![],
             posts: HashMap::new(),
-
             member_groups: HashMap::new(),
+            plugin_data: HashMap::new(),
         };
 
         let count = import_saved_data(&pool, &data).await.unwrap();
@@ -1506,8 +1524,8 @@ mod tests {
             showcase_problem_ids: vec![],
             showcase_contest_ids: vec![],
             posts: HashMap::new(),
-
             member_groups: HashMap::new(),
+            plugin_data: HashMap::new(),
         };
 
         data.users.insert(

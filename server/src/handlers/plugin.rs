@@ -17,6 +17,16 @@ pub async fn get_plugins(State(state): State<AppState>) -> Json<Value> {
     Json(serde_json::json!({ "plugins": plugins }))
 }
 
+/// Return all permission keys declared by loaded plugins.
+pub async fn get_plugin_permissions(State(state): State<AppState>) -> Json<Value> {
+    let per_plugin = state.plugins.plugin_permissions();
+    let all_keys = state.plugins.all_plugin_permission_keys();
+    Json(serde_json::json!({
+        "permissions": per_plugin,
+        "all_keys": all_keys,
+    }))
+}
+
 /// List frontend routes contributed by plugins.
 pub async fn get_plugin_routes(State(state): State<AppState>) -> Json<Value> {
     let routes = state.plugins.get_frontend_routes().await;

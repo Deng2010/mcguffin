@@ -137,8 +137,6 @@ async fn main() {
     );
     println!("Available routes:");
     println!("  /              → SPA frontend (React app)");
-    println!("  /login         → Server-rendered login page (legacy)");
-    println!("  /portfolio     → Server-rendered portfolio page (legacy)");
     println!("  /api/v1/*      → Canonical API routes");
     println!("  /api/*         → Backward-compatible API routes");
 

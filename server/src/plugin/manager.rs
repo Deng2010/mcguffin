@@ -5,9 +5,18 @@ use std::sync::Arc;
 use axum::Router;
 use tokio::sync::{mpsc, Mutex as TokioMutex, RwLock as TokioRwLock};
 
+use crate::plugin::host::read_null_terminated_string;
 use crate::plugin::trait_::{
     PermissionDef, PluginManifest, PluginRouteDef, PluginSource,
 };
+
+/// Data extracted from a WASM plugin binary in one pass.
+struct ExtractedPluginData {
+    manifest: PluginManifest,
+    routes: Vec<PluginRouteDef>,
+    permissions: Vec<PermissionDef>,
+}
+
 use crate::state::AppState;
 
 /// Internal storage for a loaded plugin.
@@ -22,7 +31,6 @@ struct PluginSlot {
 #[derive(Clone)]
 pub struct PluginManager {
     loaded_plugins: Arc<TokioRwLock<Vec<PluginSlot>>>,
-    pub plugin_data: Arc<TokioRwLock<HashMap<String, serde_json::Value>>>,
     plugins_dir: PathBuf,
     hot_reload_tx: mpsc::Sender<()>,
     hot_reload_rx: Arc<TokioMutex<Option<mpsc::Receiver<()>>>>,
@@ -31,12 +39,15 @@ pub struct PluginManager {
 impl PluginManager {
     pub fn new(plugins_dir: PathBuf) -> Self {
         if let Err(e) = std::fs::create_dir_all(&plugins_dir) {
-            tracing::warn!("Failed to create plugins directory {}: {}", plugins_dir.display(), e);
+            tracing::warn!(
+                "Failed to create plugins directory {}: {}",
+                plugins_dir.display(),
+                e
+            );
         }
         let (tx, rx) = mpsc::channel(8);
         Self {
             loaded_plugins: Arc::new(TokioRwLock::new(Vec::new())),
-            plugin_data: Arc::new(TokioRwLock::new(HashMap::new())),
             plugins_dir,
             hot_reload_tx: tx,
             hot_reload_rx: Arc::new(TokioMutex::new(Some(rx))),
@@ -64,6 +75,7 @@ impl PluginManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     fn validate_route_path(path: &str) -> Result<(), String> {
         if !path.starts_with("/plugins/") {
             return Err(format!(
@@ -89,8 +101,9 @@ impl PluginManager {
     // ── WASM loading ────────────────────────────────────────
 
     /// Load a single WASM plugin from disk into memory.
-    /// Parses the manifest from the WASM binary (via wasmtime) and registers
-    /// the plugin slot so it appears in listings and hot-reload.
+    /// Parses the manifest, frontend routes, and permissions from the WASM binary
+    /// (via wasmtime) and registers the plugin slot so it appears in listings and
+    /// hot-reload.
     async fn load_wasm_plugin(&self, wasm_path: &Path) -> Result<PluginSlot, String> {
         Self::validate_wasm_file(wasm_path)?;
         let id = wasm_path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_string();
@@ -100,26 +113,21 @@ impl PluginManager {
             .await
             .map_err(|e| format!("Failed to read WASM file '{}': {}", wasm_path.display(), e))?;
 
-        // Attempt to parse the manifest from the WASM binary
-        // The plugin guest exports `_plugin_manifest()` returning a JSON string
-        let manifest = Self::extract_manifest(&wasm_bytes, &id).await?;
-
-        // For now, WASM plugins contribute no frontend routes or Axum routes
-        // (they use handle_request via a generic proxy endpoint)
-        let plugin_routes = Vec::new();
-        let permissions = Vec::new();
+        // Extract manifest, frontend routes, and permissions in one pass
+        let data = Self::extract_plugin_data(&wasm_bytes, &id).await?;
 
         Ok(PluginSlot {
-            manifest,
+            manifest: data.manifest,
             source: PluginSource::Wasm { path: wasm_path.to_path_buf() },
-            routes: plugin_routes,
-            permissions,
+            routes: data.routes,
+            permissions: data.permissions,
         })
     }
 
-    /// Extract the plugin manifest by calling `_plugin_manifest()` in the WASM module.
-    /// If the function is not exported, fall back to a basic manifest using the file stem.
-    async fn extract_manifest(wasm_bytes: &[u8], fallback_id: &str) -> Result<PluginManifest, String> {
+    /// Extract manifest, frontend routes, and permissions from a WASM binary.
+    /// Calls `_plugin_manifest()`, `_plugin_routes()`, and `_plugin_permissions()`
+    /// exports in the WASM module. Each missing export falls back to an empty/default value.
+    async fn extract_plugin_data(wasm_bytes: &[u8], fallback_id: &str) -> Result<ExtractedPluginData, String> {
         let engine = wasmtime::Engine::default();
         let module = wasmtime::Module::new(&engine, wasm_bytes)
             .map_err(|e| format!("Invalid WASM module: {}", e))?;
@@ -128,41 +136,45 @@ impl PluginManager {
         let instance = wasmtime::Instance::new(&mut store, &module, &[])
             .map_err(|e| format!("Failed to instantiate WASM module: {}", e))?;
 
-        // Try to call _plugin_manifest() via the generic Func API
-        if let Some(func) = instance.get_func(&mut store, "_plugin_manifest") {
+        let mut get_string = |func_name: &str| -> Option<String> {
+            let func = instance.get_func(&mut store, func_name)?;
             let mut results = vec![wasmtime::Val::I32(0)];
-            match func.call(&mut store, &[], &mut results) {
-                Ok(()) => {
-                    if let wasmtime::Val::I32(ptr_val) = results[0] {
-                        let memory = instance
-                            .get_memory(&mut store, "memory")
-                            .ok_or("WASM module has no exported memory")?;
-                        let manifest_str = read_null_terminated_string(memory.data_mut(&mut store), ptr_val as usize);
-                        let manifest: PluginManifest = serde_json::from_str(&manifest_str)
-                            .map_err(|e| format!("Invalid plugin manifest JSON: {}", e))?;
-                        return Ok(manifest);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("_plugin_manifest() call failed: {}", e);
-                }
-            }
-        }
+            func.call(&mut store, &[], &mut results).ok()?;
+            let wasmtime::Val::I32(ptr_val) = results[0] else { return None };
+            let memory = instance.get_memory(&mut store, "memory")?;
+            Some(read_null_terminated_string(memory.data_mut(&mut store), ptr_val as usize))
+        };
 
-        // Fallback: use file stem as id
-        tracing::info!(
-            "WASM plugin '{}' has no _plugin_manifest export; using fallback manifest",
-            fallback_id
-        );
-        Ok(PluginManifest {
-            id: fallback_id.to_string(),
-            name: fallback_id.to_string(),
-            version: "0.1.0".to_string(),
-            description: String::new(),
-            author: None,
-            homepage: None,
-            permissions_needed: Vec::new(),
-        })
+        // ── Manifest ──
+        let manifest = get_string("_plugin_manifest").and_then(|s| {
+            serde_json::from_str::<PluginManifest>(&s).ok()
+        }).unwrap_or_else(|| {
+            tracing::info!(
+                "WASM plugin '{}' has no _plugin_manifest export; using fallback manifest",
+                fallback_id
+            );
+            PluginManifest {
+                id: fallback_id.to_string(),
+                name: fallback_id.to_string(),
+                version: "0.1.0".to_string(),
+                description: String::new(),
+                author: None,
+                homepage: None,
+                permissions_needed: Vec::new(),
+            }
+        });
+
+        // ── Frontend routes ──
+        let routes = get_string("_plugin_routes")
+            .and_then(|s| serde_json::from_str::<Vec<PluginRouteDef>>(&s).ok())
+            .unwrap_or_default();
+
+        // ── Permissions ──
+        let permissions = get_string("_plugin_permissions")
+            .and_then(|s| serde_json::from_str::<Vec<PermissionDef>>(&s).ok())
+            .unwrap_or_default();
+
+        Ok(ExtractedPluginData { manifest, routes, permissions })
     }
 
     // ── Install / Uninstall ─────────────────────────────────
@@ -181,8 +193,8 @@ impl PluginManager {
             return Err(format!("Plugin '{}' is already installed", plugin_id));
         }
 
-        // Validate by attempting to extract manifest first
-        let manifest = Self::extract_manifest(wasm_bytes, plugin_id).await?;
+        // Validate by attempting to extract plugin data first
+        let data = Self::extract_plugin_data(wasm_bytes, plugin_id).await?;
 
         // Write the WASM file
         tokio::fs::write(&dest, wasm_bytes)
@@ -193,8 +205,8 @@ impl PluginManager {
         let slot = self.load_wasm_plugin(&dest).await?;
         self.loaded_plugins.write().await.push(slot);
 
-        tracing::info!("Installed WASM plugin: {} ({})", manifest.id, manifest.version);
-        Ok(manifest)
+        tracing::info!("Installed WASM plugin: {} ({})", data.manifest.id, data.manifest.version);
+        Ok(data.manifest)
     }
 
     /// Install a WASM plugin by downloading from a URL.
@@ -375,6 +387,18 @@ impl PluginManager {
             .collect()
     }
 
+    /// Return all unique permission keys declared by all loaded plugins.
+    pub fn all_plugin_permission_keys(&self) -> Vec<String> {
+        let slots = self.loaded_plugins.blocking_read();
+        let mut keys: Vec<String> = slots
+            .iter()
+            .flat_map(|s| s.permissions.iter().map(|p| p.key.clone()))
+            .collect();
+        keys.sort();
+        keys.dedup();
+        keys
+    }
+
     pub fn trigger_hot_reload(&self) -> Result<(), mpsc::error::TrySendError<()>> {
         self.hot_reload_tx.try_send(())
     }
@@ -385,6 +409,19 @@ impl PluginManager {
             .iter()
             .map(|s| (s.manifest.id.clone(), s.routes.clone()))
             .collect()
+    }
+
+    /// Get the WASM binary path and manifest for a loaded plugin by id.
+    pub async fn get_wasm_plugin(&self, plugin_id: &str) -> Option<(PathBuf, PluginManifest)> {
+        let slots = self.loaded_plugins.read().await;
+        for slot in slots.iter() {
+            if slot.manifest.id == plugin_id {
+                if let PluginSource::Wasm { path } = &slot.source {
+                    return Some((path.clone(), slot.manifest.clone()));
+                }
+            }
+        }
+        None
     }
 
     /// Build an Axum router containing all built-in plugin routes
@@ -411,13 +448,3 @@ impl PluginManager {
     }
 }
 
-/// Read a null-terminated UTF-8 string from WASM linear memory at the given offset.
-fn read_null_terminated_string(memory: &[u8], offset: usize) -> String {
-    let mut end = offset;
-    while end < memory.len() && memory[end] != 0 {
-        end += 1;
-    }
-    std::str::from_utf8(&memory[offset..end])
-        .unwrap_or("")
-        .to_string()
-}

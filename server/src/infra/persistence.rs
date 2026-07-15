@@ -48,6 +48,9 @@ pub(crate) struct SavedData {
     // ── Permission Groups ──
     #[serde(default)]
     pub(crate) member_groups: HashMap<String, MemberGroup>,
+
+    #[serde(default)]
+    pub(crate) plugin_data: HashMap<String, HashMap<String, String>>,
 }
 
 /// Custom deserializer for sessions that handles both old format
@@ -112,6 +115,61 @@ impl AppState {
         let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
             .execute(&self.db)
             .await;
+    }
+
+    /// 读取插件数据（内存缓存，无缓存时返回空字符串）。
+    pub async fn get_plugin_data(&self, plugin_id: &str, namespace: &str, key: &str) -> String {
+        let map = self.plugin_data.read().await;
+        let ns_key = format!("{}:{}", plugin_id, namespace);
+        map.get(&ns_key)
+            .and_then(|inner| inner.get(key))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// 写入插件数据（HashMap + SQLite 双写）。
+    pub async fn set_plugin_data(
+        &self,
+        plugin_id: &str,
+        namespace: &str,
+        key: &str,
+        value: String,
+    ) {
+        let ns_key = format!("{}:{}", plugin_id, namespace);
+        {
+            let mut map = self.plugin_data.write().await;
+            map.entry(ns_key).or_default().insert(key.to_string(), value.clone());
+        }
+        let _ = sqlx::query(
+            "INSERT OR REPLACE INTO plugin_data \
+             (plugin_id, namespace, key, value, updated_at) \
+             VALUES (?, ?, ?, ?, datetime('now'))",
+        )
+        .bind(plugin_id)
+        .bind(namespace)
+        .bind(key)
+        .bind(&value)
+        .execute(&self.db)
+        .await;
+    }
+
+    /// 启动时从 SQLite 加载 plugin_data 到内存。
+    pub async fn load_plugin_data_from_db(&self) {
+        if let Ok(rows) = sqlx::query("SELECT plugin_id, namespace, key, value FROM plugin_data")
+            .fetch_all(&self.db)
+            .await
+        {
+            let mut map: HashMap<String, HashMap<String, String>> = HashMap::new();
+            for row in rows {
+                let pid: String = row.get("plugin_id");
+                let ns: String = row.get("namespace");
+                let key: String = row.get("key");
+                let value: String = row.get("value");
+                let ns_key = format!("{}:{}", pid, ns);
+                map.entry(ns_key).or_default().insert(key, value);
+            }
+            *self.plugin_data.write().await = map;
+        }
     }
 
     const MAX_SESSIONS_PER_USER: usize = 3;
@@ -847,6 +905,7 @@ impl AppState {
             showcase_problem_ids,
             showcase_contest_ids,
             posts,
+            plugin_data,
         ) = if let Some(data) = saved {
             tracing::info!("Loaded state from JSON: {}", json_path_str);
 
@@ -932,6 +991,7 @@ impl AppState {
                 data.showcase_problem_ids,
                 data.showcase_contest_ids,
                 p,
+                data.plugin_data,
             )
         } else {
             tracing::info!("No saved state, using default seed data");
@@ -947,6 +1007,7 @@ impl AppState {
                 HashMap::new(),
                 Vec::new(),
                 Vec::new(),
+                HashMap::new(),
                 HashMap::new(),
             )
         };
@@ -1075,6 +1136,7 @@ impl AppState {
             role_permissions: Arc::new(RwLock::new(role_permissions)),
             member_groups: Arc::new(RwLock::new(member_groups)),
             db,
+            plugin_data: Arc::new(RwLock::new(plugin_data)),
             backup_directory: Arc::new(RwLock::new(None)),
             http_client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
@@ -1085,6 +1147,9 @@ impl AppState {
         };
 
         app_state.plugins.start_hot_reload_task().await;
+
+        // 从 SQLite 加载插件持久化数据到内存
+        app_state.load_plugin_data_from_db().await;
 
         // SQLite 是权威数据源，确保 admin 存在于数据库中
         {

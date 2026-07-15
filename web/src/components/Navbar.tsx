@@ -8,7 +8,6 @@ import NotificationDropdown from './NotificationDropdown'
 import FontSizeToggle from './ui/FontSizeToggle'
 import { PluginRegistry } from '../plugins/registry'
 import type { PluginRouteDef } from '../plugins/types'
-import type { Permission } from '../types'
 
 export default function Navbar() {
   const { user, isAuthenticated, logout, hasPermission } = useAuthStore()
@@ -77,7 +76,7 @@ export default function Navbar() {
             {showAdminConfig && navLink('/admin/config', '配置')}
             {showApply && navLink('/apply', '申请加入')}
             {pluginNavItems.map(item => (
-              item.required_permission && !hasPermission(item.required_permission as Permission) ? null : (
+              item.required_permission && !hasPermission(item.required_permission) ? null : (
                 <Link key={item.path} to={item.path} className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
                   {item.icon && <span className="mr-1">{item.icon}</span>}
                   {item.label}

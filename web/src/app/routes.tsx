@@ -5,7 +5,6 @@ import MainLayout from './layouts/MainLayout'
 import AdminLayout from './layouts/AdminLayout'
 import { PluginRegistry } from '../plugins/registry'
 import PluginPage from '../plugins/PluginPage'
-import type { Permission } from '../types'
 import LoginPage from '../features/auth/LoginPage'
 import AuthCallbackPage from '../features/auth/AuthCallbackPage'
 import ShowcasePage from '../features/showcase/ShowcasePage'
@@ -92,7 +91,7 @@ export default function AppRoutes() {
           <Route path="/profile/:username" element={<ProfilePage />} />
           {pluginRoutes.map(({ pluginId, route }) => {
             const element = route.required_permission ? (
-              <ProtectedRoute requiredPermission={route.required_permission as Permission}>
+              <ProtectedRoute requiredPermission={route.required_permission}>
                 <PluginPage pluginId={pluginId} />
               </ProtectedRoute>
             ) : (

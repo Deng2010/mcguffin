@@ -1,8 +1,4 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
 
 /// Metadata describing a plugin.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -54,10 +50,14 @@ pub enum PluginSource {
 ///
 /// Serialized to JSON and passed as a string to the WASM guest's
 /// `_plugin_on_load`, `_plugin_on_unload`, and `_plugin_handle_request` exports.
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct PluginContext {
     pub base_url: String,
-    pub plugin_data: Arc<RwLock<HashMap<String, serde_json::Value>>>,
+    pub user_id: String,
+    pub user_role: String,
+    pub request_method: String,
+    pub request_path: String,
+    pub request_body: serde_json::Value,
 }
 
 /// Response returned by a plugin's request handler.
