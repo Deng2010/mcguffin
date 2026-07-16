@@ -38,36 +38,3 @@ pub struct PluginRouteDef {
     pub required_permission: Option<String>,
     pub nav_placement: NavPlacement,
 }
-
-/// How a plugin is loaded.
-#[derive(Clone, Debug)]
-pub enum PluginSource {
-    Wasm { path: std::path::PathBuf },
-    Sidecar { url: String },
-}
-
-/// Runtime context passed to WASM plugin calls.
-///
-/// Serialized to JSON and passed as a string to the WASM guest's
-/// `_plugin_on_load`, `_plugin_on_unload`, and `_plugin_handle_request` exports.
-#[derive(Clone, Serialize)]
-pub struct PluginContext {
-    pub base_url: String,
-    pub user_id: String,
-    pub user_role: String,
-    pub request_method: String,
-    pub request_path: String,
-    pub request_body: serde_json::Value,
-}
-
-/// Response returned by a plugin's request handler.
-/// Serialized from the JSON string returned by the WASM guest's
-/// `_plugin_handle_request` export.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PluginResponse {
-    pub status: u16,
-    #[serde(default)]
-    pub headers: Vec<(String, String)>,
-    pub body: String,
-}

@@ -1,7 +1,6 @@
 import { Suspense } from 'react'
 import { useParams } from 'react-router-dom'
 import { PluginRegistry } from './registry'
-import LoadingSpinner from '../components/ui/LoadingSpinner'
 
 interface PluginPageProps {
   pluginId?: string
@@ -22,7 +21,7 @@ export default function PluginPage({ pluginId: pluginIdProp }: PluginPageProps) 
 
   const Component = component
   return (
-    <Suspense fallback={<LoadingSpinner />}>
+    <Suspense fallback={<div className="text-center py-12 text-gray-400">加载中...</div>}>
       <Component />
     </Suspense>
   )

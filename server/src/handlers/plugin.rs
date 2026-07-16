@@ -1,9 +1,8 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
     Json,
 };
-use serde::Deserialize;
 use serde_json::Value;
 
 use crate::plugin::trait_::PluginManifest;
@@ -48,78 +47,50 @@ pub async fn get_plugin_routes(State(state): State<AppState>) -> Json<Value> {
     Json(serde_json::json!({ "plugins": plugins }))
 }
 
-/// Hot-reload plugins from the plugins directory (rescan for new/removed WASM files).
-pub async fn reload_plugins(
+/// Register or update a plugin's metadata from the frontend.
+pub async fn register_plugin(
     State(state): State<AppState>,
-    auth: AuthUser,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    auth.require_perm(&state, perms::MANAGE_SITE).await?;
-    let (loaded, removed) = state.plugins.hot_reload().await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": e,
-            })),
-        )
-    })?;
-    Ok(Json(serde_json::json!({
-        "reloaded": true,
-        "plugins_loaded": loaded,
-        "plugins_removed": removed,
-    })))
+    Json(body): Json<Value>,
+) -> Json<Value> {
+    let plugin_id = body.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    if let Err(e) = crate::plugin::PluginManager::validate_plugin_id(plugin_id) {
+        return Json(serde_json::json!({ "success": false, "message": e }));
+    }
+
+    let manifest = serde_json::from_value(body.get("manifest").cloned().unwrap_or_default())
+        .unwrap_or_else(|_| PluginManifest {
+            id: plugin_id.to_string(),
+            name: plugin_id.to_string(),
+            version: "0.1.0".to_string(),
+            description: String::new(),
+            author: None,
+            homepage: None,
+            permissions_needed: Vec::new(),
+        });
+
+    let routes = serde_json::from_value(body.get("routes").cloned().unwrap_or_default())
+        .unwrap_or_default();
+
+    let permissions = serde_json::from_value(body.get("permissions").cloned().unwrap_or_default())
+        .unwrap_or_default();
+
+    state.plugins.register(manifest, routes, permissions).await;
+
+    Json(serde_json::json!({ "success": true }))
 }
 
-// ── Install / Uninstall ───────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct InstallUrlQuery {
-    pub id: String,
-    pub url: String,
-}
-
-/// Install a plugin by downloading from a URL.
-pub async fn install_plugin_from_url(
+/// Install a plugin from a .zip archive.
+/// The zip is extracted and plugin.json is read for metadata.
+pub async fn install_plugin_zip(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(query): Query<InstallUrlQuery>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    auth.require_perm(&state, perms::MANAGE_SITE).await?;
-
-    let manifest = state
-        .plugins
-        .install_plugin_from_url(&query.id, &query.url)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "success": false,
-                    "message": e,
-                })),
-            )
-        })?;
-
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "plugin": manifest,
-    })))
-}
-
-/// Upload and install a WASM plugin.
-/// The request body should be the raw WASM bytes; the plugin id is derived
-/// from the Content-Disposition filename or passed as a query param.
-pub async fn install_plugin_upload(
-    State(state): State<AppState>,
-    auth: AuthUser,
-    Query(query): Query<InstallUrlQuery>,
     body: axum::body::Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     auth.require_perm(&state, perms::MANAGE_SITE).await?;
 
     let manifest = state
         .plugins
-        .install_plugin_from_bytes(&query.id, &body)
+        .install_from_zip(&body)
         .await
         .map_err(|e| {
             (
@@ -137,7 +108,7 @@ pub async fn install_plugin_upload(
     })))
 }
 
-/// Uninstall (delete) a plugin by id.
+/// Uninstall a plugin by id.
 pub async fn uninstall_plugin(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -145,15 +116,13 @@ pub async fn uninstall_plugin(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     auth.require_perm(&state, perms::MANAGE_SITE).await?;
 
-    state.plugins.uninstall_plugin(&plugin_id).await.map_err(|e| {
-        (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "success": false,
-                "message": e,
-            })),
-        )
-    })?;
+    state.plugins.unregister(&plugin_id).await;
+
+    // Also remove plugin data from SQLite
+    let _ = sqlx::query("DELETE FROM plugin_data WHERE plugin_id = ?")
+        .bind(&plugin_id)
+        .execute(&state.db)
+        .await;
 
     Ok(Json(serde_json::json!({
         "success": true,

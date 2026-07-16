@@ -16,10 +16,18 @@ export interface PluginRouteDef {
   nav_placement: 'main' | 'admin' | 'hidden'
 }
 
-export interface PluginApiResponse {
-  plugins: Array<{
-    id: string
-    manifest: PluginManifest
-    routes: PluginRouteDef[]
-  }>
+export interface PluginDefinition {
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  routes?: PluginRouteDef[]
+  slots?: PluginSlotDef[]
+  permissions_needed?: string[]
+}
+
+export interface PluginSlotDef {
+  slot: string
+  component: React.ComponentType<any>
 }

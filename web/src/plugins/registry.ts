@@ -1,16 +1,13 @@
-import React, { lazy } from 'react'
+import { lazy } from 'react'
 import type { ComponentType, LazyExoticComponent } from 'react'
 import { apiFetch } from '../services/api'
-import type { PluginManifest, PluginRouteDef, PluginApiResponse } from './types'
+import type { PluginManifest, PluginRouteDef, PluginDefinition, PluginSlotDef } from './types'
 
 export interface PluginRegistration {
   manifest: PluginManifest
   routes: PluginRouteDef[]
   component: LazyExoticComponent<ComponentType<unknown>>
-}
-
-interface PluginsListResponse {
-  plugins: PluginManifest[]
+  slots: PluginSlotDef[]
 }
 
 type RegistryListener = () => void
@@ -22,6 +19,8 @@ class PluginRegistry {
   private mainNavItems: PluginRouteDef[] = []
   private adminNavItems: PluginRouteDef[] = []
   private pluginRoutes: Array<{ pluginId: string; route: PluginRouteDef }> = []
+  /** slot name → components */
+  private slotComponents = new Map<string, Array<{ pluginId: string; component: ComponentType<any> }>>()
 
   static getInstance(): PluginRegistry {
     if (!PluginRegistry.instance) {
@@ -60,44 +59,71 @@ class PluginRegistry {
     }
   }
 
-  async discover(): Promise<void> {
-    try {
-      const [manifestsRes, routesRes] = await Promise.all([
-        apiFetch<PluginsListResponse>('/plugins'),
-        apiFetch<PluginApiResponse>('/plugins/routes'),
-      ])
-
-      const manifests = new Map<string, PluginManifest>()
-      for (const manifest of manifestsRes.plugins) {
-        manifests.set(manifest.id, manifest)
-      }
-
-      for (const plugin of routesRes.plugins) {
-        const manifest = manifests.get(plugin.id) ?? plugin.manifest
-        const routes = plugin.routes
-
-        const PlaceholderComponent = lazy<ComponentType<unknown>>(() =>
-          import('./placeholder').catch(() => ({
-            default: (() =>
-              React.createElement(
-                'div',
-                { className: 'p-6 text-center text-gray-500 dark:text-gray-400' },
-                `插件 "${manifest?.name ?? plugin.id}" 加载中...`,
-              )
-            ) as ComponentType<unknown>,
-          })),
-        )
-
-        this.plugins.set(plugin.id, {
-          manifest,
-          routes,
-          component: PlaceholderComponent,
-        })
-      }
-      this.notify()
-    } catch (err) {
-      console.warn('[PluginRegistry] Failed to discover plugins:', err)
+  /** Register a plugin definition from a `definePlugin()` call. */
+  register(definition: PluginDefinition, component?: LazyExoticComponent<ComponentType<unknown>>): void {
+    const manifest: PluginManifest = {
+      id: definition.id,
+      name: definition.name,
+      version: definition.version,
+      description: definition.description ?? '',
+      author: definition.author,
+      permissions_needed: definition.permissions_needed ?? [],
     }
+
+    const routes = definition.routes ?? []
+    const slots = definition.slots ?? []
+
+    // Store slots
+    for (const slot of slots) {
+      if (!this.slotComponents.has(slot.slot)) {
+        this.slotComponents.set(slot.slot, [])
+      }
+      this.slotComponents.get(slot.slot)!.push({ pluginId: definition.id, component: slot.component })
+    }
+
+    const pageComponent = component ?? lazy<ComponentType<unknown>>(() =>
+      import('./PluginPage').then(m => ({ default: m.default as ComponentType<unknown> }))
+    )
+
+    this.plugins.set(definition.id, {
+      manifest,
+      routes,
+      component: pageComponent,
+      slots,
+    })
+
+    this.notify()
+
+    // Tell the backend about this plugin (for data API authorization)
+    this.syncToBackend(definition).catch(() => {})
+  }
+
+  /** Sync plugin metadata to backend so data APIs recognize it. */
+  private async syncToBackend(definition: PluginDefinition): Promise<void> {
+    try {
+      await apiFetch('/plugins/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: definition.id,
+          manifest: {
+            id: definition.id,
+            name: definition.name,
+            version: definition.version,
+            description: definition.description ?? '',
+            permissions_needed: definition.permissions_needed ?? [],
+          },
+          routes: definition.routes ?? [],
+          permissions: [],
+        }),
+      })
+    } catch {
+      // Backend may not be available during dev; ignore
+    }
+  }
+
+  /** Get slot components for a named slot. */
+  getSlotComponents(slot: string): Array<{ pluginId: string; component: ComponentType<any> }> {
+    return this.slotComponents.get(slot) ?? []
   }
 
   getMainNavItems(): PluginRouteDef[] {
@@ -118,16 +144,6 @@ class PluginRegistry {
 
   isLoaded(pluginId: string): boolean {
     return this.plugins.has(pluginId)
-  }
-
-  registerComponent(
-    pluginId: string,
-    component: LazyExoticComponent<ComponentType<unknown>>,
-  ): void {
-    const reg = this.plugins.get(pluginId)
-    if (reg) {
-      reg.component = component
-    }
   }
 }
 

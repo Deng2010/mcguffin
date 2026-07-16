@@ -113,6 +113,8 @@ async fn main() {
         )
         // Static assets
         .nest_service("/assets", ServeDir::new(assets_path))
+        // Plugin static files (uploaded .zips extracted here)
+        .nest_service("/plugins-static", ServeDir::new(state.plugins.plugins_dir.clone()))
         // SPA fallback: 所有非 API 路径返回 index.html（前端路由）
         .fallback(move || {
             let html = spa_index_fallback.clone();
