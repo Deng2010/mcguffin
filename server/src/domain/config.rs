@@ -26,8 +26,6 @@ pub struct AppConfig {
     /// Example: [permissions.groups."uuid"] = { name = "出题组", permissions = ["submit_problem"] }
     #[serde(default, deserialize_with = "deserialize_permission_groups")]
     pub permission_groups: HashMap<String, HashMap<String, serde_json::Value>>,
-    #[serde(default)]
-    pub plugins: PluginsConfig,
 }
 
 /// Custom deserializer for role permissions that gracefully handles nested [permissions.roles] format
@@ -82,13 +80,7 @@ pub struct SiteConfig {
     pub difficulty_order: Option<Vec<String>>,
 }
 
-#[derive(Default, Deserialize)]
-pub struct PluginsConfig {
-    #[serde(default)]
-    pub plugins_dir: Option<String>,
-    #[serde(default)]
-    pub disabled: Option<Vec<String>>,
-}
+
 
 #[derive(Deserialize)]
 pub struct OAuthConfig {

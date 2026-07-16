@@ -5,7 +5,6 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::plugin::PluginManager;
 use crate::types::{
     Contest, DiscussionEmoji, DiscussionTag, JoinRequest, MemberGroup, Notification, Post, Problem,
     SessionEntry, TeamMember, User,
@@ -112,17 +111,10 @@ pub struct AppState {
     pub member_groups: Arc<RwLock<HashMap<String, MemberGroup>>>,
     /// SQLite 连接池（双写模式：SQLite + HashMap）
     pub db: SqlitePool,
-    /// 插件持久化数据：外层 key 为 "{plugin_id}:{namespace}"，内层为 key→JSON value
-    pub plugin_data: Arc<RwLock<HashMap<String, HashMap<String, String>>>>,
-    /// 插件原子计数器：key 为 "{plugin_id}:{namespace}:{key}"
-    pub plugin_counters: Arc<RwLock<HashMap<String, i64>>>,
-    /// 插件集合：key 为 "{plugin_id}:{namespace}:{key}"，值为成员集合
-    pub plugin_sets: Arc<RwLock<HashMap<String, std::collections::HashSet<String>>>>,
     /// 自定义备份目录（None 时使用默认路径）
     pub backup_directory: Arc<RwLock<Option<String>>>,
     /// 复用 HTTP 客户端（带超时，连接池共享）
     pub http_client: reqwest::Client,
-    pub plugins: PluginManager,
 }
 
 

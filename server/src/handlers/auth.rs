@@ -53,15 +53,10 @@ impl UserRow {
 
 /// GET /api/auth/permissions
 /// Returns the current role→permissions mapping (no auth required — public info for frontend rendering).
-/// Also includes plugin-declared permission keys so the frontend knows about them.
 pub async fn get_permissions(
     State(state): State<AppState>,
 ) -> Json<serde_json::Value> {
-    let mut map = state.role_permissions.read().await.clone();
-    let plugin_keys = state.plugins.all_plugin_permission_keys();
-    if !plugin_keys.is_empty() {
-        map.insert("_plugin_permissions".to_string(), plugin_keys);
-    }
+    let map = state.role_permissions.read().await.clone();
     Json(serde_json::json!(map))
 }
 

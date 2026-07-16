@@ -25,18 +25,6 @@ use crate::handlers::info::{
 use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
-use crate::handlers::plugin::{
-    get_plugin_permissions, get_plugin_routes, get_plugins, install_plugin_zip,
-    register_plugin, uninstall_plugin,
-};
-use crate::handlers::plugin_data::{
-    plugin_add, plugin_create_notification, plugin_get_data, plugin_keys,
-    plugin_set_add, plugin_set_data, plugin_set_is_member, plugin_set_members, plugin_set_remove,
-    plugin_user_get, plugin_user_list, plugin_user_me,
-};
-use crate::handlers::plugin_files::{
-    plugin_delete_file, plugin_list_files, plugin_read_file, plugin_write_file,
-};
 use crate::handlers::post::{
     create_announcement, create_post, create_suggestion, delete_announcement, delete_post,
     delete_post_reply, delete_suggestion, delete_suggestion_reply, get_announcement_detail,
@@ -206,30 +194,7 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/admin/acl/{resource_type}/{resource_id}",
             put(set_resource_acl),
-        )
-        .route("/plugins", get(get_plugins))
-        .route("/plugins/permissions", get(get_plugin_permissions))
-        .route("/plugins/routes", get(get_plugin_routes))
-        .route("/plugins/register", post(register_plugin))
-        // Plugin install/uninstall
-        .route("/admin/plugins/install-zip", post(install_plugin_zip))
-        .route("/admin/plugins/{plugin_id}", delete(uninstall_plugin))
-        // Plugin data API
-        .route("/plugins/{plugin_id}/data", get(plugin_get_data).post(plugin_set_data))
-        .route("/plugins/{plugin_id}/data/add", post(plugin_add))
-        .route("/plugins/{plugin_id}/data/set-add", post(plugin_set_add))
-        .route("/plugins/{plugin_id}/data/set-remove", post(plugin_set_remove))
-        .route("/plugins/{plugin_id}/data/set-members", get(plugin_set_members))
-        .route("/plugins/{plugin_id}/data/set-is-member", get(plugin_set_is_member))
-        .route("/plugins/{plugin_id}/data/keys", get(plugin_keys))
-        .route("/plugins/{plugin_id}/notify", post(plugin_create_notification))
-        // Plugin files API
-        .route("/plugins/{plugin_id}/files/list", get(plugin_list_files))
-        .route("/plugins/{plugin_id}/files/{*file_path}", get(plugin_read_file).post(plugin_write_file).delete(plugin_delete_file))
-        // Plugin user info
-        .route("/plugins/{plugin_id}/users/me", get(plugin_user_me))
-        .route("/plugins/{plugin_id}/users/{target_user_id}", get(plugin_user_get))
-        .route("/plugins/{plugin_id}/users", get(plugin_user_list));
+        );
 
     let api_router = api_router.with_state(state.clone());
 

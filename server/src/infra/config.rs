@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fs;
 use tracing;
 
-use crate::domain::config::PluginsConfig;
 use crate::state::resolve_config_path;
 use crate::types::*;
 
@@ -193,7 +192,6 @@ pub(crate) fn load_config() -> AppConfig {
         discussion_emojis: std::collections::HashMap::new(),
         permissions: std::collections::HashMap::new(),
         permission_groups: std::collections::HashMap::new(),
-        plugins: PluginsConfig::default(),
     })
 }
 
@@ -228,7 +226,6 @@ mod tests {
             discussion_emojis: HashMap::new(),
             permissions: HashMap::new(),
             permission_groups: HashMap::new(),
-            plugins: PluginsConfig::default(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 3); // falls back to Default
@@ -266,7 +263,6 @@ mod tests {
             discussion_emojis: HashMap::new(),
             permissions: HashMap::new(),
             permission_groups: HashMap::new(),
-            plugins: PluginsConfig::default(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 1);
@@ -304,7 +300,6 @@ mod tests {
             discussion_emojis: HashMap::new(),
             permissions: HashMap::new(),
             permission_groups: HashMap::new(),
-            plugins: PluginsConfig::default(),
         };
         let dc = load_difficulty_config(&config);
         assert_eq!(dc.levels.len(), 1);

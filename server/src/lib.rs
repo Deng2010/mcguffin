@@ -2,7 +2,6 @@ pub mod db;
 pub mod domain;
 pub mod handlers;
 pub mod infra;
-pub mod plugin;
 pub mod routes;
 pub mod state;
 pub mod types;

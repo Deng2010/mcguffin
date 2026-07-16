@@ -14,7 +14,6 @@ use crate::infra::config::{
     load_config, load_difficulty_config, load_discussion_emojis, load_discussion_tags,
     load_member_groups,
 };
-use crate::plugin::{PluginManager};
 use crate::state::{AppState, ADMIN_USER_ID, resolve_config_path};
 use crate::types::*;
 
@@ -49,8 +48,7 @@ pub(crate) struct SavedData {
     #[serde(default)]
     pub(crate) member_groups: HashMap<String, MemberGroup>,
 
-    #[serde(default)]
-    pub(crate) plugin_data: HashMap<String, HashMap<String, String>>,
+
 }
 
 /// Custom deserializer for sessions that handles both old format
@@ -115,197 +113,6 @@ impl AppState {
         let _ = sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
             .execute(&self.db)
             .await;
-    }
-
-    /// 读取插件数据（内存缓存，无缓存时返回空字符串）。
-    pub async fn get_plugin_data(&self, plugin_id: &str, namespace: &str, key: &str) -> String {
-        let map = self.plugin_data.read().await;
-        let ns_key = format!("{}:{}", plugin_id, namespace);
-        map.get(&ns_key)
-            .and_then(|inner| inner.get(key))
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    /// 写入插件数据（HashMap + SQLite 双写）。
-    pub async fn set_plugin_data(
-        &self,
-        plugin_id: &str,
-        namespace: &str,
-        key: &str,
-        value: String,
-    ) {
-        let ns_key = format!("{}:{}", plugin_id, namespace);
-        {
-            let mut map = self.plugin_data.write().await;
-            map.entry(ns_key).or_default().insert(key.to_string(), value.clone());
-        }
-        let _ = sqlx::query(
-            "INSERT OR REPLACE INTO plugin_data \
-             (plugin_id, namespace, key, value, updated_at) \
-             VALUES (?, ?, ?, ?, datetime('now'))",
-        )
-        .bind(plugin_id)
-        .bind(namespace)
-        .bind(key)
-        .bind(&value)
-        .execute(&self.db)
-        .await;
-    }
-
-    /// 启动时从 SQLite 加载 plugin_data 到内存。
-    pub async fn load_plugin_data_from_db(&self) {
-        if let Ok(rows) = sqlx::query("SELECT plugin_id, namespace, key, value FROM plugin_data")
-            .fetch_all(&self.db)
-            .await
-        {
-            let mut map: HashMap<String, HashMap<String, String>> = HashMap::new();
-            for row in rows {
-                let pid: String = row.get("plugin_id");
-                let ns: String = row.get("namespace");
-                let key: String = row.get("key");
-                let value: String = row.get("value");
-                let ns_key = format!("{}:{}", pid, ns);
-                map.entry(ns_key).or_default().insert(key, value);
-            }
-            *self.plugin_data.write().await = map;
-        }
-    }
-
-    // ── 插件计数器（原子操作） ────────────────────────────────
-
-    /// 原子的增减操作。delta 正数加，负数减。
-    pub async fn plugin_add(&self, plugin_id: &str, namespace: &str, key: &str, delta: i64) -> i64 {
-        let full_key = format!("{}:{}:{}", plugin_id, namespace, key);
-        let val = {
-            let mut counters = self.plugin_counters.write().await;
-            let v = counters.entry(full_key.clone()).or_insert(0i64);
-            *v += delta;
-            *v
-        };
-        // 同步到 plugin_data 表
-        let _ = sqlx::query(
-            "INSERT OR REPLACE INTO plugin_data \
-             (plugin_id, namespace, key, value, updated_at) \
-             VALUES (?, ?, ?, ?, datetime('now'))",
-        )
-        .bind(plugin_id)
-        .bind(namespace)
-        .bind(key)
-        .bind(&val.to_string())
-        .execute(&self.db)
-        .await;
-        val
-    }
-
-    // ── 插件集合操作 ──────────────────────────────────────────
-
-    /// 向集合添加一个成员，返回是否为新添加（false 表示已存在）。
-    pub async fn plugin_set_add(
-        &self, plugin_id: &str, namespace: &str, key: &str, member: &str
-    ) -> bool {
-        let full_key = format!("{}:{}:{}", plugin_id, namespace, key);
-        let mut sets = self.plugin_sets.write().await;
-        let set = sets.entry(full_key).or_default();
-        if set.contains(member) {
-            false
-        } else {
-            set.insert(member.to_string());
-            // 同步集合到 plugin_data 表
-            let members_json = serde_json::to_string(
-                &set.iter().cloned().collect::<Vec<_>>()
-            ).unwrap_or_default();
-            let _ = set;
-            let _ = sqlx::query(
-                "INSERT OR REPLACE INTO plugin_data \
-                 (plugin_id, namespace, key, value, updated_at) \
-                 VALUES (?, ?, ?, ?, datetime('now'))",
-            )
-            .bind(plugin_id)
-            .bind(namespace)
-            .bind(key)
-            .bind(&members_json)
-            .execute(&self.db)
-            .await;
-            true
-        }
-    }
-
-    /// 从集合移除一个成员，返回是否实际移除了。
-    pub async fn plugin_set_remove(
-        &self, plugin_id: &str, namespace: &str, key: &str, member: &str
-    ) -> bool {
-        let full_key = format!("{}:{}:{}", plugin_id, namespace, key);
-        let mut sets = self.plugin_sets.write().await;
-        let removed = sets
-            .get_mut(&full_key)
-            .map(|set| set.remove(member))
-            .unwrap_or(false);
-        if removed {
-            let members_json = serde_json::to_string(
-                &sets.get(&full_key)
-                    .map(|s| s.iter().cloned().collect::<Vec<_>>())
-                    .unwrap_or_default()
-            ).unwrap_or_default();
-            drop(sets);
-            let _ = sqlx::query(
-                "INSERT OR REPLACE INTO plugin_data \
-                 (plugin_id, namespace, key, value, updated_at) \
-                 VALUES (?, ?, ?, ?, datetime('now'))",
-            )
-            .bind(plugin_id)
-            .bind(namespace)
-            .bind(key)
-            .bind(&members_json)
-            .execute(&self.db)
-            .await;
-        }
-        removed
-    }
-
-    /// 获取集合的所有成员。
-    pub async fn plugin_set_members(
-        &self, plugin_id: &str, namespace: &str, key: &str
-    ) -> Vec<String> {
-        let full_key = format!("{}:{}:{}", plugin_id, namespace, key);
-        let sets = self.plugin_sets.read().await;
-        sets.get(&full_key)
-            .map(|set| {
-                let mut v: Vec<String> = set.iter().cloned().collect();
-                v.sort();
-                v
-            })
-            .unwrap_or_default()
-    }
-
-    /// 检查成员是否在集合中。
-    pub async fn plugin_set_is_member(
-        &self, plugin_id: &str, namespace: &str, key: &str, member: &str
-    ) -> bool {
-        let full_key = format!("{}:{}:{}", plugin_id, namespace, key);
-        let sets = self.plugin_sets.read().await;
-        sets.get(&full_key)
-            .map(|set| set.contains(member))
-            .unwrap_or(false)
-    }
-
-    /// 列出命名空间下的所有 key，可按前缀过滤。
-    pub async fn plugin_keys(
-        &self, plugin_id: &str, namespace: &str, prefix: Option<&str>
-    ) -> Vec<String> {
-        let ns_key = format!("{}:{}", plugin_id, namespace);
-        let map = self.plugin_data.read().await;
-        map.get(&ns_key)
-            .map(|inner| {
-                let mut keys: Vec<String> = if let Some(p) = prefix {
-                    inner.keys().filter(|k| k.starts_with(p)).cloned().collect()
-                } else {
-                    inner.keys().cloned().collect()
-                };
-                keys.sort();
-                keys
-            })
-            .unwrap_or_default()
     }
 
     const MAX_SESSIONS_PER_USER: usize = 3;
@@ -1041,7 +848,6 @@ impl AppState {
             showcase_problem_ids,
             showcase_contest_ids,
             posts,
-            plugin_data,
         ) = if let Some(data) = saved {
             tracing::info!("Loaded state from JSON: {}", json_path_str);
 
@@ -1127,7 +933,6 @@ impl AppState {
                 data.showcase_problem_ids,
                 data.showcase_contest_ids,
                 p,
-                data.plugin_data,
             )
         } else {
             tracing::info!("No saved state, using default seed data");
@@ -1143,7 +948,6 @@ impl AppState {
                 HashMap::new(),
                 Vec::new(),
                 Vec::new(),
-                HashMap::new(),
                 HashMap::new(),
             )
         };
@@ -1225,11 +1029,6 @@ impl AppState {
             default_role_permissions()
         };
 
-        let plugins_dir = std::env::var("MCGUFFIN_PLUGINS_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| std::path::PathBuf::from("plugins"));
-        let _ = std::fs::create_dir_all(&plugins_dir);
-
         let app_state = Self {
             users: Arc::new(Mutex::new(users)),
             sessions: Arc::new(RwLock::new(sessions)),
@@ -1272,20 +1071,13 @@ impl AppState {
             role_permissions: Arc::new(RwLock::new(role_permissions)),
             member_groups: Arc::new(RwLock::new(member_groups)),
             db,
-            plugin_data: Arc::new(RwLock::new(plugin_data)),
-            plugin_counters: Arc::new(RwLock::new(HashMap::new())),
-            plugin_sets: Arc::new(RwLock::new(HashMap::new())),
             backup_directory: Arc::new(RwLock::new(None)),
             http_client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("创建 HTTP 客户端失败"),
-            plugins: PluginManager::new(plugins_dir),
         };
-
-        // 从 SQLite 加载插件持久化数据到内存
-        app_state.load_plugin_data_from_db().await;
 
         // SQLite 是权威数据源，确保 admin 存在于数据库中
         {
