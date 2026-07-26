@@ -91,7 +91,7 @@ pub async fn login(
             Ok(Some(row)) => Some(row.into_user()),
             _ => {
                 // Fallback to HashMap
-                let users = state.users.lock().await;
+                let users = state.users.read().await;
                 users
                     .values()
                     .find(|u| u.username == *identifier || u.display_name == *identifier)
@@ -300,7 +300,7 @@ pub async fn oauth_callback(
                     let role = {
                         // New users: team member → "member", otherwise "guest"
                         // Existing users: preserve their current role
-                        let users_map = state.users.lock().await;
+                        let users_map = state.users.read().await;
                         if let Some(existing) = users_map.get(&user_id) {
                             existing.role.clone()
                         } else {
@@ -329,7 +329,7 @@ pub async fn oauth_callback(
 
                     // 提前获取用户信息并释放锁（避免临时变量在 if let 中存活到 else 块）
                     let existing_user = {
-                        let users = state.users.lock().await;
+                        let users = state.users.read().await;
                         users.get(&user_id).cloned()
                     };
 

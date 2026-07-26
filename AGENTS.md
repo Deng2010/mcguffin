@@ -8,7 +8,6 @@
 
 **McGuffin** 是算法竞赛出题团队的协作工具。React SPA + Rust/Axum 后端，CP OAuth 认证，SQLite 持久化。
 
-- 版本：0.2.1
 - 前/后端版本号同步
 - 架构：浏览器 → React SPA → Axum API → SQLite / CP OAuth
 
@@ -116,28 +115,28 @@ mcguffin/
 
 **20 种权限**（`perms` 模块）：
 
-| 权限 | 说明 |
-|------|------|
-| `view_showcase` | 查看成果展示（公开） |
-| `apply_join` | 申请加入团队 |
-| `view_team` | 查看团队成员 |
-| `manage_team` | 审核入队申请 |
-| `manage_members` | 踢出成员/变更角色 |
-| `submit_problem` | 投稿题目 |
-| `view_problems` | 查看题目 |
-| `approve_problem` | 审核题目 |
-| `manage_contests` | 管理赛事 |
-| `view_all_contests` | 查看全部赛事（含 draft） |
-| `view_public_contests` | 查看公开赛事 |
-| `manage_site` | 站点配置 |
-| `edit_showcase` | 编辑展示页 |
-| `view_discussions` | 查看讨论 |
-| `manage_discussions` | 管理讨论 |
-| `manage_tags` | 管理标签 |
-| `manage_notifications` | 管理通知 |
-| `manage_backups` | 管理备份 |
-| `view_stats` | 查看统计 |
-| `manage_posts` | 管理统一帖子 |
+| 权限                   | 说明                     |
+| ---------------------- | ------------------------ |
+| `view_showcase`        | 查看成果展示（公开）     |
+| `apply_join`           | 申请加入团队             |
+| `view_team`            | 查看团队成员             |
+| `manage_team`          | 审核入队申请             |
+| `manage_members`       | 踢出成员/变更角色        |
+| `submit_problem`       | 投稿题目                 |
+| `view_problems`        | 查看题目                 |
+| `approve_problem`      | 审核题目                 |
+| `manage_contests`      | 管理赛事                 |
+| `view_all_contests`    | 查看全部赛事（含 draft） |
+| `view_public_contests` | 查看公开赛事             |
+| `manage_site`          | 站点配置                 |
+| `edit_showcase`        | 编辑展示页               |
+| `view_discussions`     | 查看讨论                 |
+| `manage_discussions`   | 管理讨论                 |
+| `manage_tags`          | 管理标签                 |
+| `manage_notifications` | 管理通知                 |
+| `manage_backups`       | 管理备份                 |
+| `view_stats`           | 查看统计                 |
+| `manage_posts`         | 管理统一帖子             |
 
 超级管理员（user_id=admin）拥有通配符 `*` 全部权限。
 
@@ -157,6 +156,7 @@ mcguffin/
 ## 修改代码注意事项
 
 ### 后端
+
 - 数据模型在 `types.rs`，API handler 在各自模块，路由注册在 `main.rs`
 - 新增接口：handler + 路由 + 权限校验
 - 新增数据模型：`Serialize` + `Deserialize` + `Clone`；ID 用 `Uuid::new_v4()`；时间用 `chrono::Utc::now()`
@@ -164,6 +164,7 @@ mcguffin/
 - 日志用 `tracing`，不用 `println!`
 
 ### 前端
+
 - 页面组件在 `pages/`，通用组件在 `components/`
 - 新增页面需在 `App.tsx` 的 `<Routes>` 注册
 - 新增权限需在 `types.ts` 的 `Permission` 联合类型和权限映射中添加

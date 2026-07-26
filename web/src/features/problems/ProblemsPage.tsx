@@ -930,47 +930,6 @@ export default function ProblemsPage() {
                 )}
               </div>
             </div>
-
-            {canApprove && (
-              <div
-                className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="mb-4">
-                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
-                    关联比赛
-                  </h4>
-                  <div className="flex items-center gap-2">
-                    <select
-                      defaultValue={p.contest || ""}
-                      onChange={(e) => handleSetContest(p.id, e.target.value)}
-                      className="px-3 py-1.5 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-                    >
-                      <option value="">无</option>
-                      {contests.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
-                      选择后自动保存
-                    </span>
-                  </div>
-                </div>
-                {renderVisibilityEditor(p.id)}
-                {p.remark && (
-                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800">
-                    <h4 className="text-xs font-semibold text-yellow-800 dark:text-yellow-300 mb-1">
-                      备注
-                    </h4>
-                    <p className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap">
-                      {p.remark}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         ))}
       </div>

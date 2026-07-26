@@ -744,7 +744,7 @@ pub async fn update_config(
     {
         let admin_dn = payload.admin.display_name.trim();
         if !admin_dn.is_empty() {
-            let users = state.users.lock().await;
+            let users = state.users.read().await;
             let is_taken = users
                 .values()
                 .any(|u| u.id != "admin" && (u.display_name == admin_dn || u.username == admin_dn));
@@ -909,7 +909,7 @@ pub async fn init_admin_status(
 
     // Check if admin user has password_hash set
     let user_has_hash = {
-        let users = state.users.lock().await;
+        let users = state.users.read().await;
         users
             .get(crate::state::ADMIN_USER_ID)
             .and_then(|u| u.password_hash.as_ref())
@@ -944,7 +944,7 @@ pub async fn init_admin(
         if config_pw {
             true
         } else {
-            let users = state.users.lock().await;
+            let users = state.users.read().await;
             users
                 .get(crate::state::ADMIN_USER_ID)
                 .and_then(|u| u.password_hash.as_ref())
@@ -1013,7 +1013,7 @@ pub async fn init_admin(
 
     // Update admin user in memory and SQLite
     {
-        let mut users = state.users.lock().await;
+        let mut users = state.users.write().await;
         if let Some(admin_user) = users.get_mut(crate::state::ADMIN_USER_ID) {
             admin_user.display_name = payload.display_name.trim().to_string();
             if let Some(url) = &payload.avatar_url {

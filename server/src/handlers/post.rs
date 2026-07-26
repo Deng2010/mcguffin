@@ -152,7 +152,7 @@ pub async fn get_posts(
         map.values().cloned().collect()
     };
 
-    let users = state.users.lock().await;
+    let users = state.users.read().await;
     let all_tags = state.discussion_tags.read().await;
 
     let mut result: Vec<&Post> = posts
@@ -396,7 +396,7 @@ pub async fn get_post_detail(
             Json(serde_json::json!({"success": false, "message": "无权查看"})),
         ));
     }
-    let users = state.users.lock().await;
+    let users = state.users.read().await;
     let enriched_replies: Vec<serde_json::Value> = p
         .replies
         .iter()
@@ -835,7 +835,7 @@ pub async fn get_suggestions(
     };
     let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_DISCUSSIONS).await
         || user.team_status == "joined";
-    let users = state.users.lock().await;
+    let users = state.users.read().await;
 
     // Try SQLite first, fallback to HashMap
     let posts: Vec<Post> = if let Ok(rows) = sqlx::query_as::<_, PostRow>(
@@ -954,7 +954,7 @@ pub async fn get_suggestion_detail(
         if !can_view_all && p.author_id != user_id {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
-        let users = state.users.lock().await;
+        let users = state.users.read().await;
         let author_name = users
             .get(&p.author_id)
             .map(|u| u.display_name.clone())
@@ -1173,7 +1173,7 @@ pub async fn get_announcements(
             .collect()
     };
 
-    let users = state.users.lock().await;
+    let users = state.users.read().await;
 
     let mut result: Vec<serde_json::Value> = Vec::new();
     for p in &posts {
@@ -1289,7 +1289,7 @@ pub async fn get_announcement_detail(
         if !is_admin_user && !is_team && p.team_only {
             return Json(serde_json::json!({"success": false, "message": "无权查看"}));
         }
-        let users = state.users.lock().await;
+        let users = state.users.read().await;
         let author_name = users
             .get(&p.author_id)
             .map(|u| u.display_name.clone())
@@ -1419,7 +1419,7 @@ pub async fn get_community_posts(
         map.values().cloned().collect()
     };
 
-    let users = state.users.lock().await;
+    let users = state.users.read().await;
 
     // ── Gather tag metadata and global counts from ALL posts (before filtering) ──
     let tag_meta = state.discussion_tags.read().await;

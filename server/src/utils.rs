@@ -46,37 +46,27 @@ pub async fn resolve_user(
 ) -> Option<(String, User)> {
     let token = get_token_from_headers(headers)?;
     let now = Utc::now();
-    let now_rfc = now.to_rfc3339();
 
-    // Check session expiry
+    // Check session expiry — use read lock for common case (hot path)
     let user_id = {
-        let mut sessions = state.sessions.write().await;
+        let sessions = state.sessions.read().await;
         let entry = sessions.get(&token)?;
         let elapsed = (now - entry.last_active).num_seconds();
         if elapsed > SESSION_MAX_AGE_SECS {
-            // Session expired — clean up
-            sessions.remove(&token);
+            // Session expired — clean up (write lock, rare case)
             drop(sessions);
-            // 同步到 SQLite
+            {
+                let mut sessions_w = state.sessions.write().await;
+                sessions_w.remove(&token);
+            }
             state.remove_session(&token).await;
             return None;
         }
-        // Update last_active time
-        if let Some(entry) = sessions.get_mut(&token) {
-            entry.last_active = now;
-        }
-        let uid = sessions.get(&token)?.user_id.clone();
-        drop(sessions);
-        // 更新 SQLite 中的 last_active
-        let _ = sqlx::query("UPDATE sessions SET last_active = ? WHERE token = ?")
-            .bind(&now_rfc)
-            .bind(&token)
-            .execute(&state.db)
-            .await;
+        let uid = entry.user_id.clone();
         uid
     };
 
-    let users = state.users.lock().await;
+    let users = state.users.read().await;
     let mut user = users.get(&user_id)?.clone();
     drop(users);
     user.effective_role = user.compute_effective_role().to_string();
@@ -85,7 +75,7 @@ pub async fn resolve_user(
 
 /// Check if user has admin role (includes superadmin)
 pub async fn is_admin(state: &AppState, user_id: &str) -> bool {
-    let users = state.users.lock().await;
+    let users = state.users.read().await;
     users
         .get(user_id)
         .map(|u| u.role == "admin" || u.role == "superadmin")

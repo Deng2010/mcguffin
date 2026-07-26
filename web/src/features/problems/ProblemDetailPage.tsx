@@ -30,6 +30,7 @@ export default function ProblemDetailPage() {
 
   // Edit state
   const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
   const [editDifficulty, setEditDifficulty] = useState("Medium");
   const [editContent, setEditContent] = useState("");
   const [editSolution, setEditSolution] = useState("");
@@ -69,6 +70,7 @@ export default function ProblemDetailPage() {
 
   const openEdit = () => {
     if (!problem) return;
+    setEditTitle(problem.title);
     setEditDifficulty(problem.difficulty);
     setEditContent(problem.content || "");
     setEditSolution(problem.solution || "");
@@ -100,6 +102,7 @@ export default function ProblemDetailPage() {
     setEditMsg("");
     try {
       const body: Record<string, any> = {};
+      if (editTitle !== problem.title) body.title = editTitle;
       if (editDifficulty !== problem.difficulty)
         body.difficulty = editDifficulty;
       if (editContent !== problem.content) body.content = editContent;
@@ -258,32 +261,7 @@ export default function ProblemDetailPage() {
 
       <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mb-6 shadow">
         <div className="flex items-start justify-between mb-4">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-              {problem.title}
-            </h1>
-            <div className="flex gap-4 text-sm text-gray-500 dark:text-gray-400 mt-2">
-              <span>作者：{problem.author_name}</span>
-              <span>赛事：{problem.contest || "无"}</span>
-              <span>
-                难度：
-                <DiffBadge
-                  difficulty={problem.difficulty}
-                  map={difficultyMap}
-                />
-              </span>
-              {(problem as any).link && (
-                <a
-                  href={(problem as any).link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
-                >
-                  外部链接 ↗
-                </a>
-              )}
-            </div>
-          </div>
+          <div />
           {canEdit && !editing && (
             <button
               onClick={openEdit}
@@ -307,6 +285,19 @@ export default function ProblemDetailPage() {
             <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
               编辑题目
             </h2>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
+                题目名称
+              </label>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm"
+                placeholder="输入题目名称"
+              />
+            </div>
 
             {isAdmin && (
               <div className="mb-4">
@@ -406,7 +397,7 @@ export default function ProblemDetailPage() {
             {isAdmin && problem.status === "pending" && members.length > 0 && (
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-                  可见性设置（选择可查看此题目的成员）
+                  可见性设置（选择可查看此题目的非管理成员）
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {members.map((m) => (
@@ -431,7 +422,7 @@ export default function ProblemDetailPage() {
             {isAdmin && members.length > 0 && (
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-                  可编辑权限（选择可编辑此题目的成员）
+                  可编辑权限（选择可编辑此题目的非管理成员）
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {members.map((m) => (
@@ -530,6 +521,19 @@ export default function ProblemDetailPage() {
               </div>
             )}
 
+            {problem.status === "pending" && problem.remark && (
+              <div className="mt-6">
+                <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">
+                  备注
+                </h2>
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 border border-yellow-200 dark:border-yellow-800">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap">
+                    {problem.remark}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {problem.solution !== undefined && problem.solution !== "" && (
               <div className="mt-6">
                 <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">
@@ -544,18 +548,6 @@ export default function ProblemDetailPage() {
           </>
         )}
       </div>
-
-      {/* Remark — only visible in pending status */}
-      {problem.status === "pending" && problem.remark && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-4 mb-4">
-          <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-300 mb-1">
-            备注
-          </h3>
-          <p className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap">
-            {problem.remark}
-          </p>
-        </div>
-      )}
 
       {/* Verifier solution — editable for the verifier, read-only for other members */}
       {problem.can_submit_verifier_solution ? (

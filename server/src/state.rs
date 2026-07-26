@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use sqlx::SqlitePool;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 
 use crate::types::{
     Contest, DiscussionEmoji, DiscussionTag, JoinRequest, MemberGroup, Notification, Post, Problem,
@@ -70,7 +70,7 @@ fn default_config_path() -> PathBuf {
 
 #[derive(Clone)]
 pub struct AppState {
-    pub users: Arc<Mutex<HashMap<String, User>>>,
+    pub users: Arc<RwLock<HashMap<String, User>>>,
     /// token → SessionEntry (user_id + last_active timestamp)
     pub sessions: Arc<RwLock<HashMap<String, SessionEntry>>>,
     pub refresh_tokens: Arc<RwLock<HashMap<String, String>>>,
