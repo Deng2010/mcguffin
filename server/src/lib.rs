@@ -10,5 +10,5 @@ pub mod utils;
 pub use db::*;
 pub use domain::*;
 pub use routes::build_router;
-pub use state::{AppState, resolve_config_path};
+pub use state::{resolve_config_path, AppState};
 pub use types::*;

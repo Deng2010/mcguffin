@@ -6,7 +6,7 @@ use axum::{
 use uuid::Uuid;
 
 use crate::state::AppState;
-use crate::types::{CreateGroupPayload, UpdateGroupPayload, MemberGroup, PERM_WILDCARD};
+use crate::types::{CreateGroupPayload, MemberGroup, UpdateGroupPayload, PERM_WILDCARD};
 use crate::utils::AuthUser;
 
 use super::config::sync_groups_to_config;

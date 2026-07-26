@@ -261,7 +261,36 @@ export default function ProblemDetailPage() {
 
       <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mb-6 shadow">
         <div className="flex items-start justify-between mb-4">
-          <div />
+          {!editing ? (
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                {problem.title}
+              </h1>
+              <div className="flex gap-4 text-sm text-gray-500 dark:text-gray-400 mt-2">
+                <span>作者：{problem.author_name}</span>
+                <span>赛事：{problem.contest || "无"}</span>
+                <span>
+                  难度：
+                  <DiffBadge
+                    difficulty={problem.difficulty}
+                    map={difficultyMap}
+                  />
+                </span>
+                {(problem as any).link && (
+                  <a
+                    href={(problem as any).link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
+                  >
+                    外部链接 ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div />
+          )}
           {canEdit && !editing && (
             <button
               onClick={openEdit}
@@ -281,7 +310,7 @@ export default function ProblemDetailPage() {
         )}
 
         {editing ? (
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+          <div className="pt-4 mt-4">
             <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
               编辑题目
             </h2>

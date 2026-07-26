@@ -8,9 +8,9 @@ use crate::handlers::admin::{
     admin_change_user_role, admin_list_users, admin_remove_user, create_backup, create_group,
     delete_backup, delete_group, download_backup, export_config, export_data, export_db,
     get_audit_log, get_config, get_showcase_config, import_config, import_data, init_admin,
-    init_admin_status, list_backups, list_groups, restore_backup, restore_upload_backup,
-    restart_service, set_problem_acl, set_resource_acl, set_user_groups, set_user_permissions,
-    update_config, update_group, update_showcase_config,
+    init_admin_status, list_backups, list_groups, restart_service, restore_backup,
+    restore_upload_backup, set_problem_acl, set_resource_acl, set_user_groups,
+    set_user_permissions, update_config, update_group, update_showcase_config,
 };
 use crate::handlers::auth::{
     get_permissions, login, oauth_authorize, oauth_callback, refresh_token,
@@ -19,9 +19,7 @@ use crate::handlers::contest::{
     create_contest, delete_contest, get_contest_problems, get_contests, set_contest_status,
     set_problem_order, update_contest,
 };
-use crate::handlers::info::{
-    get_difficulties, get_site_info, update_site_description,
-};
+use crate::handlers::info::{get_difficulties, get_site_info, update_site_description};
 use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
@@ -81,7 +79,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/team/members", get(get_team_members))
         .route("/team/requests", get(get_pending_requests))
         .route("/team/apply", post(apply_to_join))
-        .route("/team/review/{request_id}/{action}", post(review_application))
+        .route(
+            "/team/review/{request_id}/{action}",
+            post(review_application),
+        )
         .route("/team/members/role/{user_id}", post(change_member_role))
         .route("/team/members/remove/{user_id}", post(remove_member))
         // Problems
@@ -97,7 +98,10 @@ pub fn build_router(state: AppState) -> Router {
             "/problems/visibility/{problem_id}",
             post(set_problem_visibility),
         )
-        .route("/problems/review/{problem_id}/{action}", post(review_problem))
+        .route(
+            "/problems/review/{problem_id}/{action}",
+            post(review_problem),
+        )
         .route("/problems/admin/pending", get(get_pending_problems_admin))
         .route(
             "/problems/admin/members",
@@ -131,10 +135,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/posts/{id}/reply", post(reply_to_post))
         .route("/posts/{id}/reply/{reply_id}", delete(delete_post_reply))
         .route("/posts/{id}/react", post(react_to_post))
-        .route(
-            "/posts/{id}/reply/{reply_id}/react",
-            post(react_to_reply),
-        )
+        .route("/posts/{id}/reply/{reply_id}/react", post(react_to_reply))
         // Community feed
         .route("/community/posts", get(get_community_posts))
         // Tags & emojis
@@ -153,10 +154,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/admin/backup", post(create_backup))
         .route("/admin/backups", get(list_backups))
         .route("/admin/backup/restore/{name}", post(restore_backup))
-        .route(
-            "/admin/backup/restore-upload",
-            post(restore_upload_backup),
-        )
+        .route("/admin/backup/restore-upload", post(restore_upload_backup))
         .route("/admin/backup/download/{name}", get(download_backup))
         .route("/admin/backup/{name}", delete(delete_backup))
         // Admin showcase
@@ -243,9 +241,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .with_state(state.clone());
 
-    let api_with_legacy = Router::new()
-        .merge(api_router.clone())
-        .merge(legacy_router);
+    let api_with_legacy = Router::new().merge(api_router.clone()).merge(legacy_router);
 
     Router::new()
         .nest("/api/v1", api_router)

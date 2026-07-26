@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
@@ -891,9 +887,7 @@ pub struct InitAdminPayload {
 
 /// GET /api/admin/init-status
 /// No auth required — returns whether admin initialization is needed.
-pub async fn init_admin_status(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+pub async fn init_admin_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     // Check if config admin.password is set and non-empty
     let raw = read_config_raw().unwrap_or_default();
     let config_pw_set = {
@@ -1045,16 +1039,21 @@ pub async fn init_admin(
     // Ensure admin is a team member
     {
         let members = state.team_members.read().await;
-        if !members.values().any(|m| m.user_id == crate::state::ADMIN_USER_ID) {
+        if !members
+            .values()
+            .any(|m| m.user_id == crate::state::ADMIN_USER_ID)
+        {
             drop(members);
-            state.insert_team_member(&crate::types::TeamMember {
-                id: crate::state::ADMIN_USER_ID.to_string(),
-                user_id: crate::state::ADMIN_USER_ID.to_string(),
-                joined_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            }).await;
+            state
+                .insert_team_member(&crate::types::TeamMember {
+                    id: crate::state::ADMIN_USER_ID.to_string(),
+                    user_id: crate::state::ADMIN_USER_ID.to_string(),
+                    joined_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+                })
+                .await;
         }
     }
-    
+
     Json(serde_json::json!({
         "success": true,
         "message": "管理员已初始化"

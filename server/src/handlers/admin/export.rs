@@ -1,8 +1,4 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use chrono::Local;
 
 use crate::db::{create_consistent_backup, export_db_to_json_string, reimport_all_data};
@@ -24,17 +20,15 @@ pub async fn export_data(
         .await?;
 
     // 直接从 SQLite 导出，不依赖本地 JSON 文件
-    let content = export_db_to_json_string(&state.db)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "message": format!("导出数据失败: {}", e),
-                })),
-            )
-        })?;
+    let content = export_db_to_json_string(&state.db).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false,
+                "message": format!("导出数据失败: {}", e),
+            })),
+        )
+    })?;
 
     let filename = format!(
         "mcguffin_data_{}.json",
@@ -54,7 +48,8 @@ pub async fn export_db(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE).await?;
+    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+        .await?;
 
     // Sync HashMap → SQLite first so the export is up-to-date
     state.sync_to_db().await;
@@ -63,10 +58,7 @@ pub async fn export_db(
         Ok(bytes) => {
             use base64::Engine;
             let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            let filename = format!(
-                "mcguffin_data_{}.db",
-                Local::now().format("%Y%m%d_%H%M%S")
-            );
+            let filename = format!("mcguffin_data_{}.db", Local::now().format("%Y%m%d_%H%M%S"));
             Ok(Json(serde_json::json!({
                 "success": true,
                 "content": encoded,
@@ -157,16 +149,14 @@ pub async fn import_data(
     );
 
     // 清空 SQLite 并重新导入
-    reimport_all_data(&state.db, &saved)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false, "message": format!("数据导入失败: {}", e)
-                })),
-            )
-        })?;
+    reimport_all_data(&state.db, &saved).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "success": false, "message": format!("数据导入失败: {}", e)
+            })),
+        )
+    })?;
 
     // 从 SQLite 重新加载数据到内存
     state.reload().await;

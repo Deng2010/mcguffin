@@ -172,7 +172,7 @@ export default function ContestManagePage() {
             }`}
           >
             {tab.label}
-            <span className={`ml-1.5 px-1.5 py-0.5 text-xs rounded ${
+            <span className={`mg-tab-count ${
               activeTab === tab.id ? 'bg-gray-800 text-white dark:bg-gray-700' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
             }`}>
               {tab.count}

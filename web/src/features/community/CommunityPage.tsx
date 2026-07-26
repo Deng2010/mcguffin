@@ -210,9 +210,6 @@ export default function CommunityPage() {
               {showCreateForm ? "取消" : "发帖"}
             </button>
           )}
-          <span className="text-xs text-gray-400 dark:text-gray-500">
-            {totalAll || total} 条帖子
-          </span>
         </div>
       </div>
 
@@ -315,7 +312,7 @@ export default function CommunityPage() {
         >
           全部
           <span
-            className={`ml-1.5 px-1.5 py-0.5 text-xs ${activeTab === "all" ? "bg-gray-800 dark:bg-gray-700 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400"}`}
+            className={`mg-tab-count ${activeTab === "all" ? "bg-gray-800 dark:bg-gray-700 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400"}`}
           >
             {counts.all}
           </span>
@@ -329,7 +326,7 @@ export default function CommunityPage() {
             {t.name}
             {counts[t.id] > 0 && (
               <span
-                className={`ml-1.5 px-1.5 py-0.5 text-xs ${activeTab === t.id ? "bg-gray-800 dark:bg-gray-700 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400"}`}
+                className={`mg-tab-count ${activeTab === t.id ? "bg-gray-800 dark:bg-gray-700 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400"}`}
               >
                 {counts[t.id]}
               </span>

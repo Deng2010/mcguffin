@@ -80,8 +80,6 @@ pub struct SiteConfig {
     pub difficulty_order: Option<Vec<String>>,
 }
 
-
-
 #[derive(Deserialize)]
 pub struct OAuthConfig {
     pub cp_client_id: String,

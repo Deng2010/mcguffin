@@ -171,16 +171,14 @@ pub async fn restore_backup(
     // 1. 创建安全备份
     let safety_name = format!("pre_restore_{}.db", safety_timestamp);
     let safety_path = dir.join(&safety_name);
-    if let Err(e) = create_consistent_backup(
-        &db_path.to_string_lossy(),
-        &safety_path.to_string_lossy(),
-    ) {
+    if let Err(e) =
+        create_consistent_backup(&db_path.to_string_lossy(), &safety_path.to_string_lossy())
+    {
         tracing::warn!("创建安全备份失败: {}", e);
     }
 
     // 2. 使用 SQLite 在线备份 API 将备份恢复到主数据库（无需关闭连接池）
-    if let Err(e) =
-        restore_from_backup(&backup_path.to_string_lossy(), &db_path.to_string_lossy())
+    if let Err(e) = restore_from_backup(&backup_path.to_string_lossy(), &db_path.to_string_lossy())
     {
         return Ok(Json(
             serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}),
@@ -281,17 +279,14 @@ pub async fn restore_upload_backup(
     let safety_timestamp = Local::now().format("%Y%m%d_%H%M%S");
     let safety_name = format!("pre_restore_{}.db", safety_timestamp);
     let safety_path = dir.join(&safety_name);
-    if let Err(e) =
-        create_consistent_backup(&state.db_path, &safety_path.to_string_lossy())
-    {
+    if let Err(e) = create_consistent_backup(&state.db_path, &safety_path.to_string_lossy()) {
         tracing::warn!("创建安全备份失败: {}", e);
     }
 
     let db_path = db_path_from_state(&state);
 
     // 使用 SQLite 在线备份 API 将上传的备份恢复到主数据库（无需关闭连接池）
-    if let Err(e) =
-        restore_from_backup(&upload_path.to_string_lossy(), &db_path.to_string_lossy())
+    if let Err(e) = restore_from_backup(&upload_path.to_string_lossy(), &db_path.to_string_lossy())
     {
         return Ok(Json(
             serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}),

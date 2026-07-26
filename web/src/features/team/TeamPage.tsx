@@ -206,7 +206,7 @@ export default function TeamPage() {
           >
             {tab.label}
             <span
-              className={`ml-1.5 px-1.5 py-0.5 text-xs rounded ${
+              className={`mg-tab-count ${
                 activeTab === tab.id
                   ? "bg-gray-800 dark:bg-gray-600 text-white"
                   : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400"

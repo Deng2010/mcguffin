@@ -1,8 +1,5 @@
-use axum::{
-    http::header,
-    routing::get,
-};
-use mcguffin_server_lib::{build_router, AppState, resolve_config_path};
+use axum::{http::header, routing::get};
+use mcguffin_server_lib::{build_router, resolve_config_path, AppState};
 use std::net::SocketAddr;
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{AllowOrigin, CorsLayer};

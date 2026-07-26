@@ -14,7 +14,7 @@ use crate::infra::config::{
     load_config, load_difficulty_config, load_discussion_emojis, load_discussion_tags,
     load_member_groups,
 };
-use crate::state::{AppState, ADMIN_USER_ID, resolve_config_path};
+use crate::state::{resolve_config_path, AppState, ADMIN_USER_ID};
 use crate::types::*;
 
 #[derive(Serialize, Deserialize)]
@@ -47,8 +47,6 @@ pub(crate) struct SavedData {
     // ── Permission Groups ──
     #[serde(default)]
     pub(crate) member_groups: HashMap<String, MemberGroup>,
-
-
 }
 
 /// Custom deserializer for sessions that handles both old format

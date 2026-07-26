@@ -133,4 +133,7 @@ body.dark {
   .mg-btn-success {
     @apply bg-green-600 text-white hover:bg-green-700;
   }
+  .mg-tab-count {
+    @apply ml-1.5 px-1.5 py-0.5 text-xs font-medium;
+  }
 }

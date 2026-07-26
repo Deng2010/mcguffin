@@ -53,9 +53,7 @@ impl UserRow {
 
 /// GET /api/auth/permissions
 /// Returns the current role→permissions mapping (no auth required — public info for frontend rendering).
-pub async fn get_permissions(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+pub async fn get_permissions(State(state): State<AppState>) -> Json<serde_json::Value> {
     let map = state.role_permissions.read().await.clone();
     Json(serde_json::json!(map))
 }
@@ -104,7 +102,9 @@ pub async fn login(
                 let password_ok = match &user.password_hash {
                     Some(hash) => bcrypt::verify(&payload.password, hash).unwrap_or(false),
                     // 若用户未设密码哈希，管理员（admin）可回退到配置密码
-                    None if user.id == ADMIN_USER_ID => payload.password == *state.admin_password.read().await,
+                    None if user.id == ADMIN_USER_ID => {
+                        payload.password == *state.admin_password.read().await
+                    }
                     None => false,
                 };
                 if password_ok {
@@ -219,9 +219,11 @@ pub async fn oauth_callback(
     Query(params): Query<HashMap<String, String>>,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
-    tracing::info!("OAuth callback: code={:?}, state_param={:?}",
+    tracing::info!(
+        "OAuth callback: code={:?}, state_param={:?}",
         params.get("code").map(|c| &c[..10.min(c.len())]),
-        params.get("state"));
+        params.get("state")
+    );
     let fe = state.site_url.clone();
     let code = params.get("code").cloned().unwrap_or_default();
 
@@ -244,7 +246,11 @@ pub async fn oauth_callback(
     let callback_state = params.get("state").cloned();
     if let (Some(cs), Some(bs)) = (&callback_state, &cookie_state) {
         if cs != bs {
-            tracing::warn!("OAuth callback: state 不匹配，cookie={:?}, callback={:?}", bs, cs);
+            tracing::warn!(
+                "OAuth callback: state 不匹配，cookie={:?}, callback={:?}",
+                bs,
+                cs
+            );
             return Redirect::to(&format!("{}#/login?error=state_mismatch", fe));
         }
     }
@@ -263,7 +269,10 @@ pub async fn oauth_callback(
         })
         .unwrap_or_default();
 
-    tracing::info!("OAuth callback: 开始交换 token (code_verifier 长度={})", code_verifier.len());
+    tracing::info!(
+        "OAuth callback: 开始交换 token (code_verifier 长度={})",
+        code_verifier.len()
+    );
     match exchange_token(
         &code,
         &code_verifier,
@@ -278,7 +287,10 @@ pub async fn oauth_callback(
             tracing::info!("OAuth callback: token 交换成功");
             match get_user_info(&token_resp.access_token, &state.http_client).await {
                 Ok(userinfo) => {
-                    tracing::info!("OAuth callback: 用户信息获取成功: sub={}", &userinfo.sub[..8.min(userinfo.sub.len())]);
+                    tracing::info!(
+                        "OAuth callback: 用户信息获取成功: sub={}",
+                        &userinfo.sub[..8.min(userinfo.sub.len())]
+                    );
                     let user_id = userinfo.sub.clone();
                     let team_status = {
                         let members = state.team_members.read().await;
@@ -334,7 +346,10 @@ pub async fn oauth_callback(
                     };
 
                     if let Some(mut existing) = existing_user {
-                        tracing::info!("OAuth callback: 用户已存在 ({}), 更新中...", &existing.username);
+                        tracing::info!(
+                            "OAuth callback: 用户已存在 ({}), 更新中...",
+                            &existing.username
+                        );
                         // User already exists — preserve custom fields (display_name, avatar_url, bio, created_at)
                         // Only update OAuth-provided fields and computed role/status
                         existing.username = username.clone();
@@ -406,20 +421,20 @@ pub async fn oauth_callback(
                 Err(e) => {
                     tracing::error!("OAuth callback: 获取用户信息失败: {}", e);
                     Redirect::to(&format!(
-                    "{}#/login?error=userinfo_failed&msg={}",
-                    fe,
-                    url_encode(&e)
-                ))
+                        "{}#/login?error=userinfo_failed&msg={}",
+                        fe,
+                        url_encode(&e)
+                    ))
                 }
             }
         }
         Err(e) => {
             tracing::error!("OAuth callback: token 交换失败: {}", e);
             Redirect::to(&format!(
-            "{}#/login?error=token_failed&msg={}",
-            fe,
-            url_encode(&e)
-        ))
+                "{}#/login?error=token_failed&msg={}",
+                fe,
+                url_encode(&e)
+            ))
         }
     }
 }

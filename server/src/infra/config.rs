@@ -117,23 +117,22 @@ pub(crate) fn load_config() -> AppConfig {
     let config_path = resolve_config_path();
 
     // 1. 尝试从配置文件加载
-    let mut config: Option<AppConfig> =
-        fs::read_to_string(&config_path)
-            .ok()
-            .and_then(|content| match toml::from_str::<AppConfig>(&content) {
-                Ok(c) => {
-                    tracing::info!("Loaded config from {}", config_path.display());
-                    Some(c)
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse {}: {}, falling back to env vars",
-                        config_path.display(),
-                        e
-                    );
-                    None
-                }
-            });
+    let mut config: Option<AppConfig> = fs::read_to_string(&config_path).ok().and_then(|content| {
+        match toml::from_str::<AppConfig>(&content) {
+            Ok(c) => {
+                tracing::info!("Loaded config from {}", config_path.display());
+                Some(c)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse {}: {}, falling back to env vars",
+                    config_path.display(),
+                    e
+                );
+                None
+            }
+        }
+    });
 
     if config.is_none() {
         tracing::warn!(

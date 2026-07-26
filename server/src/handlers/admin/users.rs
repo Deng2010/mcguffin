@@ -5,7 +5,9 @@ use axum::{
 };
 
 use crate::state::{AppState, ADMIN_USER_ID};
-use crate::types::{ChangeRolePayload, PERM_WILDCARD, SetUserGroupsPayload, SetUserPermissionsPayload};
+use crate::types::{
+    ChangeRolePayload, SetUserGroupsPayload, SetUserPermissionsPayload, PERM_WILDCARD,
+};
 use crate::utils::AuthUser;
 
 // ============== User Management ==============

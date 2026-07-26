@@ -1503,4 +1503,3 @@ pub async fn get_community_posts(
         "tag_counts": tag_counts,
     }))
 }
-

@@ -566,15 +566,20 @@ export default function ShowcasePage() {
       {/* ===== 公告 ===== */}
       {announcements.length > 0 && (
         <section>
-          <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
-            公告
-            <Link
-              to="/community?tag=公告"
-              className="text-xs font-normal text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 ml-2"
-            >
-              查看全部
-            </Link>
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+              公告
+            </h2>
+            {announcements.length >
+              Math.max(announcements.filter((a) => a.pinned).length, 3) && (
+              <Link
+                to="/community?tag=公告"
+                className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                查看全部公告
+              </Link>
+            )}
+          </div>
           <div className="space-y-2">
             {(() => {
               const pinned = announcements.filter((a) => a.pinned);
@@ -605,25 +610,25 @@ export default function ShowcasePage() {
               ));
             })()}
           </div>
-          {announcements.length >
-            Math.max(announcements.filter((a) => a.pinned).length, 3) && (
-            <div className="text-center mt-4">
-              <Link
-                to="/community?tag=公告"
-                className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                查看全部公告
-              </Link>
-            </div>
-          )}
         </section>
       )}
 
       {/* ===== 已发布题目 ===== */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
-          公开题目 ({problems.length})
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+            公开题目 ({problems.length})
+          </h2>
+          {currentSelectedProblemIds.length > 0 &&
+            currentSelectedProblemIds.length < problems.length && (
+              <Link
+                to="/problems"
+                className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                查看全部题目
+              </Link>
+            )}
+        </div>
         {showcaseProblems.length === 0 ? (
           <div className="text-gray-400 dark:text-gray-500 text-sm">
             暂无公开题目
@@ -635,26 +640,26 @@ export default function ShowcasePage() {
                 <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />
               ))}
             </div>
-            {currentSelectedProblemIds.length > 0 &&
-              currentSelectedProblemIds.length < problems.length && (
-                <div className="text-center mt-4">
-                  <Link
-                    to="/problems"
-                    className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    查看全部题目
-                  </Link>
-                </div>
-              )}
           </>
         )}
       </section>
 
       {/* ===== 比赛列表 ===== */}
       <section>
-        <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
-          比赛 ({contests.length})
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+            公开比赛 ({contests.length})
+          </h2>
+          {currentSelectedContestIds.length > 0 &&
+            currentSelectedContestIds.length < contests.length && (
+              <Link
+                to="/contests"
+                className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                查看全部比赛
+              </Link>
+            )}
+        </div>
         {showcaseContests.length === 0 ? (
           <div className="text-gray-400 dark:text-gray-500 text-sm">
             暂无比赛
@@ -666,10 +671,7 @@ export default function ShowcasePage() {
                 const status = contestStatus(c.start_time, c.end_time);
                 const cProblems = contestProblems[c.id] || [];
                 return (
-                  <div
-                    key={c.id}
-                    className="mg-box-shadow p-5"
-                  >
+                  <div key={c.id} className="mg-box-shadow p-5">
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
@@ -722,17 +724,6 @@ export default function ShowcasePage() {
                 );
               })}
             </div>
-            {currentSelectedContestIds.length > 0 &&
-              currentSelectedContestIds.length < contests.length && (
-                <div className="text-center mt-4">
-                  <Link
-                    to="/contests"
-                    className="inline-block px-6 py-2 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  >
-                    查看全部比赛
-                  </Link>
-                </div>
-              )}
           </>
         )}
       </section>

@@ -116,5 +116,3 @@ pub struct AppState {
     /// 复用 HTTP 客户端（带超时，连接池共享）
     pub http_client: reqwest::Client,
 }
-
-

@@ -1093,7 +1093,7 @@ export default function ProblemsPage() {
                 {tab.label}
                 {tab.count !== undefined && (
                   <span
-                    className={`ml-1.5 px-1.5 py-0.5 text-xs rounded ${
+                    className={`mg-tab-count ${
                       activeTab === tab.id
                         ? "bg-gray-800 text-white dark:bg-gray-600"
                         : "bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
