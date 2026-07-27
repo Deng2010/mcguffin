@@ -215,7 +215,7 @@ export default function ProblemsPage() {
     reason?: string,
   ) => {
     try {
-      const body = reason ? JSON.stringify({ reason }) : undefined;
+      const body = JSON.stringify(reason ? { reason } : {});
       const res = await apiFetch<{ success: boolean; message: string }>(
         `/problems/review/${problemId}/${action}`,
         { method: "POST", body },
