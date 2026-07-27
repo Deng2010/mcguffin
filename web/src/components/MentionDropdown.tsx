@@ -1,20 +1,26 @@
-import type { MentionMember } from '../hooks/useMention'
+import type { MentionMember } from "../hooks/useMention";
 
 interface Props {
   /** 是否显示下拉 */
-  open: boolean
+  open: boolean;
   /** 筛选后的成员列表 */
-  filtered: MentionMember[]
+  filtered: MentionMember[];
   /** 当前高亮索引 */
-  selectedIndex: number
+  selectedIndex: number;
   /** 选中某个成员时的回调 */
-  onSelect: (member: MentionMember) => void
+  onSelect: (member: MentionMember) => void;
   /** 额外 className，用于定位 */
-  className?: string
+  className?: string;
 }
 
-export default function MentionDropdown({ open, filtered, selectedIndex, onSelect, className = '' }: Props) {
-  if (!open || filtered.length === 0) return null
+export default function MentionDropdown({
+  open,
+  filtered,
+  selectedIndex,
+  onSelect,
+  className = "",
+}: Props) {
+  if (!open || filtered.length === 0) return null;
 
   return (
     <div
@@ -25,14 +31,18 @@ export default function MentionDropdown({ open, filtered, selectedIndex, onSelec
           key={m.user_id}
           className={`px-3 py-2 text-sm cursor-pointer flex items-center gap-2 ${
             i === selectedIndex
-              ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+              ? "bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+              : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
           }`}
-          onMouseDown={e => e.preventDefault()}
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => onSelect(m)}
         >
           {m.avatar_url ? (
-            <img src={m.avatar_url} className="w-5 h-5 rounded-full object-cover" alt="" />
+            <img
+              src={m.avatar_url}
+              className="w-5 h-5 rounded-full object-cover"
+              alt=""
+            />
           ) : (
             <span className="w-5 h-5 inline-flex items-center justify-center bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs font-bold shrink-0">
               {m.name.charAt(0)}
@@ -42,5 +52,5 @@ export default function MentionDropdown({ open, filtered, selectedIndex, onSelec
         </div>
       ))}
     </div>
-  )
+  );
 }

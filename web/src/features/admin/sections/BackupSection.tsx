@@ -31,9 +31,7 @@ export default function BackupSection() {
           min={1}
           max={999}
           value={c.backupRetention}
-          onChange={(e) =>
-            c.setBackupRetention(parseInt(e.target.value) || 48)
-          }
+          onChange={(e) => c.setBackupRetention(parseInt(e.target.value) || 48)}
           className={inputClass}
         />
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">

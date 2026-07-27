@@ -332,13 +332,10 @@ export default function ShowcasePage() {
 
   // Group problems by contest_id, respecting problem_order
   const contestProblems: Record<string, ProblemItem[]> = {};
-  const unassigned: ProblemItem[] = [];
   for (const p of problems) {
     if (p.contest_id) {
       if (!contestProblems[p.contest_id]) contestProblems[p.contest_id] = [];
       contestProblems[p.contest_id].push(p);
-    } else {
-      unassigned.push(p);
     }
   }
   // Sort within each contest by problem_order
@@ -431,8 +428,8 @@ export default function ShowcasePage() {
             展板管理
           </h2>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            勾选要在首页展示的题目和比赛，按 ↑↓
-            调整顺序。选多少就展示多少。不选则全部展示。
+            已勾选的题目/比赛按展板实际顺序排列在上方，可拖动 ↑↓
+            调整顺序。未勾选的排在下方。不选则全部展示。
           </p>
 
           {showcaseMsg && (
@@ -453,46 +450,59 @@ export default function ShowcasePage() {
               题目 ({selectedProblemIds.length}/{problems.length})
             </h3>
             <div className="space-y-1 max-h-48 overflow-y-auto">
-              {problems.map((p) => {
-                const isSelected = selectedProblemIds.includes(p.id);
-                const idx = selectedProblemIds.indexOf(p.id);
-                return (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleProblem(p.id)}
-                      className="accent-gray-800 dark:accent-gray-400"
-                    />
-                    <span
-                      className={`text-sm flex-1 ${isSelected ? "text-gray-800 dark:text-gray-100" : "text-gray-400 dark:text-gray-500"}`}
-                    >
-                      {p.title}
-                    </span>
-                    {isSelected && (
-                      <div className="flex gap-1 shrink-0">
-                        <button
-                          onClick={() => moveItem("problem", idx, -1)}
-                          disabled={idx === 0}
-                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          onClick={() => moveItem("problem", idx, 1)}
-                          disabled={idx === selectedProblemIds.length - 1}
-                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1"
-                        >
-                          ↓
-                        </button>
-                      </div>
-                    )}
-                  </div>
+              {(() => {
+                const selected = selectedProblemIds
+                  .map((id) => problems.find((p) => p.id === id))
+                  .filter(Boolean) as ProblemItem[];
+                const unselected = problems.filter(
+                  (p) => !selectedProblemIds.includes(p.id),
                 );
-              })}
+                return [...selected, ...unselected].map((p) => {
+                  const isSelected = selectedProblemIds.includes(p.id);
+                  const idx = selectedProblemIds.indexOf(p.id);
+                  return (
+                    <div
+                      key={p.id}
+                      className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleProblem(p.id)}
+                        className="accent-gray-800 dark:accent-gray-400"
+                      />
+                      <span
+                        className={`text-sm flex-1 ${isSelected ? "text-gray-800 dark:text-gray-100" : "text-gray-400 dark:text-gray-500"}`}
+                      >
+                        {isSelected && (
+                          <span className="text-gray-400 dark:text-gray-500 mr-1.5 text-xs tabular-nums">
+                            {idx + 1}.
+                          </span>
+                        )}
+                        {p.title}
+                      </span>
+                      {isSelected && (
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={() => moveItem("problem", idx, -1)}
+                            disabled={idx === 0}
+                            className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => moveItem("problem", idx, 1)}
+                            disabled={idx === selectedProblemIds.length - 1}
+                            className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
 
@@ -502,46 +512,59 @@ export default function ShowcasePage() {
               比赛 ({selectedContestIds.length}/{contests.length})
             </h3>
             <div className="space-y-1 max-h-48 overflow-y-auto">
-              {contests.map((c) => {
-                const isSelected = selectedContestIds.includes(c.id);
-                const idx = selectedContestIds.indexOf(c.id);
-                return (
-                  <div
-                    key={c.id}
-                    className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleContest(c.id)}
-                      className="accent-gray-800 dark:accent-gray-400"
-                    />
-                    <span
-                      className={`text-sm flex-1 ${isSelected ? "text-gray-800 dark:text-gray-100" : "text-gray-400 dark:text-gray-500"}`}
-                    >
-                      {c.name}
-                    </span>
-                    {isSelected && (
-                      <div className="flex gap-1 shrink-0">
-                        <button
-                          onClick={() => moveItem("contest", idx, -1)}
-                          disabled={idx === 0}
-                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          onClick={() => moveItem("contest", idx, 1)}
-                          disabled={idx === selectedContestIds.length - 1}
-                          className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1"
-                        >
-                          ↓
-                        </button>
-                      </div>
-                    )}
-                  </div>
+              {(() => {
+                const selected = selectedContestIds
+                  .map((id) => contests.find((c) => c.id === id))
+                  .filter(Boolean) as ContestItem[];
+                const unselected = contests.filter(
+                  (c) => !selectedContestIds.includes(c.id),
                 );
-              })}
+                return [...selected, ...unselected].map((c) => {
+                  const isSelected = selectedContestIds.includes(c.id);
+                  const idx = selectedContestIds.indexOf(c.id);
+                  return (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-2 py-1.5 px-2 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleContest(c.id)}
+                        className="accent-gray-800 dark:accent-gray-400"
+                      />
+                      <span
+                        className={`text-sm flex-1 ${isSelected ? "text-gray-800 dark:text-gray-100" : "text-gray-400 dark:text-gray-500"}`}
+                      >
+                        {isSelected && (
+                          <span className="text-gray-400 dark:text-gray-500 mr-1.5 text-xs tabular-nums">
+                            {idx + 1}.
+                          </span>
+                        )}
+                        {c.name}
+                      </span>
+                      {isSelected && (
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={() => moveItem("contest", idx, -1)}
+                            disabled={idx === 0}
+                            className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            onClick={() => moveItem("contest", idx, 1)}
+                            disabled={idx === selectedContestIds.length - 1}
+                            className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30 px-1"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </div>
 
@@ -564,22 +587,32 @@ export default function ShowcasePage() {
       )}
 
       {/* ===== 公告 ===== */}
-      {announcements.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
-              公告
-            </h2>
-            {announcements.length >
-              Math.max(announcements.filter((a) => a.pinned).length, 3) && (
-              <Link
-                to="/community?tag=公告"
-                className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                查看全部公告
-              </Link>
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+            公告
+          </h2>
+          {announcements.length >
+            Math.max(announcements.filter((a) => a.pinned).length, 3) && (
+            <Link
+              to="/community?tag=公告"
+              className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+            >
+              查看全部公告
+            </Link>
+          )}
+        </div>
+        {announcements.length === 0 ? (
+          <div>
+            <p className="text-sm text-gray-400 dark:text-gray-500">暂无公告</p>
+            {hasPermission("manage_site") && (
+              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                在配置 → 讨论区 →
+                标签管理中添加「公告」标签并发布带有此标签的帖子以发布公告
+              </p>
             )}
           </div>
+        ) : (
           <div className="space-y-2">
             {(() => {
               const pinned = announcements.filter((a) => a.pinned);
@@ -610,17 +643,17 @@ export default function ShowcasePage() {
               ));
             })()}
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {/* ===== 已发布题目 ===== */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
-            公开题目 ({problems.length})
-          </h2>
-          {currentSelectedProblemIds.length > 0 &&
-            currentSelectedProblemIds.length < problems.length && (
+      {showcaseProblems.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+              公开题目 ({showcaseProblems.length})
+            </h2>
+            {showcaseProblems.length < problems.length && (
               <Link
                 to="/problems"
                 className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -628,30 +661,23 @@ export default function ShowcasePage() {
                 查看全部题目
               </Link>
             )}
-        </div>
-        {showcaseProblems.length === 0 ? (
-          <div className="text-gray-400 dark:text-gray-500 text-sm">
-            暂无公开题目
           </div>
-        ) : (
-          <>
-            <div className="space-y-2">
-              {showcaseProblems.map((p) => (
-                <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />
-              ))}
-            </div>
-          </>
-        )}
-      </section>
+          <div className="space-y-2">
+            {showcaseProblems.map((p) => (
+              <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* ===== 比赛列表 ===== */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
-            公开比赛 ({contests.length})
-          </h2>
-          {currentSelectedContestIds.length > 0 &&
-            currentSelectedContestIds.length < contests.length && (
+      {showcaseContests.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200">
+              比赛 ({showcaseContests.length})
+            </h2>
+            {showcaseContests.length < contests.length && (
               <Link
                 to="/contests"
                 className="text-xs px-3 py-1 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -659,87 +685,64 @@ export default function ShowcasePage() {
                 查看全部比赛
               </Link>
             )}
-        </div>
-        {showcaseContests.length === 0 ? (
-          <div className="text-gray-400 dark:text-gray-500 text-sm">
-            暂无比赛
           </div>
-        ) : (
-          <>
-            <div className="space-y-4">
-              {showcaseContests.map((c) => {
-                const status = contestStatus(c.start_time, c.end_time);
-                const cProblems = contestProblems[c.id] || [];
-                return (
-                  <div key={c.id} className="mg-box-shadow p-5">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
-                          {c.name}
-                        </h3>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {c.start_time} ~ {c.end_time}
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 text-xs font-medium ${status.color}`}
-                          >
-                            {status.label}
-                          </span>
-                        </div>
-                      </div>
-                      {c.link && (
-                        <a
-                          href={c.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="shrink-0 px-3 py-1.5 text-xs border border-blue-300 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+          <div className="space-y-4">
+            {showcaseContests.map((c) => {
+              const status = contestStatus(c.start_time, c.end_time);
+              const cProblems = contestProblems[c.id] || [];
+              return (
+                <div key={c.id} className="mg-box-shadow p-5">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">
+                        {c.name}
+                      </h3>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {c.start_time} ~ {c.end_time}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 text-xs font-medium ${status.color}`}
                         >
-                          进入比赛 ↗
-                        </a>
-                      )}
+                          {status.label}
+                        </span>
+                      </div>
                     </div>
-                    {c.description && (
-                      <MarkdownRenderer
-                        content={c.description}
-                        className="mb-3"
-                      />
-                    )}
-                    {cProblems.length > 0 ? (
-                      <div className="space-y-1.5">
-                        {cProblems.map((p) => (
-                          <CompactProblemCard
-                            key={p.id}
-                            p={p}
-                            difficultyMap={difficultyMap}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-gray-400 dark:text-gray-500">
-                        暂无题目
-                      </div>
+                    {c.link && (
+                      <a
+                        href={c.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 px-3 py-1.5 text-xs border border-blue-300 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"
+                      >
+                        进入比赛 ↗
+                      </a>
                     )}
                   </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </section>
-
-      {/* ===== 未关联比赛的已发布题目 ===== */}
-      {unassigned.length > 0 && showcaseProblems.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
-            其他公示题目 ({unassigned.length})
-          </h2>
-          <div className="grid gap-2">
-            {unassigned
-              .filter((p) => showcaseProblems.some((sp) => sp.id === p.id))
-              .map((p) => (
-                <ProblemCard key={p.id} p={p} difficultyMap={difficultyMap} />
-              ))}
+                  {c.description && (
+                    <MarkdownRenderer
+                      content={c.description}
+                      className="mb-3"
+                    />
+                  )}
+                  {cProblems.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {cProblems.map((p) => (
+                        <CompactProblemCard
+                          key={p.id}
+                          p={p}
+                          difficultyMap={difficultyMap}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400 dark:text-gray-500">
+                      暂无题目
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       )}

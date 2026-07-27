@@ -1,29 +1,29 @@
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useSyncExternalStore } from 'react'
-import ProtectedRoute from '../components/ProtectedRoute'
-import MainLayout from './layouts/MainLayout'
-import AdminLayout from './layouts/AdminLayout'
-import { PluginRegistry } from '../plugins/registry'
-import PluginPage from '../plugins/PluginPage'
-import LoginPage from '../features/auth/LoginPage'
-import AuthCallbackPage from '../features/auth/AuthCallbackPage'
-import ShowcasePage from '../features/showcase/ShowcasePage'
-import ProblemsPage from '../features/problems/ProblemsPage'
-import ProblemDetailPage from '../features/problems/ProblemDetailPage'
-import TeamPage from '../features/team/TeamPage'
-import ApplyPage from '../features/team/ApplyPage'
-import ContestManagePage from '../features/contests/ContestManagePage'
-import ContestDetailPage from '../features/contests/ContestDetailPage'
-import ProfilePage from '../features/profile/ProfilePage'
-import AdminConfigPage from '../features/admin/AdminConfigPage'
-import AdminUsersPage from '../features/admin/AdminUsersPage'
-import AdminRolesPage from '../features/admin/AdminRolesPage'
-import AdminBackupsPage from '../features/admin/AdminBackupsPage'
-import AdminPluginsPage from '../features/admin/AdminPluginsPage'
-import CommunityPage from '../features/community/CommunityPage'
-import PostDetailPage from '../features/community/PostDetailPage'
-import NotFoundPage from '../features/notfound/NotFoundPage'
-import AdminInitPage from '../features/admin/AdminInitPage'
+import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useSyncExternalStore } from "react";
+import ProtectedRoute from "../components/ProtectedRoute";
+import MainLayout from "./layouts/MainLayout";
+import AdminLayout from "./layouts/AdminLayout";
+import { PluginRegistry } from "../plugins/registry";
+import PluginPage from "../plugins/PluginPage";
+import LoginPage from "../features/auth/LoginPage";
+import AuthCallbackPage from "../features/auth/AuthCallbackPage";
+import ShowcasePage from "../features/showcase/ShowcasePage";
+import ProblemsPage from "../features/problems/ProblemsPage";
+import ProblemDetailPage from "../features/problems/ProblemDetailPage";
+import TeamPage from "../features/team/TeamPage";
+import ApplyPage from "../features/team/ApplyPage";
+import ContestManagePage from "../features/contests/ContestManagePage";
+import ContestDetailPage from "../features/contests/ContestDetailPage";
+import ProfilePage from "../features/profile/ProfilePage";
+import AdminConfigPage from "../features/admin/AdminConfigPage";
+import AdminUsersPage from "../features/admin/AdminUsersPage";
+import AdminRolesPage from "../features/admin/AdminRolesPage";
+import AdminBackupsPage from "../features/admin/AdminBackupsPage";
+import AdminPluginsPage from "../features/admin/AdminPluginsPage";
+import CommunityPage from "../features/community/CommunityPage";
+import PostDetailPage from "../features/community/PostDetailPage";
+import NotFoundPage from "../features/notfound/NotFoundPage";
+import AdminInitPage from "../features/admin/AdminInitPage";
 
 /** Admin guard layout */
 function AdminGuardLayout() {
@@ -31,14 +31,14 @@ function AdminGuardLayout() {
     <ProtectedRoute requiredPermission="manage_site">
       <AdminLayout />
     </ProtectedRoute>
-  )
+  );
 }
 
 export default function AppRoutes() {
   const pluginRoutes = useSyncExternalStore(
     (cb) => PluginRegistry.getInstance().subscribe(cb),
     () => PluginRegistry.getInstance().getPluginRoutes(),
-  )
+  );
 
   return (
     <HashRouter>
@@ -96,8 +96,14 @@ export default function AppRoutes() {
               </ProtectedRoute>
             ) : (
               <PluginPage pluginId={pluginId} />
-            )
-            return <Route key={pluginId} path={route.path.replace(/^\//, '')} element={element} />
+            );
+            return (
+              <Route
+                key={pluginId}
+                path={route.path.replace(/^\//, "")}
+                element={element}
+              />
+            );
           })}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
@@ -113,5 +119,5 @@ export default function AppRoutes() {
         </Route>
       </Routes>
     </HashRouter>
-  )
+  );
 }

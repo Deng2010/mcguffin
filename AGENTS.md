@@ -175,12 +175,3 @@ mcguffin/
 ## 演示模式
 
 CP OAuth 不可用时回退。输入的 token 直接作为 user_id 前缀匹配预设用户数据。
-
----
-
-## 已知限制
-
-- Client Secret 硬编码（应环境变量化）
-- Token 存 localStorage（XSS 风险）
-- CORS 配置为 `Any`
-- 前端 `App.tsx` 较大（含路由 + 所有 Layout + Context）

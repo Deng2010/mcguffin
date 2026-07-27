@@ -1,8 +1,8 @@
-import { PluginRegistry } from '../registry'
+import { PluginRegistry } from "../registry";
 
 interface PluginSlotsProps {
-  slot: string
-  props?: Record<string, unknown>
+  slot: string;
+  props?: Record<string, unknown>;
 }
 
 /**
@@ -11,10 +11,10 @@ interface PluginSlotsProps {
  *   <PluginSlots slot="member_card_actions" props={{ member }} />
  */
 export default function PluginSlots({ slot, props = {} }: PluginSlotsProps) {
-  const registry = PluginRegistry.getInstance()
-  const components = registry.getSlotComponents(slot)
+  const registry = PluginRegistry.getInstance();
+  const components = registry.getSlotComponents(slot);
 
-  if (components.length === 0) return null
+  if (components.length === 0) return null;
 
   return (
     <>
@@ -22,5 +22,5 @@ export default function PluginSlots({ slot, props = {} }: PluginSlotsProps) {
         <Component key={pluginId} {...props} />
       ))}
     </>
-  )
+  );
 }

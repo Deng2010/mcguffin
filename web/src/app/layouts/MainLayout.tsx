@@ -1,14 +1,14 @@
-import { Outlet } from 'react-router-dom'
-import { useSiteStore } from '../../stores/siteStore'
-import Navbar from '../../components/Navbar'
+import { Outlet } from "react-router-dom";
+import { useSiteStore } from "../../stores/siteStore";
+import Navbar from "../../components/Navbar";
 
 export function Footer() {
-  const siteInfo = useSiteStore(s => s.siteInfo)
-  const version = siteInfo?.version || '0.1.0'
+  const siteInfo = useSiteStore((s) => s.siteInfo);
+  const version = siteInfo?.version || "0.1.0";
   return (
     <footer className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 mt-12 py-4 px-6">
       <div className="max-w-6xl mx-auto text-center text-xs text-gray-400 dark:text-gray-500">
-        Powered by{' '}
+        Powered by{" "}
         <a
           href="https://github.com/Deng2010/mcguffin"
           target="_blank"
@@ -16,11 +16,11 @@ export function Footer() {
           className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 underline"
         >
           McGuffin
-        </a>{' '}
+        </a>{" "}
         v{version}
       </div>
     </footer>
-  )
+  );
 }
 
 /** Main site layout: Navbar + content + Footer */
@@ -33,5 +33,5 @@ export default function MainLayout() {
       </div>
       <Footer />
     </div>
-  )
+  );
 }

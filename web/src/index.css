@@ -4,9 +4,9 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
+    "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: #f5f5f5;
@@ -42,42 +42,87 @@ body.dark {
 }
 
 /* Luogu Markdown alignment */
-.luogu-align-center { text-align: center; }
-.luogu-align-right { text-align: right; }
+.luogu-align-center {
+  text-align: center;
+}
+.luogu-align-right {
+  text-align: right;
+}
 
 /* Dark mode for Luogu Markdown callouts (Tailwind can't scan dynamic class names) */
-.dark .luogu-callout.border-blue-300 { border-color: #1e40af; }
-.dark .luogu-callout.border-yellow-300 { border-color: #854d0e; }
-.dark .luogu-callout.border-red-300 { border-color: #991b1b; }
-.dark .luogu-callout.border-green-300 { border-color: #166534; }
-.dark .luogu-callout summary.bg-blue-100 { background-color: #1e3a5f; }
-.dark .luogu-callout summary.bg-yellow-100 { background-color: #713f12; }
-.dark .luogu-callout summary.bg-red-100 { background-color: #7f1d1d; }
-.dark .luogu-callout summary.bg-green-100 { background-color: #14532d; }
+.dark .luogu-callout.border-blue-300 {
+  border-color: #1e40af;
+}
+.dark .luogu-callout.border-yellow-300 {
+  border-color: #854d0e;
+}
+.dark .luogu-callout.border-red-300 {
+  border-color: #991b1b;
+}
+.dark .luogu-callout.border-green-300 {
+  border-color: #166534;
+}
+.dark .luogu-callout summary.bg-blue-100 {
+  background-color: #1e3a5f;
+}
+.dark .luogu-callout summary.bg-yellow-100 {
+  background-color: #713f12;
+}
+.dark .luogu-callout summary.bg-red-100 {
+  background-color: #7f1d1d;
+}
+.dark .luogu-callout summary.bg-green-100 {
+  background-color: #14532d;
+}
 .dark .luogu-callout summary.text-blue-800,
-.dark .luogu-callout div.text-blue-800 { color: #93c5fd; }
+.dark .luogu-callout div.text-blue-800 {
+  color: #93c5fd;
+}
 .dark .luogu-callout summary.text-yellow-800,
-.dark .luogu-callout div.text-yellow-800 { color: #fde68a; }
+.dark .luogu-callout div.text-yellow-800 {
+  color: #fde68a;
+}
 .dark .luogu-callout summary.text-red-800,
-.dark .luogu-callout div.text-red-800 { color: #fca5a5; }
+.dark .luogu-callout div.text-red-800 {
+  color: #fca5a5;
+}
 .dark .luogu-callout summary.text-green-800,
-.dark .luogu-callout div.text-green-800 { color: #bbf7d0; }
-.dark .luogu-callout div.bg-blue-50 { background-color: #1e3a5f; }
-.dark .luogu-callout div.bg-yellow-50 { background-color: #713f12; }
-.dark .luogu-callout div.bg-red-50 { background-color: #7f1d1d; }
-.dark .luogu-callout div.bg-green-50 { background-color: #14532d; }
+.dark .luogu-callout div.text-green-800 {
+  color: #bbf7d0;
+}
+.dark .luogu-callout div.bg-blue-50 {
+  background-color: #1e3a5f;
+}
+.dark .luogu-callout div.bg-yellow-50 {
+  background-color: #713f12;
+}
+.dark .luogu-callout div.bg-red-50 {
+  background-color: #7f1d1d;
+}
+.dark .luogu-callout div.bg-green-50 {
+  background-color: #14532d;
+}
 
 /* Dark mode for epigraph */
-.dark .luogu-epigraph .text-gray-500 { color: #a3a3a3; }
+.dark .luogu-epigraph .text-gray-500 {
+  color: #a3a3a3;
+}
 
 /* Scrollbar for dark mode */
 .dark ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-.dark ::-webkit-scrollbar-track { background: #1a1a1a; }
-.dark ::-webkit-scrollbar-thumb { background: #404040; border-radius: 0; }
-.dark ::-webkit-scrollbar-thumb:hover { background: #555; }
+.dark ::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 0;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
 
 /* @mention styling in Markdown */
 .mention {
@@ -105,10 +150,18 @@ body.dark {
   }
 
   /* Sizes */
-  .mg-btn-xs { @apply px-2 py-1 text-xs; }
-  .mg-btn-sm { @apply px-3 py-1.5 text-sm; }
-  .mg-btn-md { @apply px-5 py-2 text-sm; }
-  .mg-btn-lg { @apply px-6 py-2.5 text-base; }
+  .mg-btn-xs {
+    @apply px-2 py-1 text-xs;
+  }
+  .mg-btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+  .mg-btn-md {
+    @apply px-5 py-2 text-sm;
+  }
+  .mg-btn-lg {
+    @apply px-6 py-2.5 text-base;
+  }
 
   /* Colors */
   .mg-btn-primary {

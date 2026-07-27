@@ -48,6 +48,9 @@ pub struct SubmitProblemPayload {
 
 #[derive(Deserialize)]
 pub struct EditProblemPayload {
+    /// title to set, if changed
+    #[serde(default)]
+    pub title: Option<String>,
     /// difficulty to set, if changed
     #[serde(default)]
     pub difficulty: Option<String>,

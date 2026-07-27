@@ -89,7 +89,7 @@ export default function ProblemsPage() {
   const publishedCount = publishedList.length;
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
-    { id: "list", label: "全部题目" },
+    { id: "list", label: "全部题目", count: problems.length },
   ];
   if (user) {
     tabs.push({ id: "mine", label: "我的题目", count: myProblems.length });
@@ -149,7 +149,9 @@ export default function ProblemsPage() {
       setVisibilityMap((prev) => {
         // Only merge new entries, preserve user edits
         const merged = { ...prev, ...vm };
-        return Object.keys(merged).length > Object.keys(prev).length ? merged : prev;
+        return Object.keys(merged).length > Object.keys(prev).length
+          ? merged
+          : prev;
       });
     }
   }, [problems, canApprove]);
@@ -416,8 +418,7 @@ export default function ProblemsPage() {
   // Card wrapper — clickable to navigate to problem detail
   const cardClass =
     "mg-box-shadow p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors";
-  const guestCardClass =
-    "mg-box-shadow p-4";
+  const guestCardClass = "mg-box-shadow p-4";
   const goDetail = (problemId: string) => (e: React.MouseEvent) => {
     navigate(`/problems/${problemId}`);
   };

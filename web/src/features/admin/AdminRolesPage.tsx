@@ -22,16 +22,34 @@ interface AdminUser {
 
 const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   admin: [
-    "view_showcase", "apply_join", "view_team", "manage_team",
-    "manage_members", "submit_problem", "view_problems", "approve_problem",
-    "manage_contests", "view_all_contests", "view_public_contests",
-    "edit_showcase", "view_discussions", "manage_discussions", "manage_tags",
-    "manage_notifications", "manage_backups", "view_stats", "manage_posts",
+    "view_showcase",
+    "apply_join",
+    "view_team",
+    "manage_team",
+    "manage_members",
+    "submit_problem",
+    "view_problems",
+    "approve_problem",
+    "manage_contests",
+    "view_all_contests",
+    "view_public_contests",
+    "edit_showcase",
+    "view_discussions",
+    "manage_discussions",
+    "manage_tags",
+    "manage_notifications",
+    "manage_backups",
+    "view_stats",
+    "manage_posts",
   ],
   member: [
-    "view_showcase", "apply_join", "view_team",
-    "submit_problem", "view_problems",
-    "view_public_contests", "view_discussions",
+    "view_showcase",
+    "apply_join",
+    "view_team",
+    "submit_problem",
+    "view_problems",
+    "view_public_contests",
+    "view_discussions",
   ],
   guest: ["view_showcase", "apply_join", "view_public_contests"],
 };
@@ -223,7 +241,9 @@ export default function AdminRolesPage() {
     setMsg("");
     try {
       // 保存角色权限
-      const cur = await apiFetch<{ success: boolean; config?: any }>("/admin/config");
+      const cur = await apiFetch<{ success: boolean; config?: any }>(
+        "/admin/config",
+      );
       if (cur.success && cur.config) {
         await apiFetch("/admin/config", {
           method: "PUT",

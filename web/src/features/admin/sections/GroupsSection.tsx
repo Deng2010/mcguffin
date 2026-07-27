@@ -1,9 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../../services/api";
-import type {
-  MemberGroup,
-  GroupUser,
-} from "../config-context";
+import type { MemberGroup, GroupUser } from "../config-context";
 import { PERM_LABELS } from "../config-context";
 
 export default function GroupsSection() {
@@ -43,7 +40,7 @@ export default function GroupsSection() {
       const res = await apiFetch<
         { success?: boolean; users?: GroupUser[] } | GroupUser[]
       >("/admin/users");
-      const users = Array.isArray(res) ? res : (res as any).users ?? [];
+      const users = Array.isArray(res) ? res : ((res as any).users ?? []);
       setAllUsers(users as GroupUser[]);
     } catch (err) {
       setMsg(`加载用户失败: ${err}`);
@@ -79,18 +76,17 @@ export default function GroupsSection() {
     setSavingMembers(false);
     // Load users and pre-select those in this group
     loadUsers().then(() => {
-      apiFetch<{ success?: boolean; users?: any[] } | any[]>("/admin/users")
-        .then((res) => {
-          const users = Array.isArray(res)
-            ? res
-            : (res as any).users ?? [];
-          const userIds = new Set<string>();
-          for (const u of users) {
-            if (u.group_ids?.includes(g.id)) userIds.add(u.id);
-          }
-          setSelectedUserIds(userIds);
-          setInitialGroupUserIds(new Set(userIds));
-        });
+      apiFetch<{ success?: boolean; users?: any[] } | any[]>(
+        "/admin/users",
+      ).then((res) => {
+        const users = Array.isArray(res) ? res : ((res as any).users ?? []);
+        const userIds = new Set<string>();
+        for (const u of users) {
+          if (u.group_ids?.includes(g.id)) userIds.add(u.id);
+        }
+        setSelectedUserIds(userIds);
+        setInitialGroupUserIds(new Set(userIds));
+      });
     });
   };
 
@@ -204,10 +200,7 @@ export default function GroupsSection() {
           }`}
         >
           {msg}
-          <button
-            onClick={() => setMsg("")}
-            className="ml-3 text-xs underline"
-          >
+          <button onClick={() => setMsg("")} className="ml-3 text-xs underline">
             关闭
           </button>
         </div>

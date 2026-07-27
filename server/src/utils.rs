@@ -62,8 +62,7 @@ pub async fn resolve_user(
             state.remove_session(&token).await;
             return None;
         }
-        let uid = entry.user_id.clone();
-        uid
+        entry.user_id.clone()
     };
 
     let users = state.users.read().await;

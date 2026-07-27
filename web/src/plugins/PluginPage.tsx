@@ -1,28 +1,36 @@
-import { Suspense } from 'react'
-import { useParams } from 'react-router-dom'
-import { PluginRegistry } from './registry'
+import { Suspense } from "react";
+import { useParams } from "react-router-dom";
+import { PluginRegistry } from "./registry";
 
 interface PluginPageProps {
-  pluginId?: string
+  pluginId?: string;
 }
 
-export default function PluginPage({ pluginId: pluginIdProp }: PluginPageProps) {
-  const { pluginId: pluginIdParam } = useParams<{ pluginId: string }>()
-  const pluginId = pluginIdProp ?? pluginIdParam
-  const component = pluginId ? PluginRegistry.getInstance().getComponent(pluginId) : null
+export default function PluginPage({
+  pluginId: pluginIdProp,
+}: PluginPageProps) {
+  const { pluginId: pluginIdParam } = useParams<{ pluginId: string }>();
+  const pluginId = pluginIdProp ?? pluginIdParam;
+  const component = pluginId
+    ? PluginRegistry.getInstance().getComponent(pluginId)
+    : null;
 
   if (!component) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-gray-500 dark:text-gray-400">插件未找到或未加载</p>
       </div>
-    )
+    );
   }
 
-  const Component = component
+  const Component = component;
   return (
-    <Suspense fallback={<div className="text-center py-12 text-gray-400">加载中...</div>}>
+    <Suspense
+      fallback={
+        <div className="text-center py-12 text-gray-400">加载中...</div>
+      }
+    >
       <Component />
     </Suspense>
-  )
+  );
 }

@@ -1,5 +1,10 @@
-export { PluginRegistry } from './registry'
-export { default as PluginPage } from './PluginPage'
-export { default as PluginSlots } from './sdk/PluginSlots'
-export { definePlugin } from './sdk/definePlugin'
-export type { PluginManifest, PluginRouteDef, PluginDefinition, PluginSlotDef } from './types'
+export { PluginRegistry } from "./registry";
+export { default as PluginPage } from "./PluginPage";
+export { default as PluginSlots } from "./sdk/PluginSlots";
+export { definePlugin } from "./sdk/definePlugin";
+export type {
+  PluginManifest,
+  PluginRouteDef,
+  PluginDefinition,
+  PluginSlotDef,
+} from "./types";

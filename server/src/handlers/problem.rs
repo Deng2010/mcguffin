@@ -1163,6 +1163,9 @@ pub async fn update_problem(
     }
 
     // Apply changes
+    if let Some(val) = payload.title {
+        problem.title = val;
+    }
     if let Some(val) = payload.difficulty {
         problem.difficulty = val;
     }

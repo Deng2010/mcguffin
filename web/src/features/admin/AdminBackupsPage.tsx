@@ -173,9 +173,7 @@ export default function AdminBackupsPage() {
     if (!file) return;
     const isDb = file.name.endsWith(".db");
     if (
-      !confirm(
-        `确定要从「${file.name}」恢复吗？\n此操作将替换所有现有数据！`,
-      )
+      !confirm(`确定要从「${file.name}」恢复吗？\n此操作将替换所有现有数据！`)
     )
       return;
     try {

@@ -214,9 +214,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       const order =
         difficultyOrder.length > 0
           ? difficultyOrder
-          : difficulties
-              .filter((d) => d.name.trim())
-              .map((d) => d.name.trim());
+          : difficulties.filter((d) => d.name.trim()).map((d) => d.name.trim());
       const res = await apiFetch<{ success: boolean; message: string }>(
         "/admin/config",
         {

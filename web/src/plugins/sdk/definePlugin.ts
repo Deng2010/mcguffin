@@ -1,6 +1,6 @@
-import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
-import { PluginRegistry } from '../registry'
-import type { PluginDefinition } from '../types'
+import { lazy, type ComponentType, type LazyExoticComponent } from "react";
+import { PluginRegistry } from "../registry";
+import type { PluginDefinition } from "../types";
 
 /**
  * Declare a React plugin and register it with the PluginRegistry.
@@ -28,7 +28,7 @@ export function definePlugin(
   definition: PluginDefinition,
   component?: LazyExoticComponent<ComponentType<unknown>>,
 ): PluginDefinition {
-  const registry = PluginRegistry.getInstance()
-  registry.register(definition, component)
-  return definition
+  const registry = PluginRegistry.getInstance();
+  registry.register(definition, component);
+  return definition;
 }

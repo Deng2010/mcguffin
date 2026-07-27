@@ -1,82 +1,100 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
-import { useAuthStore } from './stores/authStore'
-import { fetchNotifications, markNotificationRead, markAllNotificationsRead } from './services/notification.service'
-import type { Notification } from './types'
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
+import { useAuthStore } from "./stores/authStore";
+import {
+  fetchNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from "./services/notification.service";
+import type { Notification } from "./types";
 
 interface NotificationContextType {
-  notifications: Notification[]
-  unreadCount: number
-  refresh: () => void
-  markRead: (id: string) => Promise<void>
-  markAllRead: () => Promise<void>
+  notifications: Notification[];
+  unreadCount: number;
+  refresh: () => void;
+  markRead: (id: string) => Promise<void>;
+  markAllRead: () => Promise<void>;
 }
 
-const NotificationContext = createContext<NotificationContextType | null>(null)
+const NotificationContext = createContext<NotificationContextType | null>(null);
 
-export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+export function NotificationProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const data = await fetchNotifications()
-      setNotifications(data.notifications)
-      setUnreadCount(data.unread_count)
+      const data = await fetchNotifications();
+      setNotifications(data.notifications);
+      setUnreadCount(data.unread_count);
     } catch {
       // Silently fail — user might not be authenticated yet
     }
-  }, [])
+  }, []);
 
   // Poll every 30 seconds when authenticated
   useEffect(() => {
     if (!isAuthenticated) {
-      setNotifications([])
-      setUnreadCount(0)
+      setNotifications([]);
+      setUnreadCount(0);
       if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
-      return
+      return;
     }
 
-    refresh() // Initial fetch
-    intervalRef.current = setInterval(refresh, 30000)
+    refresh(); // Initial fetch
+    intervalRef.current = setInterval(refresh, 30000);
 
     return () => {
       if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
-    }
-  }, [isAuthenticated, refresh])
+    };
+  }, [isAuthenticated, refresh]);
 
   const markRead = useCallback(async (id: string) => {
-    await markNotificationRead(id)
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, read: true } : n))
-    )
-    setUnreadCount(prev => Math.max(0, prev - 1))
-  }, [])
+    await markNotificationRead(id);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+    );
+    setUnreadCount((prev) => Math.max(0, prev - 1));
+  }, []);
 
   const markAllRead = useCallback(async () => {
-    await markAllNotificationsRead()
-    setNotifications(prev =>
-      prev.map(n => ({ ...n, read: true }))
-    )
-    setUnreadCount(0)
-  }, [])
+    await markAllNotificationsRead();
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    setUnreadCount(0);
+  }, []);
 
   return (
-    <NotificationContext.Provider value={{ notifications, unreadCount, refresh, markRead, markAllRead }}>
+    <NotificationContext.Provider
+      value={{ notifications, unreadCount, refresh, markRead, markAllRead }}
+    >
       {children}
     </NotificationContext.Provider>
-  )
+  );
 }
 
 export function useNotifications() {
-  const ctx = useContext(NotificationContext)
-  if (!ctx) throw new Error('useNotifications must be used within NotificationProvider')
-  return ctx
+  const ctx = useContext(NotificationContext);
+  if (!ctx)
+    throw new Error(
+      "useNotifications must be used within NotificationProvider",
+    );
+  return ctx;
 }

@@ -1,27 +1,32 @@
-import { useState } from 'react'
+import { useState } from "react";
 
 interface AvatarProps {
-  src?: string | null
-  name: string
-  size?: 'xs' | 'sm' | 'md' | 'base' | 'lg'
-  className?: string
+  src?: string | null;
+  name: string;
+  size?: "xs" | "sm" | "md" | "base" | "lg";
+  className?: string;
 }
 
 const sizeMap = {
-  xs: { dim: 'w-5 h-5', text: 'text-[10px]', font: 'font-bold' },
-  sm: { dim: 'w-7 h-7', text: 'text-xs', font: 'font-bold' },
-  md: { dim: 'w-8 h-8', text: 'text-sm', font: 'font-bold' },
-  base: { dim: 'w-10 h-10', text: 'text-sm', font: 'font-bold' },
-  lg: { dim: 'w-24 h-24', text: 'text-3xl', font: 'font-bold' },
-} as const
+  xs: { dim: "w-5 h-5", text: "text-[10px]", font: "font-bold" },
+  sm: { dim: "w-7 h-7", text: "text-xs", font: "font-bold" },
+  md: { dim: "w-8 h-8", text: "text-sm", font: "font-bold" },
+  base: { dim: "w-10 h-10", text: "text-sm", font: "font-bold" },
+  lg: { dim: "w-24 h-24", text: "text-3xl", font: "font-bold" },
+} as const;
 
-export default function Avatar({ src, name, size = 'base', className = '' }: AvatarProps) {
-  const [imgError, setImgError] = useState(false)
-  const s = sizeMap[size]
-  const initial = name.charAt(0) || '?'
-  const showImg = src && !imgError
+export default function Avatar({
+  src,
+  name,
+  size = "base",
+  className = "",
+}: AvatarProps) {
+  const [imgError, setImgError] = useState(false);
+  const s = sizeMap[size];
+  const initial = name.charAt(0) || "?";
+  const showImg = src && !imgError;
 
-  if (size === 'xs') {
+  if (size === "xs") {
     return showImg ? (
       <img
         src={src}
@@ -35,11 +40,13 @@ export default function Avatar({ src, name, size = 'base', className = '' }: Ava
       >
         {initial}
       </span>
-    )
+    );
   }
 
-  const shrinkClass = size === 'md' || size === 'base' || size === 'lg' ? 'shrink-0' : ''
-  const borderClass = size === 'lg' ? 'border border-gray-200 dark:border-gray-700' : ''
+  const shrinkClass =
+    size === "md" || size === "base" || size === "lg" ? "shrink-0" : "";
+  const borderClass =
+    size === "lg" ? "border border-gray-200 dark:border-gray-700" : "";
 
   return (
     <div className={`${shrinkClass} ${className}`}>
@@ -58,5 +65,5 @@ export default function Avatar({ src, name, size = 'base', className = '' }: Ava
         </div>
       )}
     </div>
-  )
+  );
 }
