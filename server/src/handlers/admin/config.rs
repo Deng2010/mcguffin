@@ -696,7 +696,7 @@ pub async fn get_config(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+    auth.require_perm(&state, crate::types::perms::ACCESS_ADMIN)
         .await?;
 
     let raw = match read_config_raw() {
@@ -713,13 +713,13 @@ pub async fn get_config(
 }
 
 /// PUT /api/admin/config
-/// manage_site permission required — updates config.toml
+/// access_admin permission required — updates config.toml
 pub async fn update_config(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(payload): Json<UpdateConfigPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+    auth.require_perm(&state, crate::types::perms::ACCESS_ADMIN)
         .await?;
 
     // Validate
@@ -1061,12 +1061,12 @@ pub async fn init_admin(
 }
 
 /// POST /api/admin/restart
-/// manage_site permission required — restarts the mcguffin service
+/// access_admin permission required — restarts the mcguffin service
 pub async fn restart_service(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+    auth.require_perm(&state, crate::types::perms::ACCESS_ADMIN)
         .await?;
 
     // Spawn restart in background — this will restart the service after we respond

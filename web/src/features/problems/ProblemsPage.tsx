@@ -23,7 +23,7 @@ export default function ProblemsPage() {
   const { difficultyMap, difficulties } = useDifficulties();
   const navigate = useNavigate();
   const isGuest = !isAuthenticated || user?.role === "guest";
-  const canApprove = hasPermission("approve_problem");
+  const canApprove = hasPermission("approve_all_problems");
   const canSubmit = hasPermission("submit_problem");
 
   // All problems tab

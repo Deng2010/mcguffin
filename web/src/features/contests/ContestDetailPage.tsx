@@ -27,17 +27,11 @@ interface ContestProblem {
   status: string;
 }
 
-interface MemberOption {
-  id: string;
-  username: string;
-  display_name: string;
-}
-
 export default function ContestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, hasPermission } = useAuthStore();
   const { difficultyMap } = useDifficulties();
-  const isAdmin = hasPermission("approve_problem");
+  const isAdmin = hasPermission("approve_all_problems");
   const canEdit =
     user && (isAdmin || user.role === "member" || user.role === "superadmin");
 
@@ -55,22 +49,24 @@ export default function ContestDetailPage() {
   const [editLink, setEditLink] = useState("");
   const [editProblems, setEditProblems] = useState<ContestProblem[]>([]);
   const [editProblemsReady, setEditProblemsReady] = useState(false);
-  const [editVisibleTo, setEditVisibleTo] = useState<string[]>([]);
-  const [editEditableBy, setEditEditableBy] = useState<string[]>([]);
-  const [allMembers, setAllMembers] = useState<MemberOption[]>([]);
   const [saving, setSaving] = useState(false);
+
+  const refreshData = async () => {
+    if (!id) return;
+    const [contestsRes, problemsRes] = await Promise.all([
+      apiFetch<ContestDetail[]>("/contests"),
+      apiFetch<ContestProblem[]>(`/contests/${id}/problems`),
+    ]);
+    const found = contestsRes.find((c: ContestDetail) => c.id === id);
+    if (found) setContest(found);
+    setProblems(problemsRes);
+  };
 
   const loadData = async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const [contestsRes, problemsRes] = await Promise.all([
-        apiFetch<ContestDetail[]>("/contests"),
-        apiFetch<ContestProblem[]>(`/contests/${id}/problems`),
-      ]);
-      const found = contestsRes.find((c: ContestDetail) => c.id === id);
-      if (found) setContest(found);
-      setProblems(problemsRes);
+      await refreshData();
     } catch {
       setError("加载失败");
     } finally {
@@ -91,14 +87,7 @@ export default function ContestDetailPage() {
     setEditLink(contest.link || "");
     setEditProblemsReady(false);
     setError("");
-    setEditVisibleTo(contest.visible_to || []);
-    setEditEditableBy(contest.editable_by || []);
     setEditing(true);
-    if (isAdmin && allMembers.length === 0) {
-      apiFetch<MemberOption[]>("/admin/users")
-        .then(setAllMembers)
-        .catch(() => {});
-    }
     apiFetch<ContestProblem[]>(`/contests/${id}/problems`)
       .then(setEditProblems)
       .catch(() => setEditProblems([]))
@@ -110,8 +99,6 @@ export default function ContestDetailPage() {
     setEditProblems([]);
     setEditProblemsReady(false);
     setError("");
-    setEditVisibleTo([]);
-    setEditEditableBy([]);
   };
 
   const moveProblem = (index: number, direction: -1 | 1) => {
@@ -121,16 +108,6 @@ export default function ContestDetailPage() {
     [next[index], next[i2]] = [next[i2], next[index]];
     setEditProblems(next);
   };
-
-  const toggleVisibleMember = (uid: string) =>
-    setEditVisibleTo((p) =>
-      p.includes(uid) ? p.filter((x) => x !== uid) : [...p, uid],
-    );
-
-  const toggleEditableMember = (uid: string) =>
-    setEditEditableBy((p) =>
-      p.includes(uid) ? p.filter((x) => x !== uid) : [...p, uid],
-    );
 
   const handleSave = async () => {
     if (
@@ -170,23 +147,7 @@ export default function ContestDetailPage() {
         setError("保存题目顺序失败");
         return;
       }
-      if (isAdmin) {
-        const r3 = await apiFetch<{ success: boolean }>(
-          `/admin/acl/contest/${id}`,
-          {
-            method: "PUT",
-            body: JSON.stringify({
-              visible_to: editVisibleTo,
-              editable_by: editEditableBy,
-            }),
-          },
-        );
-        if (!r3.success) {
-          setError("保存访问控制失败");
-          return;
-        }
-      }
-      await loadData();
+      await refreshData();
       setEditing(false);
     } catch {
       setError("保存失败");
@@ -491,57 +452,7 @@ export default function ContestDetailPage() {
           )}
         </div>
 
-        {/* ACL */}
-        {isAdmin && allMembers.length > 0 && (
-          <div className="border-t border-gray-200 pt-4 mb-6 dark:border-gray-700">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3 dark:text-gray-200">
-              访问控制
-            </h3>
-            <div className="mb-3">
-              <label className="block text-xs font-medium mb-1.5 text-gray-600 dark:text-gray-300">
-                可见成员
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {allMembers.map((m) => (
-                  <label
-                    key={m.id}
-                    className="flex items-center gap-1.5 text-sm cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={editVisibleTo.includes(m.id)}
-                      onChange={() => toggleVisibleMember(m.id)}
-                      className="accent-gray-800 dark:accent-gray-400"
-                    />
-                    {m.display_name || m.username}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium mb-1.5 text-gray-600 dark:text-gray-300">
-                可编辑成员
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {allMembers.map((m) => (
-                  <label
-                    key={m.id}
-                    className="flex items-center gap-1.5 text-sm cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={editEditableBy.includes(m.id)}
-                      onChange={() => toggleEditableMember(m.id)}
-                      className="accent-gray-800 dark:accent-gray-400"
-                    />
-                    {m.display_name || m.username}
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
+        {/* Save/Cancel */}
         <div className="flex gap-2">
           <button
             onClick={handleSave}

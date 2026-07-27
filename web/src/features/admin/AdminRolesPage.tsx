@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../services/api";
+import Tabs from "../../components/ui/Tabs";
+import ResourceAclSection from "./sections/ResourceAclSection";
 
 interface MemberGroup {
   id: string;
@@ -28,14 +30,13 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "manage_team",
     "manage_members",
     "submit_problem",
-    "view_problems",
-    "approve_problem",
-    "manage_contests",
+    "view_all_problems",
+    "approve_all_problems",
+    "manage_all_contests",
     "view_all_contests",
     "view_public_contests",
     "edit_showcase",
-    "view_discussions",
-    "manage_discussions",
+    "view_all_posts",
     "manage_tags",
     "manage_notifications",
     "manage_backups",
@@ -47,9 +48,9 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "apply_join",
     "view_team",
     "submit_problem",
-    "view_problems",
+    "view_all_problems",
     "view_public_contests",
-    "view_discussions",
+    "view_all_posts",
   ],
   guest: ["view_showcase", "apply_join", "view_public_contests"],
 };
@@ -70,18 +71,17 @@ const PERM_LABELS: Record<string, string> = {
   manage_team: "审批入队",
   manage_members: "管理成员",
   submit_problem: "投稿题目",
-  view_problems: "浏览题目",
-  approve_problem: "审核题目",
-  manage_contests: "管理赛事",
-  manage_site: "管理站点",
+  view_all_problems: "浏览所有题目",
+  approve_all_problems: "审核所有题目",
+  manage_all_contests: "管理所有比赛",
+  access_admin: "进入后台",
   edit_showcase: "编辑展示",
-  view_discussions: "浏览讨论",
-  manage_discussions: "管理讨论",
+  view_all_posts: "浏览所有帖子",
   manage_tags: "管理标签",
   manage_notifications: "发送通知",
   manage_backups: "备份恢复",
   view_stats: "查看统计",
-  manage_posts: "管理帖子",
+  manage_posts: "管理所有帖子",
 };
 
 const PERMISSION_GROUPS: { label: string; perms: string[] }[] = [
@@ -89,21 +89,16 @@ const PERMISSION_GROUPS: { label: string; perms: string[] }[] = [
   { label: "团队管理", perms: ["view_team", "manage_team", "manage_members"] },
   {
     label: "题目管理",
-    perms: ["submit_problem", "view_problems", "approve_problem"],
+    perms: ["submit_problem", "view_all_problems", "approve_all_problems"],
   },
   {
     label: "赛事管理",
-    perms: ["manage_contests", "view_all_contests", "view_public_contests"],
+    perms: ["manage_all_contests", "view_all_contests", "view_public_contests"],
   },
-  { label: "站点管理", perms: ["manage_site", "edit_showcase"] },
+  { label: "站点管理", perms: ["access_admin", "edit_showcase"] },
   {
     label: "社区管理",
-    perms: [
-      "view_discussions",
-      "manage_discussions",
-      "manage_tags",
-      "manage_posts",
-    ],
+    perms: ["view_all_posts", "manage_tags", "manage_posts"],
   },
   {
     label: "通知与系统",
@@ -163,6 +158,13 @@ function PermissionTree({
   );
 }
 
+const tabs: { id: string; label: string }[] = [
+  { id: "basic", label: "基本权限" },
+  { id: "resources", label: "资源权限" },
+];
+
+type TabId = "basic" | "resources";
+
 export default function AdminRolesPage() {
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
   const [_groups, _setGroups] = useState<MemberGroup[]>([]);
@@ -171,6 +173,7 @@ export default function AdminRolesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+  const [activeTab, setActiveTab] = useState<TabId>("basic");
 
   const load = async () => {
     setLoading(true);
@@ -281,7 +284,7 @@ export default function AdminRolesPage() {
       </div>
     );
 
-  return (
+  const renderBasicPermissions = () => (
     <div>
       {msg && (
         <div
@@ -409,6 +412,22 @@ export default function AdminRolesPage() {
           {saving ? "保存中..." : "保存权限设置"}
         </button>
       </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <Tabs
+        tabs={tabs}
+        activeTab={activeTab}
+        onChange={(id) => setActiveTab(id as TabId)}
+        wrap
+      />
+      {activeTab === "basic" ? (
+        renderBasicPermissions()
+      ) : (
+        <ResourceAclSection />
+      )}
     </div>
   );
 }

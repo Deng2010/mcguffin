@@ -20,7 +20,7 @@ type TabId = "all" | "public" | "draft";
 
 export default function ContestManagePage() {
   const { hasPermission } = useAuthStore();
-  const isAdmin = hasPermission("approve_problem");
+  const isAdmin = hasPermission("approve_all_problems");
   const [contests, setContests] = useState<ContestItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);

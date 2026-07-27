@@ -9,8 +9,9 @@ use crate::handlers::admin::{
     delete_backup, delete_group, download_backup, export_config, export_data, export_db,
     get_audit_log, get_config, get_showcase_config, import_config, import_data, init_admin,
     init_admin_status, list_backups, list_groups, restart_service, restore_backup,
-    restore_upload_backup, set_problem_acl, set_resource_acl, set_user_groups,
-    set_user_permissions, update_config, update_group, update_showcase_config,
+    get_acl_resources, restore_upload_backup, set_problem_acl, set_resource_acl,
+    set_user_groups, set_user_permissions, update_config, update_group,
+    update_showcase_config,
 };
 use crate::handlers::auth::{
     get_permissions, login, oauth_authorize, oauth_callback, refresh_token,
@@ -189,6 +190,7 @@ pub fn build_router(state: AppState) -> Router {
         // Admin problem ACL
         .route("/admin/problems/{problem_id}/acl", put(set_problem_acl))
         // Admin unified resource ACL
+        .route("/admin/acl/resources", get(get_acl_resources))
         .route(
             "/admin/acl/{resource_type}/{resource_id}",
             put(set_resource_acl),

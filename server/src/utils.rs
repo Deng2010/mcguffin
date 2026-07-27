@@ -302,7 +302,7 @@ impl AuthUser {
 
 // ============== Convenience Macros ==============
 
-/// require_permission_json + early return. Usage: `let (uid, user) = req_perm!(&state, &headers, perms::MANAGE_SITE);`
+/// require_permission_json + early return. Usage: `let (uid, user) = req_perm!(&state, &headers, perms::ACCESS_ADMIN);`
 #[macro_export]
 macro_rules! req_perm {
     ($state:expr, $headers:expr, $perm:expr) => {

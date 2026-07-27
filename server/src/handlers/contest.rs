@@ -184,7 +184,7 @@ pub async fn create_contest(
     auth: AuthUser,
     Json(payload): Json<CreateContestPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_ALL_CONTESTS)
         .await?;
 
     let contest = Contest {
@@ -219,7 +219,7 @@ pub async fn delete_contest(
     auth: AuthUser,
     Path(contest_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_ALL_CONTESTS)
         .await?;
 
     // Check existence first without write lock
@@ -247,7 +247,7 @@ pub async fn update_contest(
     Path(contest_id): Path<String>,
     Json(payload): Json<UpdateContestPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_ALL_CONTESTS)
         .await?;
 
     let mut contest = match state.contests.read().await.get(&contest_id) {
@@ -283,7 +283,7 @@ pub async fn set_contest_status(
     Path(contest_id): Path<String>,
     Json(payload): Json<SetContestStatusPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_ALL_CONTESTS)
         .await?;
 
     if payload.status != "draft" && payload.status != "public" {
@@ -334,7 +334,7 @@ pub async fn set_problem_order(
     Path(contest_id): Path<String>,
     Json(payload): Json<ContestProblemOrderPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_CONTESTS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_ALL_CONTESTS)
         .await?;
 
     let mut contest = match state.contests.read().await.get(&contest_id) {
@@ -381,7 +381,7 @@ pub async fn get_contest_problems(
     let current_user = resolve_user(&state, &headers).await;
     // Check admin status for later filtering
     let _is_admin_user = if let Some((_user_id, user)) = &current_user {
-        check_permission(&state, user, crate::types::perms::MANAGE_CONTESTS).await
+        check_permission(&state, user, crate::types::perms::MANAGE_ALL_CONTESTS).await
     } else {
         false
     };

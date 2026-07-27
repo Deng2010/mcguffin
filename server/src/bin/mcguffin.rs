@@ -533,7 +533,7 @@ fn cmd_init(config_path: &Path) {
         println!("  每个权限组需要: 名称 和 权限列表 (逗号分隔)");
         println!("  可用权限: view_showcase, apply_join, view_team, manage_team,");
         println!("            manage_members, submit_problem, view_problems, approve_problem,");
-        println!("            manage_contests, manage_site, edit_showcase, view_discussions,");
+        println!("            manage_contests, access_admin, edit_showcase, view_discussions,");
         println!("            manage_discussions, manage_tags, manage_notifications,");
         println!("            manage_backups, view_stats, manage_posts");
         println!("  输入空名称结束。");
@@ -727,7 +727,7 @@ fn build_config_toml(
     toml.push_str("# 取消注释即可覆盖默认角色权限\n");
     toml.push_str("# =====================\n");
     toml.push_str("# [permissions]\n");
-    toml.push_str("# admin = [\"view_team\", \"manage_team\", \"manage_members\", \"submit_problem\", \"view_problems\", \"approve_problem\", \"manage_contests\", \"view_all_contests\", \"view_public_contests\", \"manage_site\", \"edit_showcase\", \"view_discussions\", \"manage_posts\", \"manage_tags\", \"manage_notifications\", \"view_stats\"]\n");
+    toml.push_str("# admin = [\"view_team\", \"manage_team\", \"manage_members\", \"submit_problem\", \"view_problems\", \"approve_problem\", \"manage_contests\", \"view_all_contests\", \"view_public_contests\", \"access_admin\", \"edit_showcase\", \"view_discussions\", \"manage_posts\", \"manage_tags\", \"manage_notifications\", \"view_stats\"]\n");
     toml.push_str("# member = [\"view_showcase\", \"view_team\", \"submit_problem\", \"view_problems\", \"view_all_contests\", \"view_public_contests\", \"view_discussions\"]\n");
     toml.push_str("# guest = [\"view_showcase\", \"apply_join\", \"view_public_contests\", \"view_discussions\"]\n");
     toml.push('\n');

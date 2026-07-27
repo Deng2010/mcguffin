@@ -28,7 +28,7 @@ import AdminInitPage from "../features/admin/AdminInitPage";
 /** Admin guard layout */
 function AdminGuardLayout() {
   return (
-    <ProtectedRoute requiredPermission="manage_site">
+    <ProtectedRoute requiredPermission="access_admin">
       <AdminLayout />
     </ProtectedRoute>
   );
@@ -55,7 +55,7 @@ export default function AppRoutes() {
           <Route
             path="/problems/:id"
             element={
-              <ProtectedRoute requiredPermission="view_problems">
+              <ProtectedRoute requiredPermission="view_all_problems">
                 <ProblemDetailPage />
               </ProtectedRoute>
             }

@@ -27,24 +27,22 @@ export type Permission =
   | "manage_members"
   /** Submit problems */
   | "submit_problem"
-  /** View problem list and details (filtered by permissions) */
-  | "view_problems"
-  /** Review/approve problems */
-  | "approve_problem"
-  /** Manage contests (create/edit/delete/toggle visibility) */
-  | "manage_contests"
+  /** View problem list and details (all problems, regardless of per-problem ACL) */
+  | "view_all_problems"
+  /** Review/approve any problem */
+  | "approve_all_problems"
+  /** Manage all contests (create/edit/delete/toggle visibility) */
+  | "manage_all_contests"
   /** View all contests including drafts */
   | "view_all_contests"
   /** View public contests */
   | "view_public_contests"
   /** Edit site info (team showcase description) */
-  | "manage_site"
+  | "access_admin"
   /** Edit site description and showcase selections */
   | "edit_showcase"
-  /** View and participate in discussions (includes suggestions and announcements) */
-  | "view_discussions"
-  /** Manage discussions, suggestions, announcements, community posts, and tags */
-  | "manage_discussions"
+  /** View all posts (discussions, suggestions, announcements) */
+  | "view_all_posts"
   /** Manage discussion tags and emojis */
   | "manage_tags"
   /** Send global notifications */
@@ -66,15 +64,14 @@ export const defaultRolePermissions: Record<string, Permission[]> = {
     "manage_team",
     "manage_members",
     "submit_problem",
-    "view_problems",
-    "approve_problem",
-    "manage_contests",
+    "view_all_problems",
+    "approve_all_problems",
+    "manage_all_contests",
     "view_all_contests",
     "view_public_contests",
-    "manage_site",
+    "access_admin",
     "edit_showcase",
-    "view_discussions",
-    "manage_discussions",
+    "view_all_posts",
     "manage_tags",
     "manage_notifications",
     "manage_backups",
@@ -87,14 +84,14 @@ export const defaultRolePermissions: Record<string, Permission[]> = {
     "manage_team",
     "manage_members",
     "submit_problem",
-    "view_problems",
-    "approve_problem",
-    "manage_contests",
+    "view_all_problems",
+    "approve_all_problems",
+    "manage_all_contests",
     "view_all_contests",
     "view_public_contests",
-    "manage_site",
+    "access_admin",
     "edit_showcase",
-    "view_discussions",
+    "view_all_posts",
     "manage_posts",
     "manage_tags",
     "manage_notifications",
@@ -104,16 +101,16 @@ export const defaultRolePermissions: Record<string, Permission[]> = {
     "view_showcase",
     "view_team",
     "submit_problem",
-    "view_problems",
+    "view_all_problems",
     "view_all_contests",
     "view_public_contests",
-    "view_discussions",
+    "view_all_posts",
   ],
   guest: [
     "view_showcase",
     "apply_join",
     "view_public_contests",
-    "view_discussions",
+    "view_all_posts",
   ],
 };
 

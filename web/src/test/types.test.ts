@@ -12,12 +12,11 @@ describe("defaultRolePermissions", () => {
       "manage_team",
       "manage_members",
       "submit_problem",
-      "view_problems",
-      "approve_problem",
-      "manage_contests",
-      "manage_site",
-      "view_discussions",
-      "manage_discussions",
+      "view_all_problems",
+      "approve_all_problems",
+      "manage_all_contests",
+      "access_admin",
+      "view_all_posts",
       "manage_tags",
       "manage_notifications",
       "manage_backups",
@@ -31,9 +30,9 @@ describe("defaultRolePermissions", () => {
 
   it("admin has all admin permissions (minus backup)", () => {
     const perms = defaultRolePermissions.admin;
-    expect(perms).toContain("manage_site");
+    expect(perms).toContain("access_admin");
     expect(perms).toContain("manage_members");
-    expect(perms).toContain("approve_problem");
+    expect(perms).toContain("approve_all_problems");
     // Backups are superadmin-only in defaults
     expect(perms).not.toContain("manage_backups");
   });
@@ -43,19 +42,19 @@ describe("defaultRolePermissions", () => {
     expect(perms).toContain("view_showcase");
     expect(perms).toContain("view_team");
     expect(perms).toContain("submit_problem");
-    expect(perms).toContain("view_problems");
+    expect(perms).toContain("view_all_problems");
     // Member should NOT have admin permissions
-    expect(perms).not.toContain("approve_problem");
+    expect(perms).not.toContain("approve_all_problems");
     expect(perms).not.toContain("manage_team");
-    expect(perms).not.toContain("manage_contests");
-    expect(perms).not.toContain("manage_site");
+    expect(perms).not.toContain("manage_all_contests");
+    expect(perms).not.toContain("access_admin");
   });
 
   it("guest has minimal permissions", () => {
     const perms = defaultRolePermissions.guest;
     expect(perms).toContain("view_showcase");
     expect(perms).toContain("apply_join");
-    expect(perms).not.toContain("view_problems");
+    expect(perms).not.toContain("view_all_problems");
     expect(perms).not.toContain("submit_problem");
     expect(perms).not.toContain("view_team");
   });

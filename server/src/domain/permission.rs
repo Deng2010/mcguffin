@@ -16,22 +16,21 @@ pub mod perms {
 
     // ── Problems ──
     pub const SUBMIT_PROBLEM: &str = "submit_problem";
-    pub const VIEW_PROBLEMS: &str = "view_problems";
-    pub const APPROVE_PROBLEM: &str = "approve_problem";
+    pub const VIEW_ALL_PROBLEMS: &str = "view_all_problems";
+    pub const APPROVE_ALL_PROBLEMS: &str = "approve_all_problems";
 
     // ── Contests ──
-    pub const MANAGE_CONTESTS: &str = "manage_contests";
+    pub const MANAGE_ALL_CONTESTS: &str = "manage_all_contests";
     /// View all contests including drafts
     pub const VIEW_ALL_CONTESTS: &str = "view_all_contests";
     /// View only public contests
     pub const VIEW_PUBLIC_CONTESTS: &str = "view_public_contests";
 
     // ── Site ──
-    pub const MANAGE_SITE: &str = "manage_site";
+    pub const ACCESS_ADMIN: &str = "access_admin";
 
-    // ── Discussions / Community ──
-    pub const VIEW_DISCUSSIONS: &str = "view_discussions";
-    pub const MANAGE_DISCUSSIONS: &str = "manage_discussions";
+    // ── Posts / Community ──
+    pub const VIEW_ALL_POSTS: &str = "view_all_posts";
     pub const MANAGE_TAGS: &str = "manage_tags";
 
     // ── System ──
@@ -51,15 +50,14 @@ pub mod perms {
         MANAGE_TEAM,
         MANAGE_MEMBERS,
         SUBMIT_PROBLEM,
-        VIEW_PROBLEMS,
-        APPROVE_PROBLEM,
-        MANAGE_CONTESTS,
+        VIEW_ALL_PROBLEMS,
+        APPROVE_ALL_PROBLEMS,
+        MANAGE_ALL_CONTESTS,
         VIEW_ALL_CONTESTS,
         VIEW_PUBLIC_CONTESTS,
-        MANAGE_SITE,
+        ACCESS_ADMIN,
         EDIT_SHOWCASE,
-        VIEW_DISCUSSIONS,
-        MANAGE_DISCUSSIONS,
+        VIEW_ALL_POSTS,
         MANAGE_TAGS,
         MANAGE_NOTIFICATIONS,
         MANAGE_BACKUPS,
@@ -87,14 +85,14 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
             perms::MANAGE_TEAM.to_string(),
             perms::MANAGE_MEMBERS.to_string(),
             perms::SUBMIT_PROBLEM.to_string(),
-            perms::VIEW_PROBLEMS.to_string(),
-            perms::APPROVE_PROBLEM.to_string(),
-            perms::MANAGE_CONTESTS.to_string(),
+            perms::VIEW_ALL_PROBLEMS.to_string(),
+            perms::APPROVE_ALL_PROBLEMS.to_string(),
+            perms::MANAGE_ALL_CONTESTS.to_string(),
             perms::VIEW_ALL_CONTESTS.to_string(),
             perms::VIEW_PUBLIC_CONTESTS.to_string(),
-            perms::MANAGE_SITE.to_string(),
+            perms::ACCESS_ADMIN.to_string(),
             perms::EDIT_SHOWCASE.to_string(),
-            perms::VIEW_DISCUSSIONS.to_string(),
+            perms::VIEW_ALL_POSTS.to_string(),
             perms::MANAGE_POSTS.to_string(),
             perms::MANAGE_TAGS.to_string(),
             perms::MANAGE_NOTIFICATIONS.to_string(),
@@ -107,10 +105,10 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
             perms::VIEW_SHOWCASE.to_string(),
             perms::VIEW_TEAM.to_string(),
             perms::SUBMIT_PROBLEM.to_string(),
-            perms::VIEW_PROBLEMS.to_string(),
+            perms::VIEW_ALL_PROBLEMS.to_string(),
             perms::VIEW_ALL_CONTESTS.to_string(),
             perms::VIEW_PUBLIC_CONTESTS.to_string(),
-            perms::VIEW_DISCUSSIONS.to_string(),
+            perms::VIEW_ALL_POSTS.to_string(),
         ],
     );
     m.insert(
@@ -119,7 +117,7 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
             perms::VIEW_SHOWCASE.to_string(),
             perms::APPLY_JOIN.to_string(),
             perms::VIEW_PUBLIC_CONTESTS.to_string(),
-            perms::VIEW_DISCUSSIONS.to_string(),
+            perms::VIEW_ALL_POSTS.to_string(),
         ],
     );
     m

@@ -49,7 +49,7 @@ pub async fn get_problems(
 ) -> Json<Vec<ProblemListItem>> {
     let current_user = resolve_user(&state, &headers).await;
     let is_admin_user = if let Some((_, ref user)) = &current_user {
-        check_permission(&state, user, crate::types::perms::APPROVE_PROBLEM).await
+        check_permission(&state, user, crate::types::perms::APPROVE_ALL_PROBLEMS).await
     } else {
         false
     };
@@ -372,7 +372,7 @@ pub async fn get_problem_detail(
 
     // Check admin status properly
     let is_admin_user = if let Some((_, ref user)) = &current_user {
-        check_permission(&state, user, crate::types::perms::APPROVE_PROBLEM).await
+        check_permission(&state, user, crate::types::perms::APPROVE_ALL_PROBLEMS).await
     } else {
         false
     };
@@ -578,7 +578,7 @@ pub async fn review_problem(
             })
         }
     };
-    if !check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await {
+    if !check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await {
         return Json(ReviewResponse {
             success: false,
             message: "权限不足".to_string(),
@@ -974,7 +974,7 @@ pub async fn set_problem_visibility(
             })
         }
     };
-    if !check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await {
+    if !check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await {
         return Json(ClaimResponse {
             success: false,
             message: "权限不足".to_string(),
@@ -1043,7 +1043,7 @@ pub async fn get_pending_problems_admin(
         Some(u) => u,
         None => return Json(vec![]),
     };
-    if !check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await {
+    if !check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await {
         return Json(vec![]);
     }
 
@@ -1138,7 +1138,7 @@ pub async fn update_problem(
             })
         }
     };
-    let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await;
+    let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
 
     // Read problem and validate ownership
     let mut problem = {
@@ -1248,7 +1248,7 @@ pub async fn delete_problem(
             })
         }
     };
-    let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_PROBLEM).await;
+    let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
 
     let problem = {
         let problems = state.problems.read().await;
@@ -1295,7 +1295,7 @@ pub async fn set_problem_contest(
     Path(problem_id): Path<String>,
     Json(payload): Json<SetProblemContestPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::APPROVE_PROBLEM)
+    auth.require_perm(&state, crate::types::perms::APPROVE_ALL_PROBLEMS)
         .await?;
 
     let mut problem = {

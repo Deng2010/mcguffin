@@ -10,13 +10,13 @@ use crate::utils::AuthUser;
 // ============== Data / Config Export ==============
 
 /// GET /api/admin/export/data
-/// manage_site permission required — exports all data as JSON download.
+/// access_admin permission required — exports all data as JSON download.
 /// 直接从 SQLite 读取并序列化为 JSON，不依赖本地文件。
 pub async fn export_data(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+    auth.require_perm(&state, crate::types::perms::ACCESS_ADMIN)
         .await?;
 
     // 直接从 SQLite 导出，不依赖本地 JSON 文件
@@ -43,12 +43,12 @@ pub async fn export_data(
 }
 
 /// GET /api/admin/export/db
-/// manage_site permission required — exports the SQLite database as .db download.
+/// access_admin permission required — exports the SQLite database as .db download.
 pub async fn export_db(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+    auth.require_perm(&state, crate::types::perms::ACCESS_ADMIN)
         .await?;
 
     // Sync HashMap → SQLite first so the export is up-to-date
@@ -74,12 +74,12 @@ pub async fn export_db(
 }
 
 /// GET /api/admin/export/config
-/// manage_site permission required — exports the config file (TOML) as download
+/// access_admin permission required — exports the config file (TOML) as download
 pub async fn export_config(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+    auth.require_perm(&state, crate::types::perms::ACCESS_ADMIN)
         .await?;
 
     match std::fs::read_to_string(resolve_config_path()) {
@@ -169,13 +169,13 @@ pub async fn import_data(
 }
 
 /// POST /api/admin/import/config
-/// manage_site permission required — imports config from a TOML string
+/// access_admin permission required — imports config from a TOML string
 pub async fn import_config(
     State(state): State<AppState>,
     auth: AuthUser,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_SITE)
+    auth.require_perm(&state, crate::types::perms::ACCESS_ADMIN)
         .await?;
 
     let content = payload

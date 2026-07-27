@@ -13,11 +13,6 @@ interface Contest {
   name: string;
 }
 
-interface TeamMemberOption {
-  user_id: string;
-  name: string;
-}
-
 export default function ProblemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuthStore();
@@ -47,11 +42,6 @@ export default function ProblemDetailPage() {
   const [editMsg, setEditMsg] = useState("");
   const nameManuallyEdited = useRef(false);
 
-  // Visibility editor (admin only)
-  const [members, setMembers] = useState<TeamMemberOption[]>([]);
-  const [visibleTo, setVisibleTo] = useState<string[]>([]);
-  const [editableBy, setEditableBy] = useState<string[]>([]);
-
   useEffect(() => {
     apiFetch<ProblemDetail>(`/problems/detail/${id}`)
       .then((p) => {
@@ -80,16 +70,10 @@ export default function ProblemDetailPage() {
     setEditAuthorId((problem as any).author_id || "");
     setEditAuthorName(problem.author_name);
     setEditMsg("");
-    setVisibleTo((problem as any).visible_to || []);
-    setEditableBy((problem as any).editable_by || []);
     nameManuallyEdited.current = false;
     setEditing(true);
-    // Load members for visibility editor and author selector
-    if (isAdmin && members.length === 0) {
-      apiFetch<TeamMemberOption[]>("/problems/admin/members")
-        .then(setMembers)
-        .catch(() => {});
-      // Load all team members for author selector
+    // Load all team members for author selector
+    if (isAdmin && teamMembers.length === 0) {
       apiFetch<{ user_id: string; name: string }[]>("/team/members")
         .then(setTeamMembers)
         .catch(() => {});
@@ -137,8 +121,7 @@ export default function ProblemDetailPage() {
         body.remark = editRemark || null;
       }
       if (
-        Object.keys(body).length === 0 &&
-        visibleTo === ((problem as any).visible_to || [])
+        Object.keys(body).length === 0
       ) {
         setEditMsg("没有修改");
         setSaving(false);
@@ -155,41 +138,6 @@ export default function ProblemDetailPage() {
           setEditMsg(res.message);
           setSaving(false);
           return;
-        }
-      }
-
-      // Save visibility changes (admin only)
-      if (isAdmin) {
-        const origVisible = (problem as any).visible_to || [];
-        if (JSON.stringify(visibleTo) !== JSON.stringify(origVisible)) {
-          const visRes = await apiFetch<{ success: boolean; message: string }>(
-            `/problems/visibility/${problem.id}`,
-            { method: "POST", body: JSON.stringify({ user_ids: visibleTo }) },
-          );
-          if (!visRes.success) {
-            setEditMsg(visRes.message);
-            setSaving(false);
-            return;
-          }
-        }
-      }
-
-      // Save editable_by changes (admin only)
-      if (isAdmin) {
-        const origEditable = (problem as any).editable_by || [];
-        if (JSON.stringify(editableBy) !== JSON.stringify(origEditable)) {
-          const aclRes = await apiFetch<{ success: boolean; message: string }>(
-            `/admin/acl/problem/${problem.id}`,
-            {
-              method: "PUT",
-              body: JSON.stringify({ editable_by: editableBy }),
-            },
-          );
-          if (!aclRes.success) {
-            setEditMsg(aclRes.message);
-            setSaving(false);
-            return;
-          }
         }
       }
 
@@ -224,22 +172,6 @@ export default function ProblemDetailPage() {
     } catch (err) {
       alert(`保存失败: ${err}`);
     }
-  };
-
-  const toggleVisibilityMember = (userId: string) => {
-    setVisibleTo((prev) =>
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId],
-    );
-  };
-
-  const toggleEditableMember = (userId: string) => {
-    setEditableBy((prev) =>
-      prev.includes(userId)
-        ? prev.filter((id) => id !== userId)
-        : [...prev, userId],
-    );
   };
 
   if (loading)
@@ -418,56 +350,6 @@ export default function ProblemDetailPage() {
                       placeholder="自定义出题人显示名"
                     />
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* Visibility editor — admin only, for pending problems */}
-            {isAdmin && problem.status === "pending" && members.length > 0 && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-                  可见性设置（选择可查看此题目的非管理成员）
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {members.map((m) => (
-                    <label
-                      key={m.user_id}
-                      className="flex items-center gap-1.5 text-sm cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={visibleTo.includes(m.user_id)}
-                        onChange={() => toggleVisibilityMember(m.user_id)}
-                        className="accent-gray-800 dark:accent-gray-400"
-                      />
-                      {m.name}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Editable by editor — admin only */}
-            {isAdmin && members.length > 0 && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-                  可编辑权限（选择可编辑此题目的非管理成员）
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {members.map((m) => (
-                    <label
-                      key={m.user_id}
-                      className="flex items-center gap-1.5 text-sm cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={editableBy.includes(m.user_id)}
-                        onChange={() => toggleEditableMember(m.user_id)}
-                        className="accent-gray-800 dark:accent-gray-400"
-                      />
-                      {m.name}
-                    </label>
-                  ))}
                 </div>
               </div>
             )}

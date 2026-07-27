@@ -605,7 +605,7 @@ export default function ShowcasePage() {
         {announcements.length === 0 ? (
           <div>
             <p className="text-sm text-gray-400 dark:text-gray-500">暂无公告</p>
-            {hasPermission("manage_site") && (
+            {hasPermission("access_admin") && (
               <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
                 在配置 → 讨论区 →
                 标签管理中添加「公告」标签并发布带有此标签的帖子以发布公告

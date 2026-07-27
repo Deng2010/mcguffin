@@ -7,7 +7,7 @@ pub mod groups;
 pub mod showcase;
 pub mod users;
 
-pub use acl::{set_problem_acl, set_resource_acl};
+pub use acl::{get_acl_resources, set_problem_acl, set_resource_acl};
 pub use audit::get_audit_log;
 pub use backup::{
     create_backup, delete_backup, download_backup, list_backups, restore_backup,

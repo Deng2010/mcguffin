@@ -8,6 +8,80 @@ use crate::state::AppState;
 use crate::types::{SetAclPayload, SetProblemAclPayload, PERM_WILDCARD};
 use crate::utils::AuthUser;
 
+// ============== List All Resources for ACL ==============
+
+/// GET /api/admin/acl/resources — return all problems, contests, posts with ACL data
+pub async fn get_acl_resources(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+
+    let problems = state.problems.read().await;
+    let contests = state.contests.read().await;
+    let posts = state.posts.read().await;
+    let users = state.users.read().await;
+
+    let problem_list: Vec<serde_json::Value> = problems
+        .values()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "title": p.title,
+                "status": p.status,
+                "visible_to": p.visible_to,
+                "editable_by": p.editable_by,
+            })
+        })
+        .collect();
+
+    let contest_list: Vec<serde_json::Value> = contests
+        .values()
+        .map(|c| {
+            serde_json::json!({
+                "id": c.id,
+                "title": c.name,
+                "status": c.status,
+                "visible_to": c.visible_to,
+                "editable_by": c.editable_by,
+            })
+        })
+        .collect();
+
+    let post_list: Vec<serde_json::Value> = posts
+        .values()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "title": p.title,
+                "status": p.status,
+                "team_only": p.team_only,
+                "visible_to": p.visible_to,
+                "editable_by": p.editable_by,
+            })
+        })
+        .collect();
+
+    let user_list: Vec<serde_json::Value> = users
+        .values()
+        .map(|u| {
+            serde_json::json!({
+                "id": u.id,
+                "username": u.username,
+                "display_name": u.display_name,
+                "role": u.role,
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "problems": problem_list,
+        "contests": contest_list,
+        "posts": post_list,
+        "users": user_list,
+    })))
+}
+
 // ============== Problem Resource ACL ==============
 
 /// PUT /api/admin/problems/{problem_id}/acl — set who can edit a problem

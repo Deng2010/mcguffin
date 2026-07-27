@@ -833,7 +833,7 @@ pub async fn get_suggestions(
         Some(u) => u,
         None => return Json(serde_json::json!([])),
     };
-    let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_DISCUSSIONS).await
+    let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_ALL_POSTS).await
         || user.team_status == "joined";
     let users = state.users.read().await;
 
@@ -948,7 +948,7 @@ pub async fn get_suggestion_detail(
     };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
-        let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_DISCUSSIONS)
+        let can_view_all = check_permission(&state, &user, crate::types::perms::VIEW_ALL_POSTS)
             .await
             || user.team_status == "joined";
         if !can_view_all && p.author_id != user_id {
@@ -983,7 +983,7 @@ pub async fn update_suggestion(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_POSTS)
         .await?;
     let posts = state.posts.read().await;
     let p = posts.get(&id).cloned();
@@ -1041,7 +1041,7 @@ pub async fn reply_to_suggestion(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_POSTS)
         .await?;
     let content = payload
         .get("content")
@@ -1102,7 +1102,7 @@ pub async fn delete_suggestion_reply(
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_DISCUSSIONS).await;
+    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_POSTS).await;
     let posts = state.posts.read().await;
     let p = posts.get(&suggestion_id).cloned();
     drop(posts);
@@ -1132,7 +1132,7 @@ pub async fn delete_suggestion(
         Some(u) => u,
         None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
     };
-    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_DISCUSSIONS).await;
+    let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_POSTS).await;
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
         if !can_manage && p.author_id != user_id {
@@ -1152,7 +1152,7 @@ pub async fn get_announcements(
     headers: HeaderMap,
 ) -> Json<serde_json::Value> {
     let can_see_all = if let Some((_user_id, user)) = resolve_user(&state, &headers).await {
-        check_permission(&state, &user, crate::types::perms::MANAGE_DISCUSSIONS).await
+        check_permission(&state, &user, crate::types::perms::MANAGE_POSTS).await
             || user.team_status == "joined"
     } else {
         false
@@ -1215,7 +1215,7 @@ pub async fn create_announcement(
     auth: AuthUser,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_POSTS)
         .await?;
     let title = payload
         .get("title")
@@ -1275,7 +1275,7 @@ pub async fn get_announcement_detail(
 ) -> Json<serde_json::Value> {
     let auth_info = resolve_user(&state, &headers).await;
     let is_admin_user = if let Some((_, ref user)) = auth_info {
-        check_permission(&state, user, crate::types::perms::MANAGE_DISCUSSIONS).await
+        check_permission(&state, user, crate::types::perms::MANAGE_POSTS).await
     } else {
         false
     };
@@ -1318,7 +1318,7 @@ pub async fn update_announcement(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_POSTS)
         .await?;
     let p_opt = {
         let posts = state.posts.read().await;
@@ -1360,7 +1360,7 @@ pub async fn delete_announcement(
     auth: AuthUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    auth.require_perm(&state, crate::types::perms::MANAGE_DISCUSSIONS)
+    auth.require_perm(&state, crate::types::perms::MANAGE_POSTS)
         .await?;
     let exists = { state.posts.read().await.contains_key(&id) };
     if exists {

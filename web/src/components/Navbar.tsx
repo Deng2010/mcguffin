@@ -59,7 +59,7 @@ export default function Navbar() {
   const showProblems = true;
   const showTeam = hasPermission("view_team");
   const showManageContests = true;
-  const showSuggestions = hasPermission("view_discussions");
+  const showSuggestions = hasPermission("view_all_posts");
   const canUseCommunity = showSuggestions || true; // discussions is public
   const showApply = isAuthenticated && user?.team_status !== "joined";
   const showAdminConfig = user?.role === "superadmin";
