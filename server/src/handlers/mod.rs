@@ -3,6 +3,7 @@ pub mod auth;
 pub mod contest;
 pub mod info;
 pub mod notification;
+pub mod plugin;
 pub mod post;
 pub mod problem;
 pub mod team;

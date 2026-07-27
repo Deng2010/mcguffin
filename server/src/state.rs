@@ -109,6 +109,11 @@ pub struct AppState {
     pub role_permissions: Arc<RwLock<HashMap<String, Vec<String>>>>,
     /// Member groups for group-based permission assignment
     pub member_groups: Arc<RwLock<HashMap<String, MemberGroup>>>,
+    /// Registered plugin manifests (plugin_id → PluginManifest)
+    pub plugins: Arc<RwLock<HashMap<String, crate::domain::plugin::PluginManifest>>>,
+    /// Plugin KV data storage (plugin_id → namespace → key → value)
+    pub plugin_data:
+        Arc<RwLock<HashMap<String, HashMap<String, HashMap<String, String>>>>>,
     /// SQLite 连接池（双写模式：SQLite + HashMap）
     pub db: SqlitePool,
     /// 自定义备份目录（None 时使用默认路径）

@@ -1067,6 +1067,8 @@ impl AppState {
             discussion_emojis: Arc::new(RwLock::new(discussion_emojis)),
             role_permissions: Arc::new(RwLock::new(role_permissions)),
             member_groups: Arc::new(RwLock::new(member_groups)),
+            plugins: Arc::new(RwLock::new(HashMap::new())),
+            plugin_data: Arc::new(RwLock::new(HashMap::new())),
             db,
             backup_directory: Arc::new(RwLock::new(None)),
             http_client: reqwest::Client::builder()

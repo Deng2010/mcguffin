@@ -2,10 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
-import {
-  usePluginUserMe,
-  usePluginTeamMembers,
-} from "../sdk";
+import { usePluginUserMe, usePluginTeamMembers } from "../sdk";
 
 // ── Types ──
 
@@ -37,15 +34,19 @@ export default function TeamMembersPage() {
   const navigate = useNavigate();
   const { user, hasPermission } = useAuthStore();
 
-  // SDK hooks：当前用户 + 团队成员列表
+  // SDK hooks — 通过后端插件 API 获取数据（自动鉴权）
   const { user: me } = usePluginUserMe(PLUGIN_ID);
-  const { members, loading: membersLoading, refresh } = usePluginTeamMembers(PLUGIN_ID);
+  const {
+    members,
+    loading: membersLoading,
+    refresh,
+  } = usePluginTeamMembers(PLUGIN_ID);
 
   const [requests, setRequests] = useState<JoinRequest[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>("all");
   const canManage = hasPermission("manage_team");
 
-  // 加载入队申请
+  // Load join requests (not available via SDK, use direct API)
   useEffect(() => {
     if (!canManage) return;
     apiFetch<JoinRequest[]>("/team/requests")
@@ -53,7 +54,7 @@ export default function TeamMembersPage() {
       .catch(() => {});
   }, [canManage]);
 
-  // ── 筛选 ──
+  // ── Filtering ──
 
   const filteredMembers = members.filter((m) => {
     if (activeTab === "admin")
@@ -69,7 +70,7 @@ export default function TeamMembersPage() {
     member: members.filter((m) => m.role === "member").length,
   };
 
-  // ── 操作 ──
+  // ── Operations ──
 
   const handleReviewRequest = useCallback(
     async (requestId: string, action: "approve" | "reject") => {
@@ -130,7 +131,10 @@ export default function TeamMembersPage() {
   const isCurrentUser = (userId: string) => user?.id === userId;
   const isSuperAdmin = user?.role === "superadmin";
 
-  const canManageUser = (member: { user_id: string; role: string }) => {
+  const canManageUser = (member: {
+    user_id: string;
+    role: string;
+  }) => {
     if (!canManage || isCurrentUser(member.user_id)) return false;
     if (member.role === "superadmin") return false;
     if (member.role === "admin" && !isSuperAdmin) return false;
@@ -142,7 +146,7 @@ export default function TeamMembersPage() {
   if (membersLoading) {
     return (
       <div className="p-6 text-center text-gray-400 dark:text-gray-500 py-12">
-        加载团队成员...
+        通过插件 API 加载团队成员...
       </div>
     );
   }
@@ -156,15 +160,18 @@ export default function TeamMembersPage() {
           团队成员
         </h1>
         <span className="text-xs px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400">
-          插件
+          插件 · SDK
         </span>
       </div>
 
-      {/* 当前用户信息 */}
+      {/* Current user (via SDK) */}
       {me && (
         <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            当前用户：<span className="font-medium text-gray-800 dark:text-gray-200">{me.display_name}</span>
+            当前用户：
+            <span className="font-medium text-gray-800 dark:text-gray-200">
+              {me.display_name}
+            </span>
             <span className="ml-2 text-xs text-gray-400">
               ({ROLE_LABEL[me.role] || me.role})
             </span>
@@ -172,8 +179,8 @@ export default function TeamMembersPage() {
         </div>
       )}
 
-      {/* 非团队成员提示 */}
-      {user?.team_status !== "joined" && (
+      {/* Non-member hint */}
+      {user && user.team_status !== "joined" && (
         <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800">
           <p className="text-blue-700 dark:text-blue-300">
             您还不是团队成员，请联系管理员申请加入。
@@ -181,11 +188,11 @@ export default function TeamMembersPage() {
         </div>
       )}
 
-      {/* 入队申请 */}
+      {/* Join requests */}
       {canManage && requests.length > 0 && (
         <div className="mb-8">
           <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
-            待处理入队申请
+            待处理入队申请 ({requests.length})
           </h2>
           <div className="space-y-2">
             {requests.map((req) => (
@@ -224,7 +231,7 @@ export default function TeamMembersPage() {
         </div>
       )}
 
-      {/* 标签栏 */}
+      {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-gray-300 dark:border-gray-700 mb-6">
         {([
           { id: "all" as TabId, label: "全部", count: members.length },
@@ -254,7 +261,7 @@ export default function TeamMembersPage() {
         ))}
       </div>
 
-      {/* 成员列表 */}
+      {/* Member list */}
       <div className="space-y-2">
         {filteredMembers.length === 0 ? (
           <div className="text-center py-12 text-gray-400 dark:text-gray-500">
@@ -272,7 +279,6 @@ export default function TeamMembersPage() {
               className="flex items-center justify-between p-4 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
               onClick={() => navigate(`/profile/${m.username}`)}
             >
-              {/* 左侧：头像 + 信息 */}
               <div className="flex items-center gap-3 min-w-0">
                 {m.avatar_url ? (
                   <img
@@ -299,13 +305,14 @@ export default function TeamMembersPage() {
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">
                     {m.username}
-                    <span className="mx-1 text-gray-300 dark:text-gray-600">·</span>
+                    <span className="mx-1 text-gray-300 dark:text-gray-600">
+                      ·
+                    </span>
                     加入于 {m.joined_at}
                   </div>
                 </div>
               </div>
 
-              {/* 右侧：角色 + 操作 */}
               <div className="flex items-center gap-3 shrink-0 ml-4">
                 {canManageUser(m) ? (
                   <select
@@ -343,9 +350,8 @@ export default function TeamMembersPage() {
         )}
       </div>
 
-      {/* 统计 */}
       <p className="mt-6 text-xs text-gray-400 dark:text-gray-500">
-        共 {members.length} 名团队成员
+        共 {members.length} 名团队成员（通过插件 API 加载）
         {canManage && ` · ${requests.length} 条待审批申请`}
       </p>
     </div>

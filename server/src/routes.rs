@@ -24,6 +24,10 @@ use crate::handlers::info::{get_difficulties, get_site_info, update_site_descrip
 use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
+use crate::handlers::plugin::{
+    list_plugins, plugin_get_data, plugin_list_users, plugin_notify, plugin_set_data,
+    plugin_user_get, plugin_user_me, register_plugin, unregister_plugin,
+};
 use crate::handlers::post::{
     create_announcement, create_post, create_suggestion, delete_announcement, delete_post,
     delete_post_reply, delete_suggestion, delete_suggestion_reply, get_announcement_detail,
@@ -194,6 +198,34 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/admin/acl/{resource_type}/{resource_id}",
             put(set_resource_acl),
+        )
+        // Plugin API
+        .route("/plugins/register", post(register_plugin))
+        .route(
+            "/plugins/{plugin_id}/users",
+            get(plugin_list_users),
+        )
+        .route(
+            "/plugins/{plugin_id}/users/me",
+            get(plugin_user_me),
+        )
+        .route(
+            "/plugins/{plugin_id}/users/{user_id}",
+            get(plugin_user_get),
+        )
+        .route(
+            "/plugins/{plugin_id}/data",
+            get(plugin_get_data).post(plugin_set_data),
+        )
+        .route(
+            "/plugins/{plugin_id}/notify",
+            post(plugin_notify),
+        )
+        // Admin plugin management
+        .route("/admin/plugins", get(list_plugins))
+        .route(
+            "/admin/plugins/{plugin_id}",
+            delete(unregister_plugin),
         );
 
     let api_router = api_router.with_state(state.clone());
