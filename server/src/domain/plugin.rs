@@ -11,8 +11,16 @@ pub struct PluginManifest {
     #[serde(default)]
     pub author: String,
     /// Permissions the plugin requests. Each string like "read:team", "storage", etc.
-    #[serde(default)]
+    #[serde(default, alias = "permissions_needed")]
     pub permissions: Vec<String>,
+    /// Whether the plugin is enabled. Disabled plugins cannot use any API endpoints.
+    /// Newly registered plugins default to enabled.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 /// Plugin registration payload sent by the frontend on load.
@@ -28,6 +36,12 @@ pub struct PluginRegistration {
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginListResponse {
     pub plugins: Vec<PluginManifest>,
+}
+
+/// Payload for enabling/disabling a plugin.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PluginTogglePayload {
+    pub enabled: bool,
 }
 
 // ── Plugin permission constants ──

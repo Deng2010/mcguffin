@@ -4,6 +4,8 @@
 //   POST   /api/plugins/register              — register plugin metadata
 //   GET    /api/admin/plugins                  — list registered plugins
 //   DELETE /api/admin/plugins/{plugin_id}      — unregister plugin & delete data
+//   POST   /api/admin/plugins/{plugin_id}/enable   — enable a plugin
+//   POST   /api/admin/plugins/{plugin_id}/disable  — disable a plugin
 //   GET    /api/plugins/{plugin_id}/users      — list team members (needs read:team)
 //   GET    /api/plugins/{plugin_id}/users/me   — current user info
 //   GET    /api/plugins/{plugin_id}/users/{id} — user info (needs read:users)
@@ -16,6 +18,7 @@
 //   - At registration time, all requested permissions are granted (trust model;
 //     admin review UI can be added later).
 //   - Data APIs check the stored plugin permissions before serving.
+//   - Disabled plugins are rejected from all API endpoints (except listing).
 
 use axum::{
     extract::{Path, Query, State},
@@ -36,6 +39,20 @@ use crate::utils::AuthUser;
 /// Check if a plugin has a specific permission.
 fn plugin_has_perm(plugin: &PluginManifest, perm: &str) -> bool {
     plugin.permissions.iter().any(|p| p == perm)
+}
+
+/// Check if a plugin is enabled, returning 403 if disabled.
+fn require_plugin_enabled(plugin: &PluginManifest) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if !plugin.enabled {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "success": false,
+                "message": "插件已被禁用，请联系管理员启用"
+            })),
+        ));
+    }
+    Ok(())
 }
 
 /// Require a plugin permission, returning 403 if not granted.
@@ -77,6 +94,7 @@ pub async fn register_plugin(
         description: payload.manifest.description.clone(),
         author: payload.manifest.author.clone(),
         permissions: valid_perms.clone(),
+        enabled: true,
     };
 
     {
@@ -156,6 +174,56 @@ pub async fn unregister_plugin(
     }
 }
 
+// ── Enable / Disable plugin (admin) ──
+
+/// POST /api/admin/plugins/{plugin_id}/enable
+pub async fn enable_plugin(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(plugin_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+
+    let mut plugins = state.plugins.write().await;
+    if let Some(plugin) = plugins.get_mut(&plugin_id) {
+        plugin.enabled = true;
+        tracing::info!("plugin enabled: {} ({})", plugin.name, plugin.id);
+        Ok(Json(serde_json::json!({
+            "success": true,
+            "message": format!("插件「{}」已启用", plugin.name),
+        })))
+    } else {
+        Ok(Json(serde_json::json!({
+            "success": false,
+            "message": "插件不存在",
+        })))
+    }
+}
+
+/// POST /api/admin/plugins/{plugin_id}/disable
+pub async fn disable_plugin(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(plugin_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+
+    let mut plugins = state.plugins.write().await;
+    if let Some(plugin) = plugins.get_mut(&plugin_id) {
+        plugin.enabled = false;
+        tracing::info!("plugin disabled: {} ({})", plugin.name, plugin.id);
+        Ok(Json(serde_json::json!({
+            "success": true,
+            "message": format!("插件「{}」已禁用", plugin.name),
+        })))
+    } else {
+        Ok(Json(serde_json::json!({
+            "success": false,
+            "message": "插件不存在",
+        })))
+    }
+}
+
 // ── Users: list team members ──
 
 /// GET /api/plugins/{plugin_id}/users
@@ -177,6 +245,7 @@ pub async fn plugin_list_users(
         .clone();
     drop(plugins);
 
+    require_plugin_enabled(&plugin)?;
     require_plugin_perm!(&plugin, plugin_perms::READ_TEAM);
 
     let members = state.team_members.read().await;
@@ -214,10 +283,15 @@ pub async fn plugin_user_me(
     auth: AuthUser,
 ) -> Json<serde_json::Value> {
     let plugins = state.plugins.read().await;
-    if !plugins.contains_key(&plugin_id) {
-        return Json(serde_json::json!({"success": false, "message": "插件未注册"}));
-    }
+    let plugin = match plugins.get(&plugin_id) {
+        Some(p) => p.clone(),
+        None => return Json(serde_json::json!({"success": false, "message": "插件未注册"})),
+    };
     drop(plugins);
+
+    if !plugin.enabled {
+        return Json(serde_json::json!({"success": false, "message": "插件已被禁用"}));
+    }
 
     let users = state.users.read().await;
     let user = match users.get(&auth.user_id) {
@@ -262,6 +336,7 @@ pub async fn plugin_user_get(
         .clone();
     drop(plugins);
 
+    require_plugin_enabled(&plugin)?;
     require_plugin_perm!(&plugin, plugin_perms::READ_USERS);
 
     let users = state.users.read().await;
@@ -314,6 +389,7 @@ pub async fn plugin_get_data(
         .clone();
     drop(plugins);
 
+    require_plugin_enabled(&plugin)?;
     require_plugin_perm!(&plugin, plugin_perms::STORAGE);
 
     let namespace = params.get("namespace").cloned().unwrap_or_default();
@@ -357,6 +433,7 @@ pub async fn plugin_set_data(
         .clone();
     drop(plugins);
 
+    require_plugin_enabled(&plugin)?;
     require_plugin_perm!(&plugin, plugin_perms::STORAGE);
 
     if payload.namespace.is_empty() || payload.key.is_empty() {
@@ -402,6 +479,7 @@ pub async fn plugin_notify(
         .clone();
     drop(plugins);
 
+    require_plugin_enabled(&plugin)?;
     require_plugin_perm!(&plugin, plugin_perms::NOTIFY);
 
     if payload.title.is_empty() || payload.body.is_empty() {

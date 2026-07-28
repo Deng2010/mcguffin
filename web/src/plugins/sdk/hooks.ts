@@ -177,14 +177,20 @@ export function usePluginUser(pluginId: string, userId: string) {
 export function usePluginTeamMembers(pluginId: string) {
   const [members, setMembers] = useState<PluginTeamMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await data.pluginUserList(pluginId);
-      setMembers(res.members);
-    } catch {
-      /* ignore */
+      setMembers(res.members ?? []);
+    } catch (err: any) {
+      const detail = err?.responseText
+        ? (() => { try { return JSON.parse(err.responseText).message; } catch { return err.responseText; } })()
+        : err?.message || String(err);
+      setError(detail);
+      setMembers([]);
     }
     setLoading(false);
   }, [pluginId]);
@@ -193,5 +199,5 @@ export function usePluginTeamMembers(pluginId: string) {
     refresh();
   }, [refresh]);
 
-  return { members, loading, refresh };
+  return { members, loading, error, refresh };
 }

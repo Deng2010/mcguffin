@@ -12,6 +12,7 @@ interface PluginManifest {
   author?: string;
   homepage?: string;
   permissions_needed: string[];
+  enabled: boolean;
 }
 
 interface PluginsListResponse {
@@ -78,6 +79,7 @@ export default function AdminPluginsPage() {
         author: undefined,
         homepage: undefined,
         permissions_needed: [] as string[],
+        enabled: true,
         isLocal: true,
         isUploaded: false,
       })),
@@ -155,6 +157,30 @@ export default function AdminPluginsPage() {
       loadBackendPlugins();
     } catch (err) {
       showMsg(`卸载失败: ${err}`, "error");
+    }
+  };
+
+  // ── Enable / Disable ──
+
+  const handleToggle = async (pluginId: string, pluginName: string, currentEnabled: boolean) => {
+    const action = currentEnabled ? "disable" : "enable";
+    const actionLabel = currentEnabled ? "禁用" : "启用";
+    if (!confirm(`确定要${actionLabel}插件「${pluginName}」吗？`))
+      return;
+    showMsg(`正在${actionLabel} ${pluginName}...`, "info");
+    try {
+      const res = await apiFetch<{ success: boolean; message?: string }>(
+        `/admin/plugins/${encodeURIComponent(pluginId)}/${action}`,
+        { method: "POST" },
+      );
+      if (!res.success) {
+        showMsg(`${actionLabel}失败: ${res.message}`, "error");
+        return;
+      }
+      showMsg(`✅ 已${actionLabel}「${pluginName}」`, "success");
+      loadBackendPlugins();
+    } catch (err) {
+      showMsg(`${actionLabel}失败: ${err}`, "error");
     }
   };
 
@@ -245,7 +271,11 @@ export default function AdminPluginsPage() {
             {displayPlugins.map((p) => (
               <div
                 key={p.id}
-                className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
+                className={`flex items-center justify-between p-4 border ${
+                  p.enabled === false
+                    ? "border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/30 opacity-70"
+                    : "border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50"
+                }`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -258,6 +288,17 @@ export default function AdminPluginsPage() {
                     {p.author && (
                       <span className="text-xs text-gray-400 dark:text-gray-500 hidden sm:inline">
                         @{p.author}
+                      </span>
+                    )}
+
+                    {/* Enabled/Disabled badge */}
+                    {p.enabled === false ? (
+                      <span className="text-xs px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+                        已禁用
+                      </span>
+                    ) : (
+                      <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                        已启用
                       </span>
                     )}
 
@@ -293,16 +334,27 @@ export default function AdminPluginsPage() {
                 </div>
 
                 {/* Actions */}
-                {p.isUploaded && !p.isLocal && (
-                  <div className="flex items-center gap-2 ml-4 shrink-0">
+                <div className="flex items-center gap-2 ml-4 shrink-0">
+                  {/* Enable/Disable toggle */}
+                  <button
+                    onClick={() => handleToggle(p.id, p.name, p.enabled !== false)}
+                    className={`px-3 py-1.5 text-xs border ${
+                      p.enabled === false
+                        ? "border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
+                        : "border-yellow-300 dark:border-yellow-800 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20"
+                    }`}
+                  >
+                    {p.enabled === false ? "启用" : "禁用"}
+                  </button>
+                  {p.isUploaded && !p.isLocal && (
                     <button
                       onClick={() => handleUninstall(p.id, p.name)}
                       className="px-3 py-1.5 text-xs border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                     >
                       卸载
                     </button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             ))}
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">

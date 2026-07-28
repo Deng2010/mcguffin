@@ -80,6 +80,7 @@ class PluginRegistry {
       description: definition.description ?? "",
       author: definition.author,
       permissions_needed: definition.permissions_needed ?? [],
+      enabled: true,
     };
 
     const routes = definition.routes ?? [];
@@ -131,7 +132,7 @@ class PluginRegistry {
             permissions_needed: definition.permissions_needed ?? [],
           },
           routes: definition.routes ?? [],
-          permissions: [],
+          permissions: definition.permissions_needed ?? [],
         }),
       });
     } catch {

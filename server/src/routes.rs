@@ -27,6 +27,7 @@ use crate::handlers::notification::{
 use crate::handlers::plugin::{
     list_plugins, plugin_get_data, plugin_list_users, plugin_notify, plugin_set_data,
     plugin_user_get, plugin_user_me, register_plugin, unregister_plugin,
+    enable_plugin, disable_plugin,
 };
 use crate::handlers::post::{
     create_announcement, create_post, create_suggestion, delete_announcement, delete_post,
@@ -226,6 +227,14 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/admin/plugins/{plugin_id}",
             delete(unregister_plugin),
+        )
+        .route(
+            "/admin/plugins/{plugin_id}/enable",
+            post(enable_plugin),
+        )
+        .route(
+            "/admin/plugins/{plugin_id}/disable",
+            post(disable_plugin),
         );
 
     let api_router = api_router.with_state(state.clone());

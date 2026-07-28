@@ -39,6 +39,7 @@ export default function TeamMembersPage() {
   const {
     members,
     loading: membersLoading,
+    error: membersError,
     refresh,
   } = usePluginTeamMembers(PLUGIN_ID);
 
@@ -147,6 +148,23 @@ export default function TeamMembersPage() {
     return (
       <div className="p-6 text-center text-gray-400 dark:text-gray-500 py-12">
         通过插件 API 加载团队成员...
+      </div>
+    );
+  }
+
+  if (membersError) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto">
+        <div className="p-6 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300">
+          <h2 className="text-lg font-semibold mb-2">插件 API 错误</h2>
+          <p className="text-sm mb-4">{membersError}</p>
+          <button
+            onClick={() => refresh()}
+            className="px-4 py-1.5 text-sm border border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/20"
+          >
+            重试
+          </button>
+        </div>
       </div>
     );
   }

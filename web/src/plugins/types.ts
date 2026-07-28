@@ -6,6 +6,7 @@ export interface PluginManifest {
   author?: string;
   homepage?: string;
   permissions_needed: string[];
+  enabled: boolean;
 }
 
 export interface PluginRouteDef {
