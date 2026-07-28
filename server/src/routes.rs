@@ -25,8 +25,8 @@ use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
 use crate::handlers::plugin::{
-    list_plugins, plugin_get_data, plugin_list_users, plugin_notify, plugin_set_data,
-    plugin_user_get, plugin_user_me, register_plugin, unregister_plugin,
+    list_plugins, list_plugins_public, plugin_get_data, plugin_list_users, plugin_notify,
+    plugin_set_data, plugin_user_get, plugin_user_me, register_plugin, unregister_plugin,
     enable_plugin, disable_plugin,
 };
 use crate::handlers::post::{
@@ -201,6 +201,7 @@ pub fn build_router(state: AppState) -> Router {
             put(set_resource_acl),
         )
         // Plugin API
+        .route("/plugins", get(list_plugins_public))
         .route("/plugins/register", post(register_plugin))
         .route(
             "/plugins/{plugin_id}/users",

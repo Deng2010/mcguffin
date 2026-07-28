@@ -10,6 +10,7 @@ export default function App() {
     initAuth();
     initSite();
     PluginRegistry.getInstance().discover();
+    PluginRegistry.getInstance().fetchPluginStatus();
   }, []);
 
   return (

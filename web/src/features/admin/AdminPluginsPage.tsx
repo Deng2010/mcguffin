@@ -43,7 +43,7 @@ export default function AdminPluginsPage() {
   const loadBackendPlugins = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<PluginsListResponse>("/plugins");
+      const res = await apiFetch<PluginsListResponse>("/admin/plugins");
       setBackendPlugins(res.plugins);
     } catch {
       // ignore

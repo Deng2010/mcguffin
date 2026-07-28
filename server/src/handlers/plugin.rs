@@ -121,6 +121,30 @@ pub async fn register_plugin(
     }))
 }
 
+// ── List plugins (public) ──
+
+/// GET /api/plugins
+/// Returns minimal plugin info (no auth required). Used by the frontend to
+/// know which plugins are enabled/disabled so it can hide disabled ones.
+pub async fn list_plugins_public(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    let plugins = state.plugins.read().await;
+    let list: Vec<serde_json::Value> = plugins
+        .values()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "name": p.name,
+                "version": p.version,
+                "enabled": p.enabled,
+            })
+        })
+        .collect();
+
+    Json(serde_json::json!({"plugins": list}))
+}
+
 // ── List plugins (admin) ──
 
 /// GET /api/admin/plugins

@@ -30,6 +30,9 @@ class PluginRegistry {
     Array<{ pluginId: string; component: ComponentType<any> }>
   >();
   private discovered = false;
+  /** IDs of plugins that are disabled on the backend */
+  private disabledPluginIds = new Set<string>();
+  private statusFetched = false;
 
   static getInstance(): PluginRegistry {
     if (!PluginRegistry.instance) {
@@ -57,6 +60,7 @@ class PluginRegistry {
     this.adminNavItems = [];
     this.pluginRoutes = [];
     for (const [pluginId, reg] of this.plugins.entries()) {
+      if (this.disabledPluginIds.has(pluginId)) continue;
       for (const route of reg.routes) {
         this.pluginRoutes.push({ pluginId, route });
         if (route.nav_placement === "main") {
@@ -140,11 +144,38 @@ class PluginRegistry {
     }
   }
 
-  /** Get slot components for a named slot. */
+  /** Fetch plugin enabled status from the backend. Call once on app init. */
+  async fetchPluginStatus(): Promise<void> {
+    if (this.statusFetched) return;
+    this.statusFetched = true;
+    try {
+      const res = await apiFetch<{
+        plugins: Array<{ id: string; enabled: boolean }>;
+      }>("/plugins");
+      const disabled = new Set<string>();
+      for (const p of res.plugins) {
+        if (!p.enabled) {
+          disabled.add(p.id);
+        }
+      }
+      this.disabledPluginIds = disabled;
+      this.notify();
+    } catch {
+      // Backend may not be available; treat all as enabled
+    }
+  }
+
+  /** Check whether a plugin is currently enabled. */
+  isPluginEnabled(pluginId: string): boolean {
+    return !this.disabledPluginIds.has(pluginId);
+  }
+
+  /** Get slot components for a named slot. Disabled plugins are excluded. */
   getSlotComponents(
     slot: string,
   ): Array<{ pluginId: string; component: ComponentType<any> }> {
-    return this.slotComponents.get(slot) ?? [];
+    const all = this.slotComponents.get(slot) ?? [];
+    return all.filter((s) => !this.disabledPluginIds.has(s.pluginId));
   }
 
   getMainNavItems(): PluginRouteDef[] {
