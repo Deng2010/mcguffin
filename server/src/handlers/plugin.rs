@@ -116,7 +116,7 @@ pub async fn register_plugin(
             "id": manifest.id,
             "name": manifest.name,
             "version": manifest.version,
-            "permissions": valid_perms,
+            "permissions_needed": valid_perms,
         }
     }))
 }

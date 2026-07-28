@@ -11,7 +11,7 @@ pub struct PluginManifest {
     #[serde(default)]
     pub author: String,
     /// Permissions the plugin requests. Each string like "read:team", "storage", etc.
-    #[serde(default, alias = "permissions_needed")]
+    #[serde(default, rename = "permissions_needed")]
     pub permissions: Vec<String>,
     /// Whether the plugin is enabled. Disabled plugins cannot use any API endpoints.
     /// Newly registered plugins default to enabled.
