@@ -59,7 +59,9 @@ export default function AdminPluginsPage() {
   // ── Merge local + backend into a single list ──
 
   const registry = PluginRegistry.getInstance();
-  const localIds = new Set(registry.getPluginRoutes().map((r) => r.pluginId));
+  // Use ALL locally-registered plugin IDs so disabled code-registered plugins
+  // are still correctly labeled (instead of being misclassified as ZIP).
+  const localIds = registry.getRegisteredPluginIds();
 
   const displayPlugins: DisplayPlugin[] = [
     // Plugins from backend (includes both local-registered and zip-installed)

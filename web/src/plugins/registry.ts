@@ -170,6 +170,17 @@ class PluginRegistry {
     return !this.disabledPluginIds.has(pluginId);
   }
 
+  /**
+   * Get the IDs of ALL locally-registered plugins, regardless of enabled /
+   * disabled status. This is intended for the admin plugins page so it can
+   * tell code-registered plugins apart from ZIP-installed ones. Use
+   * `getPluginRoutes()` when you need the route list with disabled plugins
+   * filtered out.
+   */
+  getRegisteredPluginIds(): Set<string> {
+    return new Set(this.plugins.keys());
+  }
+
   /** Get slot components for a named slot. Disabled plugins are excluded. */
   getSlotComponents(
     slot: string,

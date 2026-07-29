@@ -1138,7 +1138,8 @@ pub async fn update_problem(
             })
         }
     };
-    let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
+    let is_admin_user =
+        check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
 
     // Read problem and validate ownership
     let mut problem = {
@@ -1248,7 +1249,8 @@ pub async fn delete_problem(
             })
         }
     };
-    let is_admin_user = check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
+    let is_admin_user =
+        check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
 
     let problem = {
         let problems = state.problems.read().await;

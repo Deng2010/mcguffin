@@ -1,12 +1,61 @@
+# ===== Version Control =====
 .git/
 .gitignore
+.gitattributes
+
+# ===== CI/CD =====
 .github/
-.zed/
+
+# ===== Documentation =====
 *.md
-AGENTS.md
-CLAUDE.md
-GUIDE.md
-justfile
+docs/
+
+# ===== IDE & Editor =====
+.zed/
+.vscode/
+.idea/
+*.swp
+*~
+.project
+.settings/
+
+# ===== OS Files =====
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ===== Build Artifacts =====
 server/target/
-server/mcguffin_data.db*
 web/node_modules/
+web/dist/
+web/.vite/
+
+# ===== Code Intelligence =====
+.codegraph/
+server/.codegraph/
+web/.codegraph/
+
+# ===== Data & Database =====
+*.db
+*.db-*
+*.db-shm
+*.db-wal
+mcguffin_data.json
+server/mcguffin_data.json
+
+# ===== Config & Tools =====
+justfile
+docker-compose.yml
+docker-compose.*.yml
+Dockerfile
+.dockerignore
+
+# ===== Tests (not needed for build) =====
+web/src/test/
+server/tests/
+
+# ===== Logs & Temp =====
+*.log
+*.tmp
+tmp/
+temp/

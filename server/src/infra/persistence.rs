@@ -535,8 +535,16 @@ impl AppState {
                 }
             }
         }
+        // Use NULL for empty-string Option fields to keep SQLite in sync with HashMap
+        let sql_value: Option<&str> = if val_str.is_empty() &&
+            (field == "claimed_by" || field == "verifier_solution")
+        {
+            None
+        } else {
+            Some(&val_str)
+        };
         let _ = sqlx::query(&format!("UPDATE problems SET {} = ? WHERE id = ?", field))
-            .bind(&val_str)
+            .bind(sql_value)
             .bind(problem_id)
             .execute(&self.db)
             .await;

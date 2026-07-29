@@ -87,6 +87,17 @@ pub async fn register_plugin(
         .cloned()
         .collect();
 
+    // Preserve the existing enabled state on re-registration so that an admin's
+    // disable/enable choice survives page refreshes (which re-run definePlugin()
+    // and re-POST to /register). New plugins default to enabled.
+    let existing_enabled = {
+        let plugins = state.plugins.read().await;
+        plugins
+            .get(&payload.id)
+            .map(|p| p.enabled)
+            .unwrap_or(true)
+    };
+
     let manifest = PluginManifest {
         id: payload.id.clone(),
         name: payload.manifest.name.clone(),
@@ -94,7 +105,7 @@ pub async fn register_plugin(
         description: payload.manifest.description.clone(),
         author: payload.manifest.author.clone(),
         permissions: valid_perms.clone(),
-        enabled: true,
+        enabled: existing_enabled,
     };
 
     {
