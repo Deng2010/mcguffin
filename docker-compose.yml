@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   mcguffin:
-    image: ghcr.io/deng2010/mcguffin:v0.3.0
+    image: ghcr.io/deng2010/mcguffin:v0.3.1
     container_name: mcguffin
     restart: unless-stopped
     # 多架构镜像：Docker 自动选择 amd64 (Intel/AMD) 或 arm64 (Apple Silicon/ARM 服务器)
