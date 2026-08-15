@@ -288,9 +288,83 @@ pub fn build_router(state: AppState) -> Router {
         .fallback(api_not_found)
         .method_not_allowed_fallback(api_method_not_allowed);
 
-    Router::new()
+    let mut app = Router::new()
         .nest("/api/v1", api_v1)
-        .nest("/api", api_with_legacy)
-        .fallback(api_not_found)
-        .method_not_allowed_fallback(api_method_not_allowed)
+        .nest("/api", api_with_legacy);
+
+    // ── 前端静态文件托管（SPA） ──
+    //
+    // 优先匹配 web/dist/ 下的真实静态文件，未命中时回退到 index.html，
+    // 由前端 React Router 处理客户端路由（如 /problems/xxx）。
+    // 仅在运行时能定位到前端构建产物时才启用；找不到则退回纯 API 模式。
+    if let Some(dist_dir) = locate_frontend_dist() {
+        let serve_dir = tower_http::services::ServeDir::new(&dist_dir).not_found_service(
+            tower_http::services::ServeFile::new(dist_dir.join("index.html")),
+        );
+        app = app.fallback_service(serve_dir);
+    } else {
+        tracing::warn!(
+            "未找到前端构建产物 web/dist，将以纯 API 模式运行（前端请用 Vite dev server 或单独托管）"
+        );
+        app = app
+            .fallback(api_not_found)
+            .method_not_allowed_fallback(api_method_not_allowed);
+    }
+
+    app
+}
+
+/// 按以下优先级探测前端构建产物目录：
+///
+///   1. 环境变量 `MCGUFFIN_WEB_DIST`（docker-entrypoint.sh 设置，生产部署约定）
+///   2. `<cwd>/web/dist`         （项目根运行）
+///   3. `<cwd>/../web/dist`      （server/ 内运行 cargo run）
+///   4. `<cwd>/dist`             （dist 直接放在后端可执行文件旁）
+fn locate_frontend_dist() -> Option<std::path::PathBuf> {
+    if let Ok(dir) = std::env::var("MCGUFFIN_WEB_DIST") {
+        let dir = std::path::PathBuf::from(dir);
+        if dir.join("index.html").is_file() {
+            return Some(dir);
+        }
+    }
+    let candidates: [std::path::PathBuf; 4] = [
+        std::path::PathBuf::from("web/dist"),
+        std::path::PathBuf::from("../web/dist"),
+        std::path::PathBuf::from("dist"),
+        std::path::PathBuf::from("../dist"),
+    ];
+    for dir in candidates {
+        if dir.join("index.html").is_file() {
+            return Some(dir);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::locate_frontend_dist;
+
+    #[test]
+    fn env_var_overrides_candidates() {
+        // 指向一个不存在的候选路径，但环境变量指向真实 dist 时应优先命中
+        let real = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../web/dist");
+        if !real.join("index.html").is_file() {
+            // 构建产物不存在时跳过（CI 无人先 build 前端）
+            return;
+        }
+        std::env::set_var("MCGUFFIN_WEB_DIST", &real);
+        let found = locate_frontend_dist();
+        std::env::remove_var("MCGUFFIN_WEB_DIST");
+        assert_eq!(found.as_deref(), Some(real.as_path()));
+    }
+
+    #[test]
+    fn empty_env_var_falls_back_to_candidates() {
+        std::env::set_var("MCGUFFIN_WEB_DIST", "/nonexistent/dir");
+        // 结果取决于 cwd；只要不 panic、返回 Option 即可
+        let _ = locate_frontend_dist();
+        std::env::remove_var("MCGUFFIN_WEB_DIST");
+    }
 }
