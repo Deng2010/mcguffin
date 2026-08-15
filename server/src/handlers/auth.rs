@@ -7,6 +7,7 @@ use chrono::Utc;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::*;
 use crate::utils::url_encode;
@@ -529,9 +530,6 @@ pub async fn refresh_token(
             "scope": "openid profile email",
         }))
     } else {
-        Json(serde_json::json!({
-            "success": false,
-            "message": "无效的 refresh token",
-        }))
+        json_error(ErrorCode::AUTH_TOKEN_INVALID, "无效的 refresh token")
     }
 }

@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
+import { errorMessage } from "../../errors/normalize";
 
 interface TeamMemberAPI {
   id: string;
@@ -28,6 +30,7 @@ type TabId = "all" | "admin" | "member";
 
 export default function TeamPage() {
   const { user, hasPermission } = useAuthStore();
+  const toast = useToast();
   const navigate = useNavigate();
   const [members, setMembers] = useState<TeamMemberAPI[]>([]);
   const [requests, setRequests] = useState<JoinRequestAPI[]>([]);
@@ -75,7 +78,7 @@ export default function TeamPage() {
       await apiFetch(`/team/review/${requestId}/${action}`, { method: "POST" });
       loadData();
     } catch (err) {
-      alert(`操作失败: ${err}`);
+      toast.error(`操作失败: ${errorMessage(err)}`);
     }
   };
 
@@ -86,12 +89,12 @@ export default function TeamPage() {
         { method: "POST", body: JSON.stringify({ role: newRole }) },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       loadData();
     } catch (err) {
-      alert(`角色修改失败: ${err}`);
+      toast.error(`角色修改失败: ${errorMessage(err)}`);
     }
   };
 
@@ -103,12 +106,12 @@ export default function TeamPage() {
         { method: "POST" },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       loadData();
     } catch (err) {
-      alert(`移除失败: ${err}`);
+      toast.error(`移除失败: ${errorMessage(err)}`);
     }
   };
 

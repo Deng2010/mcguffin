@@ -1,3 +1,4 @@
+use crate::error::{http_error, json_error, ErrorCode};
 use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::{self, AuditEntry, User};
 use axum::extract::FromRef;
@@ -105,12 +106,9 @@ pub async fn require_permission(
     permission: &str,
 ) -> Result<(String, User), impl IntoResponse> {
     let (user_id, user) = resolve_user(state, headers).await.ok_or_else(|| {
-        (
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "success": false,
-                "message": "未登录或会话已过期"
-            })),
+        http_error(
+            ErrorCode::AUTH_UNAUTHORIZED,
+            ErrorCode::AUTH_UNAUTHORIZED.default_message(),
         )
     })?;
 
@@ -127,10 +125,12 @@ pub async fn require_permission(
             })
             .await;
         return Err((
-            StatusCode::FORBIDDEN,
+            ErrorCode::PERMISSION_DENIED.status(),
             Json(serde_json::json!({
                 "success": false,
-                "message": format!("没有「{}」权限", permission)
+                "code": ErrorCode::PERMISSION_DENIED.code(),
+                "message": format!("没有「{}」权限", permission),
+                "hint": ErrorCode::PERMISSION_DENIED.hint(),
             })),
         ));
     }
@@ -202,10 +202,10 @@ pub async fn require_permission_json(
     let (uid, user) = match resolve_user(state, headers).await {
         Some(u) => u,
         None => {
-            return Err(Json(serde_json::json!({
-                "success": false,
-                "message": "未登录或会话已过期"
-            })))
+            return Err(json_error(
+                ErrorCode::AUTH_UNAUTHORIZED,
+                ErrorCode::AUTH_UNAUTHORIZED.default_message(),
+            ))
         }
     };
     if check_permission(state, &user, permission).await {
@@ -222,10 +222,10 @@ pub async fn require_permission_json(
                 reason: "权限检查未通过".to_string(),
             })
             .await;
-        Err(Json(serde_json::json!({
-            "success": false,
-            "message": "权限不足"
-        })))
+        Err(json_error(
+            ErrorCode::PERMISSION_DENIED,
+            ErrorCode::PERMISSION_DENIED.default_message(),
+        ))
     }
 }
 
@@ -254,12 +254,9 @@ where
     ) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
         let (user_id, user) = resolve_user(&state, &parts.headers).await.ok_or_else(|| {
-            (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({
-                    "success": false,
-                    "message": "未登录或会话已过期"
-                })),
+            http_error(
+                ErrorCode::AUTH_UNAUTHORIZED,
+                ErrorCode::AUTH_UNAUTHORIZED.default_message(),
             )
         })?;
         Ok(AuthUser { user_id, user })
@@ -288,10 +285,12 @@ impl AuthUser {
                 })
                 .await;
             Err((
-                StatusCode::FORBIDDEN,
+                ErrorCode::PERMISSION_DENIED.status(),
                 Json(serde_json::json!({
                     "success": false,
+                    "code": ErrorCode::PERMISSION_DENIED.code(),
                     "message": format!("没有「{}」权限", permission),
+                    "hint": ErrorCode::PERMISSION_DENIED.hint(),
                 })),
             ))
         } else {
@@ -308,7 +307,7 @@ macro_rules! req_perm {
     ($state:expr, $headers:expr, $perm:expr) => {
         match $crate::utils::require_permission_json(&$state, &$headers, $perm).await {
             Ok(u) => u,
-            Err(e) => return e,
+            Err(e) => return Err(e),
         }
     };
 }
@@ -319,7 +318,12 @@ macro_rules! req_user {
     ($state:expr, $headers:expr) => {
         match $crate::utils::resolve_user(&$state, &$headers).await {
             Some(u) => u,
-            None => return ::axum::Json(::serde_json::json!({"success": false, "message": "未登录"})),
+            None => {
+                return $crate::error::json_error(
+                    $crate::error::ErrorCode::AUTH_UNAUTHORIZED,
+                    $crate::error::ErrorCode::AUTH_UNAUTHORIZED.default_message(),
+                )
+            }
         }
     };
     ($state:expr, $headers:expr, $err:expr) => {

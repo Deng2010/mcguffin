@@ -20,6 +20,7 @@ import AdminUsersPage from "../features/admin/AdminUsersPage";
 import AdminRolesPage from "../features/admin/AdminRolesPage";
 import AdminBackupsPage from "../features/admin/AdminBackupsPage";
 import AdminPluginsPage from "../features/admin/AdminPluginsPage";
+import AdminErrorsPage from "../features/admin/AdminErrorsPage";
 import CommunityPage from "../features/community/CommunityPage";
 import PostDetailPage from "../features/community/PostDetailPage";
 import NotFoundPage from "../features/notfound/NotFoundPage";
@@ -116,6 +117,7 @@ export default function AppRoutes() {
           <Route path="roles" element={<AdminRolesPage />} />
           <Route path="plugins" element={<AdminPluginsPage />} />
           <Route path="backups" element={<AdminBackupsPage />} />
+          <Route path="errors" element={<AdminErrorsPage />} />
         </Route>
       </Routes>
     </HashRouter>

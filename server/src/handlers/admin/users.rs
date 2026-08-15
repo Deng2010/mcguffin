@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::{
     ChangeRolePayload, SetUserGroupsPayload, SetUserPermissionsPayload, PERM_WILDCARD,
@@ -107,14 +108,13 @@ pub async fn admin_change_user_role(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
     if user_id == ADMIN_USER_ID {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "不能修改系统管理员的角色"}),
+        return Ok(json_error(
+            ErrorCode::ADMIN_USER_PROTECTED,
+            "不能修改系统管理员的角色",
         ));
     }
     if payload.role != "admin" && payload.role != "member" && payload.role != "guest" {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "无效角色"}),
-        ));
+        return Ok(json_error(ErrorCode::VALIDATION_INVALID, "无效角色"));
     }
     if state.users.read().await.contains_key(&user_id) {
         state
@@ -124,9 +124,7 @@ pub async fn admin_change_user_role(
             serde_json::json!({"success": true, "message": "角色已更新"}),
         ))
     } else {
-        Ok(Json(
-            serde_json::json!({"success": false, "message": "用户不存在"}),
-        ))
+        Ok(json_error(ErrorCode::USER_NOT_FOUND, "用户不存在"))
     }
 }
 
@@ -139,14 +137,13 @@ pub async fn admin_remove_user(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
     if user_id == ADMIN_USER_ID {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "不能删除系统管理员"}),
+        return Ok(json_error(
+            ErrorCode::ADMIN_USER_PROTECTED,
+            "不能删除系统管理员",
         ));
     }
     if user_id == auth.user_id {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "不能删除自己"}),
-        ));
+        return Ok(json_error(ErrorCode::VALIDATION_INVALID, "不能删除自己"));
     }
     state.delete_user(&user_id).await;
     state.remove_team_member_by_user(&user_id).await;
@@ -167,11 +164,7 @@ pub async fn set_user_groups(
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let user = match state.users.read().await.get(&user_id) {
         Some(u) => u.clone(),
-        None => {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "用户不存在"}),
-            ))
-        }
+        None => return Ok(json_error(ErrorCode::USER_NOT_FOUND, "用户不存在")),
     };
     let mut user = user;
     user.group_ids = payload.group_ids;
@@ -193,11 +186,7 @@ pub async fn set_user_permissions(
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let user = match state.users.read().await.get(&user_id) {
         Some(u) => u.clone(),
-        None => {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "用户不存在"}),
-            ))
-        }
+        None => return Ok(json_error(ErrorCode::USER_NOT_FOUND, "用户不存在")),
     };
     let mut user = user;
     user.user_permissions = payload.permissions;

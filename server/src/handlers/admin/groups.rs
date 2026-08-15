@@ -5,6 +5,7 @@ use axum::{
 };
 use uuid::Uuid;
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::types::{CreateGroupPayload, MemberGroup, UpdateGroupPayload, PERM_WILDCARD};
 use crate::utils::AuthUser;
@@ -42,9 +43,7 @@ pub async fn create_group(
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let name = payload.name.trim().to_string();
     if name.is_empty() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "组名不能为空"}),
-        ));
+        return Ok(json_error(ErrorCode::VALIDATION_INVALID, "组名不能为空"));
     }
     let id = Uuid::new_v4().to_string();
     let group = MemberGroup {
@@ -70,17 +69,11 @@ pub async fn update_group(
     let mut groups = state.member_groups.write().await;
     let group = match groups.get_mut(&group_id) {
         Some(g) => g,
-        None => {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "成员组不存在"}),
-            ))
-        }
+        None => return Ok(json_error(ErrorCode::NOT_FOUND, "成员组不存在")),
     };
     let name = payload.name.trim().to_string();
     if name.is_empty() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "组名不能为空"}),
-        ));
+        return Ok(json_error(ErrorCode::VALIDATION_INVALID, "组名不能为空"));
     }
     group.name = name;
     group.permissions = payload.permissions;
@@ -100,9 +93,7 @@ pub async fn delete_group(
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let mut groups = state.member_groups.write().await;
     if !groups.contains_key(&group_id) {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "成员组不存在"}),
-        ));
+        return Ok(json_error(ErrorCode::NOT_FOUND, "成员组不存在"));
     }
     groups.remove(&group_id);
     drop(groups);

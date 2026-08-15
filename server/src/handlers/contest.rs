@@ -6,6 +6,7 @@ use axum::{
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{check_permission, get_token_from_headers, AuthUser};
@@ -231,9 +232,7 @@ pub async fn delete_contest(
             serde_json::json!({"success": true, "message": "比赛已删除"}),
         ))
     } else {
-        Ok(Json(
-            serde_json::json!({"success": false, "message": "比赛不存在"}),
-        ))
+        Ok(json_error(ErrorCode::CONTEST_NOT_FOUND, "比赛不存在"))
     }
 }
 
@@ -252,11 +251,7 @@ pub async fn update_contest(
 
     let mut contest = match state.contests.read().await.get(&contest_id) {
         Some(c) => c.clone(),
-        None => {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "比赛不存在"}),
-            ))
-        }
+        None => return Ok(json_error(ErrorCode::CONTEST_NOT_FOUND, "比赛不存在")),
     };
 
     contest.name = payload.name;
@@ -287,18 +282,15 @@ pub async fn set_contest_status(
         .await?;
 
     if payload.status != "draft" && payload.status != "public" {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "状态值无效，仅支持 draft 或 public"}),
+        return Ok(json_error(
+            ErrorCode::CONTEST_INVALID_STATUS,
+            "状态值无效，仅支持 draft 或 public",
         ));
     }
 
     let mut contest = match state.contests.read().await.get(&contest_id) {
         Some(c) => c.clone(),
-        None => {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "比赛不存在"}),
-            ))
-        }
+        None => return Ok(json_error(ErrorCode::CONTEST_NOT_FOUND, "比赛不存在")),
     };
 
     if payload.status == "public" && contest.status != "public" {
@@ -309,8 +301,9 @@ pub async fn set_contest_status(
             .or(contest.link.as_deref())
             .unwrap_or("");
         if link.is_empty() {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "设为公开前请先设置比赛链接"}),
+            return Ok(json_error(
+                ErrorCode::CONTEST_INVALID_LINK,
+                "设为公开前请先设置比赛链接",
             ));
         }
         contest.link = Some(link.to_string());
@@ -339,11 +332,7 @@ pub async fn set_problem_order(
 
     let mut contest = match state.contests.read().await.get(&contest_id) {
         Some(c) => c.clone(),
-        None => {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "比赛不存在"}),
-            ))
-        }
+        None => return Ok(json_error(ErrorCode::CONTEST_NOT_FOUND, "比赛不存在")),
     };
 
     // Validate that all problem_ids exist and belong to this contest
@@ -352,10 +341,10 @@ pub async fn set_problem_order(
         match problems.get(pid) {
             Some(p) if p.contest_id.as_deref() == Some(&contest_id) => {}
             _ => {
-                return Ok(Json(serde_json::json!({
-                    "success": false,
-                    "message": format!("题目 {} 不存在或不属于此比赛", pid)
-                })));
+                return Ok(json_error(
+                    ErrorCode::PROBLEM_NOT_FOUND,
+                    format!("题目 {} 不存在或不属于此比赛", pid),
+                ));
             }
         }
     }

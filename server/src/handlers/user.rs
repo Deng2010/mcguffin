@@ -7,6 +7,7 @@ use axum::{
 use axum::extract::Query;
 use std::collections::HashMap;
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::{get_token_from_headers, resolve_user};
@@ -123,14 +124,14 @@ pub async fn update_profile(
 ) -> Json<serde_json::Value> {
     let token = match get_token_from_headers(&headers) {
         Some(t) => t,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
 
     let user_id = {
         let sessions = state.sessions.read().await;
         match sessions.get(&token) {
             Some(entry) => entry.user_id.clone(),
-            None => return Json(serde_json::json!({"success": false, "message": "无效的会话"})),
+            None => return json_error(ErrorCode::AUTH_TOKEN_INVALID, "无效的会话"),
         }
     };
 
@@ -138,10 +139,7 @@ pub async fn update_profile(
     if let Some(ref raw_name) = payload.display_name {
         let trimmed = raw_name.trim();
         if trimmed.is_empty() {
-            return Json(serde_json::json!({
-                "success": false,
-                "message": "显示名称不能为空"
-            }));
+            return json_error(ErrorCode::VALIDATION_INVALID, "显示名称不能为空");
         }
     }
 
@@ -154,18 +152,13 @@ pub async fn update_profile(
 
     if let Some(ref name) = name_change {
         if name.chars().count() > 30 {
-            return Json(serde_json::json!({
-                "success": false,
-                "message": "显示名称不能超过30个字符"
-            }));
+            return json_error(ErrorCode::VALIDATION_INVALID, "显示名称不能超过30个字符");
         }
         let current_display_name = {
             let users = state.users.read().await;
             match users.get(&user_id) {
                 Some(u) => u.display_name.clone(),
-                None => {
-                    return Json(serde_json::json!({"success": false, "message": "用户不存在"}))
-                }
+                None => return json_error(ErrorCode::USER_NOT_FOUND, "用户不存在"),
             }
         };
         if *name != current_display_name {
@@ -176,10 +169,7 @@ pub async fn update_profile(
                     .any(|u| u.id != user_id && (u.display_name == *name || u.username == *name))
             };
             if is_taken {
-                return Json(serde_json::json!({
-                    "success": false,
-                    "message": "该显示名称已被其他人使用"
-                }));
+                return json_error(ErrorCode::VALIDATION_NAME_TAKEN, "该显示名称已被其他人使用");
             }
         }
     }
@@ -187,7 +177,7 @@ pub async fn update_profile(
     // Read current user, then modify and dual-write via update_user
     let mut user = match state.users.read().await.get(&user_id).cloned() {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "用户不存在"})),
+        None => return json_error(ErrorCode::USER_NOT_FOUND, "用户不存在"),
     };
 
     // Apply changes
@@ -215,10 +205,7 @@ pub async fn update_profile(
                     user.password_hash = Some(hash);
                 }
                 Err(e) => {
-                    return Json(serde_json::json!({
-                        "success": false,
-                        "message": format!("密码加密失败: {}", e),
-                    }));
+                    return json_error(ErrorCode::INTERNAL_ERROR, format!("密码加密失败: {}", e));
                 }
             }
         }
@@ -253,14 +240,22 @@ pub async fn check_name_available(
 
     let token = match get_token_from_headers(&headers) {
         Some(t) => t,
-        None => return Json(serde_json::json!({"available": false, "error": "未登录"})),
+        None => {
+            return Json(
+                serde_json::json!({"available": false, "success": false, "code": "AUTH_UNAUTHORIZED", "message": "未登录", "hint": "请重新登录"}),
+            )
+        }
     };
 
     let user_id = {
         let sessions = state.sessions.read().await;
         match sessions.get(&token) {
             Some(entry) => entry.user_id.clone(),
-            None => return Json(serde_json::json!({"available": false, "error": "无效的会话"})),
+            None => {
+                return Json(
+                    serde_json::json!({"available": false, "success": false, "code": "AUTH_TOKEN_INVALID", "message": "无效的会话", "hint": "请重新登录"}),
+                )
+            }
         }
     };
 

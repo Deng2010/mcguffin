@@ -1,17 +1,17 @@
 use axum::{
     extract::State,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 
+use crate::error::{api_method_not_allowed, api_not_found};
 use crate::handlers::admin::{
     admin_change_user_role, admin_list_users, admin_remove_user, create_backup, create_group,
     delete_backup, delete_group, download_backup, export_config, export_data, export_db,
-    get_audit_log, get_config, get_showcase_config, import_config, import_data, init_admin,
-    init_admin_status, list_backups, list_groups, restart_service, restore_backup,
-    get_acl_resources, restore_upload_backup, set_problem_acl, set_resource_acl,
-    set_user_groups, set_user_permissions, update_config, update_group,
-    update_showcase_config,
+    get_acl_resources, get_audit_log, get_config, get_showcase_config, import_config, import_data,
+    init_admin, init_admin_status, list_backups, list_groups, restart_service, restore_backup,
+    restore_upload_backup, set_problem_acl, set_resource_acl, set_user_groups,
+    set_user_permissions, update_config, update_group, update_showcase_config,
 };
 use crate::handlers::auth::{
     get_permissions, login, oauth_authorize, oauth_callback, refresh_token,
@@ -20,14 +20,17 @@ use crate::handlers::contest::{
     create_contest, delete_contest, get_contest_problems, get_contests, set_contest_status,
     set_problem_order, update_contest,
 };
+use crate::handlers::errors::{
+    clear_errors, delete_error, list_errors, report_error, update_error_status,
+};
 use crate::handlers::info::{get_difficulties, get_site_info, update_site_description};
 use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
 use crate::handlers::plugin::{
-    list_plugins, list_plugins_public, plugin_get_data, plugin_list_users, plugin_notify,
-    plugin_set_data, plugin_user_get, plugin_user_me, register_plugin, unregister_plugin,
-    enable_plugin, disable_plugin,
+    disable_plugin, enable_plugin, get_global_plugin_state, list_plugins, list_plugins_public,
+    plugin_get_data, plugin_list_users, plugin_notify, plugin_set_data, plugin_user_get,
+    plugin_user_me, register_plugin, set_global_plugin_state, unregister_plugin,
 };
 use crate::handlers::post::{
     create_announcement, create_post, create_suggestion, delete_announcement, delete_post,
@@ -203,39 +206,29 @@ pub fn build_router(state: AppState) -> Router {
         // Plugin API
         .route("/plugins", get(list_plugins_public))
         .route("/plugins/register", post(register_plugin))
-        .route(
-            "/plugins/{plugin_id}/users",
-            get(plugin_list_users),
-        )
-        .route(
-            "/plugins/{plugin_id}/users/me",
-            get(plugin_user_me),
-        )
-        .route(
-            "/plugins/{plugin_id}/users/{user_id}",
-            get(plugin_user_get),
-        )
+        .route("/plugins/{plugin_id}/users", get(plugin_list_users))
+        .route("/plugins/{plugin_id}/users/me", get(plugin_user_me))
+        .route("/plugins/{plugin_id}/users/{user_id}", get(plugin_user_get))
         .route(
             "/plugins/{plugin_id}/data",
             get(plugin_get_data).post(plugin_set_data),
         )
-        .route(
-            "/plugins/{plugin_id}/notify",
-            post(plugin_notify),
-        )
+        .route("/plugins/{plugin_id}/notify", post(plugin_notify))
         // Admin plugin management
         .route("/admin/plugins", get(list_plugins))
         .route(
-            "/admin/plugins/{plugin_id}",
-            delete(unregister_plugin),
+            "/admin/plugins/global",
+            get(get_global_plugin_state).post(set_global_plugin_state),
         )
+        .route("/admin/plugins/{plugin_id}", delete(unregister_plugin))
+        .route("/admin/plugins/{plugin_id}/enable", post(enable_plugin))
+        .route("/admin/plugins/{plugin_id}/disable", post(disable_plugin))
+        // Error reporting & error center
+        .route("/errors/report", post(report_error))
+        .route("/errors", get(list_errors).delete(clear_errors))
         .route(
-            "/admin/plugins/{plugin_id}/enable",
-            post(enable_plugin),
-        )
-        .route(
-            "/admin/plugins/{plugin_id}/disable",
-            post(disable_plugin),
+            "/errors/{id}",
+            patch(update_error_status).delete(delete_error),
         );
 
     let api_router = api_router.with_state(state.clone());
@@ -285,9 +278,19 @@ pub fn build_router(state: AppState) -> Router {
         )
         .with_state(state.clone());
 
-    let api_with_legacy = Router::new().merge(api_router.clone()).merge(legacy_router);
+    let api_with_legacy = Router::new()
+        .merge(api_router.clone())
+        .merge(legacy_router)
+        .fallback(api_not_found)
+        .method_not_allowed_fallback(api_method_not_allowed);
+
+    let api_v1 = api_router
+        .fallback(api_not_found)
+        .method_not_allowed_fallback(api_method_not_allowed);
 
     Router::new()
-        .nest("/api/v1", api_router)
+        .nest("/api/v1", api_v1)
         .nest("/api", api_with_legacy)
+        .fallback(api_not_found)
+        .method_not_allowed_fallback(api_method_not_allowed)
 }

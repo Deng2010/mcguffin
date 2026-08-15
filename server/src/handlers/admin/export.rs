@@ -2,6 +2,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use chrono::Local;
 
 use crate::db::{create_consistent_backup, export_db_to_json_string, reimport_all_data};
+use crate::error::{json_error, ErrorCode};
 use crate::infra::persistence::SavedData;
 use crate::state::resolve_config_path;
 use crate::state::AppState;
@@ -23,10 +24,7 @@ pub async fn export_data(
     let content = export_db_to_json_string(&state.db).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false,
-                "message": format!("导出数据失败: {}", e),
-            })),
+            json_error(ErrorCode::EXPORT_FAILED, format!("导出数据失败: {}", e)),
         )
     })?;
 
@@ -67,8 +65,9 @@ pub async fn export_db(
                 "encoding": "base64",
             })))
         }
-        Err(e) => Ok(Json(
-            serde_json::json!({"success": false, "message": format!("读取数据库文件失败: {}", e)}),
+        Err(e) => Ok(json_error(
+            ErrorCode::EXPORT_FAILED,
+            format!("读取数据库文件失败: {}", e),
         )),
     }
 }
@@ -92,8 +91,9 @@ pub async fn export_config(
                 "mime": "text/plain",
             })))
         }
-        Err(e) => Ok(Json(
-            serde_json::json!({"success": false, "message": format!("读取配置文件失败: {}", e)}),
+        Err(e) => Ok(json_error(
+            ErrorCode::EXPORT_FAILED,
+            format!("读取配置文件失败: {}", e),
         )),
     }
 }
@@ -116,9 +116,7 @@ pub async fn import_data(
         .ok_or_else(|| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "success": false, "message": "缺少 content 字段"
-                })),
+                json_error(ErrorCode::VALIDATION_INVALID, "缺少 content 字段"),
             )
         })?;
 
@@ -126,9 +124,10 @@ pub async fn import_data(
     let saved = parse_import_data(content).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "success": false, "message": format!("JSON 解析失败: {}", e)
-            })),
+            json_error(
+                ErrorCode::VALIDATION_INVALID,
+                format!("JSON 解析失败: {}", e),
+            ),
         )
     })?;
 
@@ -152,9 +151,7 @@ pub async fn import_data(
     reimport_all_data(&state.db, &saved).await.map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false, "message": format!("数据导入失败: {}", e)
-            })),
+            json_error(ErrorCode::EXPORT_FAILED, format!("数据导入失败: {}", e)),
         )
     })?;
 
@@ -184,9 +181,7 @@ pub async fn import_config(
         .ok_or_else(|| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "success": false, "message": "缺少 content 字段"
-                })),
+                json_error(ErrorCode::VALIDATION_INVALID, "缺少 content 字段"),
             )
         })?;
 
@@ -194,9 +189,10 @@ pub async fn import_config(
     let _: toml::Value = toml::from_str(content).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "success": false, "message": format!("TOML 解析失败: {}", e)
-            })),
+            json_error(
+                ErrorCode::VALIDATION_INVALID,
+                format!("TOML 解析失败: {}", e),
+            ),
         )
     })?;
 
@@ -212,10 +208,10 @@ pub async fn import_config(
         std::fs::create_dir_all(parent).map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "success": false,
-                    "message": format!("无法创建配置文件目录: {}", e),
-                })),
+                json_error(
+                    ErrorCode::EXPORT_FAILED,
+                    format!("无法创建配置文件目录: {}", e),
+                ),
             )
         })?;
     }
@@ -224,9 +220,7 @@ pub async fn import_config(
     std::fs::write(&config_path, content).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "success": false, "message": format!("写入配置文件失败: {}", e)
-            })),
+            json_error(ErrorCode::EXPORT_FAILED, format!("写入配置文件失败: {}", e)),
         )
     })?;
 

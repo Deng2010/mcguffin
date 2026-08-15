@@ -7,6 +7,7 @@ import MarkdownRenderer from "../../components/MarkdownRenderer";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
 import type { Announcement } from "../../types";
+import { useToast } from "../../errors/ToastContext";
 
 // ============== Types ==============
 
@@ -183,6 +184,7 @@ function CompactProblemCard({
 
 export default function ShowcasePage() {
   const { user, hasPermission } = useAuthStore();
+  const toast = useToast();
   const { siteInfo, updateDescription, refresh: refreshSite } = useSiteStore();
   const [allContests, setAllContests] = useState<ContestItem[]>([]);
   const [allProblems, setAllProblems] = useState<ProblemItem[]>([]);
@@ -237,7 +239,7 @@ export default function ShowcasePage() {
   const handleSaveDescription = async () => {
     const res = await updateDescription(draftDescription);
     if (!res.success) {
-      alert(res.message);
+      toast.error(res.message);
       return;
     }
     setEditing(false);

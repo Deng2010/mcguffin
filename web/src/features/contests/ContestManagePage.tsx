@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
 import MarkdownEditor from "../../components/MarkdownEditor";
+import { useToast } from "../../errors/ToastContext";
+import { errorMessage } from "../../errors/normalize";
 
 interface ContestItem {
   id: string;
@@ -20,6 +22,7 @@ type TabId = "all" | "public" | "draft";
 
 export default function ContestManagePage() {
   const { hasPermission } = useAuthStore();
+  const toast = useToast();
   const isAdmin = hasPermission("approve_all_problems");
   const [contests, setContests] = useState<ContestItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,12 +115,12 @@ export default function ContestManagePage() {
         { method: "DELETE" },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       loadContests();
     } catch (err) {
-      alert(`删除失败: ${err}`);
+      toast.error(`删除失败: ${errorMessage(err)}`);
     }
   };
 

@@ -12,6 +12,8 @@ import { useMention } from "../../hooks/useMention";
 import { formatTime } from "../../utils/time";
 import { groupReplies } from "../../utils/groups";
 import type { MentionMember } from "../../hooks/useMention";
+import { useToast } from "../../errors/ToastContext";
+import { errorMessage } from "../../errors/normalize";
 import type {
   DiscussionTag,
   DiscussionEmoji,
@@ -45,6 +47,7 @@ const STATUS_BG_COLOR: Record<string, string> = {
 export default function PostDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const toast = useToast();
   const { user, hasPermission, isAuthenticated } = useAuthStore();
   const [post, setPost] = useState<PostDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -92,7 +95,7 @@ export default function PostDetailPage() {
   const handleReply = async () => {
     if (!replyContent.trim() || !id) return;
     if (replyContent.length > REPLY_MAX_LEN) {
-      alert(`回复不能超过${REPLY_MAX_LEN}字`);
+      toast.error(`回复不能超过${REPLY_MAX_LEN}字`);
       return;
     }
     setSubmitting(true);
@@ -111,7 +114,7 @@ export default function PostDetailPage() {
       setReplyTo(null);
       loadPost();
     } catch (err) {
-      alert(`回复失败: ${err}`);
+      toast.error(`回复失败: ${errorMessage(err)}`);
     } finally {
       setSubmitting(false);
     }
@@ -125,10 +128,10 @@ export default function PostDetailPage() {
       if (res.success) {
         navigate("/community");
       } else {
-        alert(res.message || "删除失败");
+        toast.error(res.message || "删除失败");
       }
     } catch (err) {
-      alert(`删除失败: ${err}`);
+      toast.error(`删除失败: ${errorMessage(err)}`);
     }
   };
 
@@ -142,10 +145,10 @@ export default function PostDetailPage() {
       if (res.success) {
         loadPost();
       } else {
-        alert(res.message || "删除失败");
+        toast.error(res.message || "删除失败");
       }
     } catch (err) {
-      alert(`删除失败: ${err}`);
+      toast.error(`删除失败: ${errorMessage(err)}`);
     }
   };
 
@@ -192,7 +195,7 @@ export default function PostDetailPage() {
       setEditingTags(false);
       loadPost();
     } catch (err) {
-      alert(`保存失败: ${err}`);
+      toast.error(`保存失败: ${errorMessage(err)}`);
     } finally {
       setSavingTags(false);
     }
@@ -207,7 +210,7 @@ export default function PostDetailPage() {
       });
       loadPost();
     } catch (err) {
-      alert(`操作失败: ${err}`);
+      toast.error(`操作失败: ${errorMessage(err)}`);
     }
   };
 
@@ -220,7 +223,7 @@ export default function PostDetailPage() {
       });
       loadPost();
     } catch (err) {
-      alert(`操作失败: ${err}`);
+      toast.error(`操作失败: ${errorMessage(err)}`);
     }
   };
 
@@ -233,7 +236,7 @@ export default function PostDetailPage() {
       });
       loadPost();
     } catch (err) {
-      alert(`更新失败: ${err}`);
+      toast.error(`更新失败: ${errorMessage(err)}`);
     }
   };
 

@@ -4,9 +4,13 @@ import { initAuth } from "./stores/authStore";
 import { initSite } from "./stores/siteStore";
 import { PluginRegistry } from "./plugins/registry";
 import AppRoutes from "./app/routes";
+import ErrorBoundary from "./errors/ErrorBoundary";
+import { ToastProvider } from "./errors/ToastContext";
+import { initErrorCapture } from "./errors/reporter";
 
 export default function App() {
   useEffect(() => {
+    initErrorCapture();
     initAuth();
     initSite();
     PluginRegistry.getInstance().discover();
@@ -14,8 +18,12 @@ export default function App() {
   }, []);
 
   return (
-    <NotificationProvider>
-      <AppRoutes />
-    </NotificationProvider>
+    <ToastProvider>
+      <ErrorBoundary>
+        <NotificationProvider>
+          <AppRoutes />
+        </NotificationProvider>
+      </ErrorBoundary>
+    </ToastProvider>
   );
 }

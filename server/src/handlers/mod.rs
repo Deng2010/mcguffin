@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod auth;
 pub mod contest;
+pub mod errors;
 pub mod info;
 pub mod notification;
 pub mod plugin;

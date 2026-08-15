@@ -17,6 +17,7 @@ interface PluginManifest {
 
 interface PluginsListResponse {
   plugins: PluginManifest[];
+  plugins_disabled?: boolean;
 }
 
 interface DisplayPlugin extends PluginManifest {
@@ -31,6 +32,7 @@ interface DisplayPlugin extends PluginManifest {
 export default function AdminPluginsPage() {
   const [backendPlugins, setBackendPlugins] = useState<PluginManifest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [globallyDisabled, setGloballyDisabled] = useState(false);
   const [msg, setMsg] = useState<{
     text: string;
     type: "success" | "error" | "info";
@@ -45,6 +47,7 @@ export default function AdminPluginsPage() {
     try {
       const res = await apiFetch<PluginsListResponse>("/admin/plugins");
       setBackendPlugins(res.plugins);
+      setGloballyDisabled(res.plugins_disabled === true);
     } catch {
       // ignore
     } finally {
@@ -162,6 +165,36 @@ export default function AdminPluginsPage() {
     }
   };
 
+  // ── Global enable / disable ──
+
+  const handleGlobalToggle = async () => {
+    const next = !globallyDisabled;
+    const actionLabel = next ? "禁用" : "启用";
+    if (!confirm(`确定要全局${actionLabel}所有插件功能吗？`)) return;
+    showMsg(`正在全局${actionLabel}插件...`, "info");
+    try {
+      const res = await apiFetch<{
+        success: boolean;
+        plugins_disabled?: boolean;
+        message?: string;
+      }>("/admin/plugins/global", {
+        method: "POST",
+        body: JSON.stringify({ enabled: !next }),
+      });
+      if (!res.success) {
+        showMsg(`全局${actionLabel}失败: ${res.message}`, "error");
+        return;
+      }
+      setGloballyDisabled(res.plugins_disabled === true);
+      PluginRegistry.getInstance().setGloballyDisabled(
+        res.plugins_disabled === true,
+      );
+      showMsg(`✅ 已全局${actionLabel}插件功能`, "success");
+    } catch (err) {
+      showMsg(`全局${actionLabel}失败: ${err}`, "error");
+    }
+  };
+
   // ── Enable / Disable ──
 
   const handleToggle = async (pluginId: string, pluginName: string, currentEnabled: boolean) => {
@@ -204,6 +237,33 @@ export default function AdminPluginsPage() {
           {msg.text}
         </div>
       )}
+
+      {/* ── Global Toggle Section ── */}
+      <div className="mg-box-shadow p-5 mb-6">
+        <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+          全局插件开关
+        </h2>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-700 dark:text-gray-200 font-medium">
+              {globallyDisabled ? "插件功能当前已全局禁用" : "插件功能当前已全局启用"}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              全局禁用后，所有插件（含路由、页面与数据接口）将对所有用户隐藏并不可用。
+            </p>
+          </div>
+          <button
+            onClick={handleGlobalToggle}
+            className={`px-5 py-2 text-sm font-medium border ${
+              globallyDisabled
+                ? "border-green-300 text-green-600 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/20"
+                : "border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+            }`}
+          >
+            {globallyDisabled ? "启用插件功能" : "禁用插件功能"}
+          </button>
+        </div>
+      </div>
 
       {/* ── Upload Section ── */}
       <div className="mg-box-shadow p-5 mb-6">

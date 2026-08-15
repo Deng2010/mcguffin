@@ -5,6 +5,8 @@ import { apiFetch } from "../../services/api";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import { formatTime } from "../../utils/time";
 import type { DiscussionTag } from "../../types";
+import { useToast } from "../../errors/ToastContext";
+import { errorMessage } from "../../errors/normalize";
 
 // ============== Types ==============
 
@@ -43,6 +45,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function CommunityPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const { user, hasPermission, isAuthenticated } = useAuthStore();
   const [posts, setPosts] = useState<PostListItem[]>([]);
@@ -181,7 +184,7 @@ export default function CommunityPage() {
       resetCreateForm();
       loadPosts();
     } catch (err) {
-      alert(`发布失败: ${err}`);
+      toast.error(`发布失败: ${errorMessage(err)}`);
     } finally {
       setSubmitting(false);
     }

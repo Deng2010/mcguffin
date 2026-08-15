@@ -86,17 +86,57 @@ pub mod plugin_perms {
 
     /// Permissions that imply read:team.
     pub fn implies_read_team(perms: &[String]) -> bool {
-        perms.iter().any(|p| p == READ_TEAM || p == WRITE_TEAM || p == WRITE_TEAM_ROLES)
+        perms
+            .iter()
+            .any(|p| p == READ_TEAM || p == WRITE_TEAM || p == WRITE_TEAM_ROLES)
     }
 
     /// Permissions that imply write:team.
     pub fn has_write_team(perms: &[String]) -> bool {
-        perms.iter().any(|p| p == WRITE_TEAM || p == WRITE_TEAM_ROLES)
+        perms
+            .iter()
+            .any(|p| p == WRITE_TEAM || p == WRITE_TEAM_ROLES)
     }
 
     /// Permissions that allow changing roles.
     pub fn has_write_team_roles(perms: &[String]) -> bool {
         perms.iter().any(|p| p == WRITE_TEAM_ROLES)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plugin_perms::{self, WRITE_TEAM, WRITE_TEAM_ROLES};
+
+    fn perms(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn implies_read_team_covers_direct_and_implied() {
+        assert!(plugin_perms::implies_read_team(&perms(&["read:team"])));
+        assert!(plugin_perms::implies_read_team(&perms(&["write:team"])));
+        assert!(
+            plugin_perms::implies_read_team(&perms(&["write:team_roles"])),
+            "write:team_roles 应蕴含 read:team"
+        );
+        assert!(!plugin_perms::implies_read_team(&perms(&["storage"])));
+        assert!(!plugin_perms::implies_read_team(&[]));
+    }
+
+    #[test]
+    fn has_write_team_covers_direct_and_roles() {
+        assert!(plugin_perms::has_write_team(&perms(&[WRITE_TEAM])));
+        assert!(plugin_perms::has_write_team(&perms(&[WRITE_TEAM_ROLES])));
+        assert!(!plugin_perms::has_write_team(&perms(&["read:team"])));
+        assert!(!plugin_perms::has_write_team(&[]));
+    }
+
+    #[test]
+    fn has_write_team_roles_only_matches_roles() {
+        assert!(plugin_perms::has_write_team_roles(&perms(&[WRITE_TEAM_ROLES])));
+        assert!(!plugin_perms::has_write_team_roles(&perms(&[WRITE_TEAM])));
+        assert!(!plugin_perms::has_write_team_roles(&perms(&["read:team"])));
     }
 }
 

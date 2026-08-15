@@ -2,6 +2,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use std::str::FromStr;
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::resolve_config_path;
 use crate::state::AppState;
 use crate::types::DifficultyLevel;
@@ -701,12 +702,12 @@ pub async fn get_config(
 
     let raw = match read_config_raw() {
         Ok(s) => s,
-        Err(e) => return Ok(Json(serde_json::json!({"success": false, "message": e}))),
+        Err(e) => return Ok(json_error(ErrorCode::SITE_CONFIG_INVALID, e)),
     };
 
     let config = match parse_config(&raw) {
         Ok(c) => c,
-        Err(e) => return Ok(Json(serde_json::json!({"success": false, "message": e}))),
+        Err(e) => return Ok(json_error(ErrorCode::SITE_CONFIG_INVALID, e)),
     };
 
     Ok(Json(serde_json::json!({"success": true, "config": config})))
@@ -724,15 +725,17 @@ pub async fn update_config(
 
     // Validate
     if payload.server.site_url.trim().is_empty() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "站点URL不能为空"}),
+        return Ok(json_error(
+            ErrorCode::SITE_CONFIG_INVALID,
+            "站点URL不能为空",
         ));
     }
 
     // Validate admin password is not empty
     if payload.admin.password.trim().is_empty() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "管理员密码不能为空"}),
+        return Ok(json_error(
+            ErrorCode::SITE_CONFIG_INVALID,
+            "管理员密码不能为空",
         ));
     }
 
@@ -745,22 +748,22 @@ pub async fn update_config(
                 .values()
                 .any(|u| u.id != "admin" && (u.display_name == admin_dn || u.username == admin_dn));
             if is_taken {
-                return Ok(Json(serde_json::json!({
-                    "success": false,
-                    "message": "管理员显示名称已被其他人使用"
-                })));
+                return Ok(json_error(
+                    ErrorCode::VALIDATION_NAME_TAKEN,
+                    "管理员显示名称已被其他人使用",
+                ));
             }
         }
     }
 
     let raw = match read_config_raw() {
         Ok(s) => s,
-        Err(e) => return Ok(Json(serde_json::json!({"success": false, "message": e}))),
+        Err(e) => return Ok(json_error(ErrorCode::SITE_CONFIG_INVALID, e)),
     };
 
     let updated = match apply_config(&raw, &payload) {
         Ok(s) => s,
-        Err(e) => return Ok(Json(serde_json::json!({"success": false, "message": e}))),
+        Err(e) => return Ok(json_error(ErrorCode::SITE_CONFIG_INVALID, e)),
     };
 
     match write_config_raw(&updated) {
@@ -871,7 +874,7 @@ pub async fn update_config(
                 serde_json::json!({"success": true, "message": "配置已保存，立即生效"}),
             ))
         }
-        Err(e) => Ok(Json(serde_json::json!({"success": false, "message": e}))),
+        Err(e) => Ok(json_error(ErrorCode::EXPORT_FAILED, e)),
     }
 }
 
@@ -948,34 +951,25 @@ pub async fn init_admin(
     };
 
     if already_initialized {
-        return Json(serde_json::json!({
-            "success": false,
-            "message": "管理员已初始化，无法重复初始化"
-        }));
+        return json_error(
+            ErrorCode::VALIDATION_INVALID,
+            "管理员已初始化，无法重复初始化",
+        );
     }
 
     // Validate password and display_name
     if payload.password.trim().is_empty() {
-        return Json(serde_json::json!({
-            "success": false,
-            "message": "密码不能为空"
-        }));
+        return json_error(ErrorCode::VALIDATION_INVALID, "密码不能为空");
     }
     if payload.display_name.trim().is_empty() {
-        return Json(serde_json::json!({
-            "success": false,
-            "message": "显示名称不能为空"
-        }));
+        return json_error(ErrorCode::VALIDATION_INVALID, "显示名称不能为空");
     }
 
     // Hash password
     let password_hash = match bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST) {
         Ok(h) => h,
         Err(e) => {
-            return Json(serde_json::json!({
-                "success": false,
-                "message": format!("密码加密失败: {}", e)
-            }));
+            return json_error(ErrorCode::INTERNAL_ERROR, format!("密码加密失败: {}", e));
         }
     };
 
@@ -984,10 +978,10 @@ pub async fn init_admin(
         let mut doc = match raw.parse::<toml_edit::DocumentMut>() {
             Ok(d) => d,
             Err(e) => {
-                return Json(serde_json::json!({
-                    "success": false,
-                    "message": format!("配置文件格式错误: {}", e)
-                }));
+                return json_error(
+                    ErrorCode::SITE_CONFIG_INVALID,
+                    format!("配置文件格式错误: {}", e),
+                );
             }
         };
         if let Some(t) = doc.get_mut("admin").and_then(|s| s.as_table_mut()) {
@@ -999,10 +993,7 @@ pub async fn init_admin(
     };
 
     if let Err(e) = write_config_raw(&updated_config) {
-        return Json(serde_json::json!({
-            "success": false,
-            "message": format!("写入配置文件失败: {}", e)
-        }));
+        return json_error(ErrorCode::EXPORT_FAILED, format!("写入配置文件失败: {}", e));
     }
 
     // Update admin user in memory and SQLite
@@ -1025,10 +1016,7 @@ pub async fn init_admin(
             state.upsert_user(&updated_user).await;
         } else {
             drop(users);
-            return Json(serde_json::json!({
-                "success": false,
-                "message": "系统错误：找不到管理员用户"
-            }));
+            return json_error(ErrorCode::INTERNAL_ERROR, "系统错误：找不到管理员用户");
         }
     }
 

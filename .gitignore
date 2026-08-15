@@ -42,3 +42,4 @@ REFACTOR.md
 .hermes/
 .pi/
 Containerfile
+server/recipe.json

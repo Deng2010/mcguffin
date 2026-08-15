@@ -9,6 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::error::{json_error, ErrorCode};
 use crate::handlers::notification::create_notification;
 use crate::state::AppState;
 use crate::types::*;
@@ -244,22 +245,24 @@ pub async fn create_post(
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     if payload.title.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
+        return json_error(ErrorCode::POST_INVALID_CONTENT, "标题不能为空");
     }
     if payload.title.chars().count() > TITLE_MAX_LEN {
-        return Json(
-            serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}),
+        return json_error(
+            ErrorCode::POST_INVALID_CONTENT,
+            format!("标题不能超过{} 字", TITLE_MAX_LEN),
         );
     }
     if payload.content.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "内容不能为空"}));
+        return json_error(ErrorCode::POST_INVALID_CONTENT, "内容不能为空");
     }
     if payload.content.chars().count() > CONTENT_MAX_LEN {
-        return Json(
-            serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}),
+        return json_error(
+            ErrorCode::POST_INVALID_CONTENT,
+            format!("内容不能超过{} 字", CONTENT_MAX_LEN),
         );
     }
 
@@ -272,8 +275,9 @@ pub async fn create_post(
     for tag_id in &payload.tags {
         if let Some(tag) = all_tags.get(tag_id) {
             if tag.admin_only && !is_admin_user {
-                return Json(
-                    serde_json::json!({"success": false, "message": format!("标签「{}」仅管理员可用", tag.name)}),
+                return json_error(
+                    ErrorCode::POST_INVALID_CONTENT,
+                    format!("标签「{}」仅管理员可用", tag.name),
                 );
             }
         }
@@ -384,7 +388,7 @@ pub async fn get_post_detail(
             None => {
                 return Err((
                     StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
+                    json_error(ErrorCode::POST_NOT_FOUND, "帖子不存在"),
                 ));
             }
         }
@@ -393,7 +397,7 @@ pub async fn get_post_detail(
     if p.team_only && !is_team {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"success": false, "message": "无权查看"})),
+            json_error(ErrorCode::POST_FORBIDDEN, "无权查看"),
         ));
     }
     let users = state.users.read().await;
@@ -471,21 +475,22 @@ pub async fn update_post(
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     let is_admin_user = check_permission(&state, &user, perms::MANAGE_POSTS).await;
     let mut p = match state.posts.read().await.get(&id).cloned() {
         Some(p) => p,
-        None => return Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
+        None => return json_error(ErrorCode::POST_NOT_FOUND, "帖子不存在"),
     };
     if !is_admin_user && p.author_id != user_id {
-        return Json(serde_json::json!({"success": false, "message": "无权修改"}));
+        return json_error(ErrorCode::POST_FORBIDDEN, "无权修改");
     }
     if let Some(ref title) = payload.title {
         if !title.trim().is_empty() {
             if title.chars().count() > TITLE_MAX_LEN {
-                return Json(
-                    serde_json::json!({"success": false, "message": format!("标题不能超过{} 字", TITLE_MAX_LEN)}),
+                return json_error(
+                    ErrorCode::POST_INVALID_CONTENT,
+                    format!("标题不能超过{} 字", TITLE_MAX_LEN),
                 );
             }
             p.title = title.trim().to_string();
@@ -494,8 +499,9 @@ pub async fn update_post(
     if let Some(ref content) = payload.content {
         if !content.trim().is_empty() {
             if content.chars().count() > CONTENT_MAX_LEN {
-                return Json(
-                    serde_json::json!({"success": false, "message": format!("内容不能超过{} 字", CONTENT_MAX_LEN)}),
+                return json_error(
+                    ErrorCode::POST_INVALID_CONTENT,
+                    format!("内容不能超过{} 字", CONTENT_MAX_LEN),
                 );
             }
             p.content = content.clone();
@@ -558,7 +564,7 @@ pub async fn update_post(
                     .await;
                 }
             } else {
-                return Json(serde_json::json!({"success": false, "message": "无效状态"}));
+                return json_error(ErrorCode::POST_INVALID_CONTENT, "无效状态");
             }
         }
     }
@@ -576,19 +582,19 @@ pub async fn delete_post(
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     let is_admin_user = check_permission(&state, &user, perms::MANAGE_POSTS).await;
     let post = state.posts.read().await.get(&id).cloned();
     match post {
         Some(p) => {
             if !is_admin_user && p.author_id != user_id {
-                return Json(serde_json::json!({"success": false, "message": "无权删除"}));
+                return json_error(ErrorCode::POST_FORBIDDEN, "无权删除");
             }
             state.delete_post_by_id(&id).await;
             Json(serde_json::json!({"success": true, "message": "帖子已删除"}))
         }
-        None => Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
+        None => json_error(ErrorCode::POST_NOT_FOUND, "帖子不存在"),
     }
 }
 
@@ -602,19 +608,20 @@ pub async fn reply_to_post(
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     if payload.content.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "回复不能为空"}));
+        return json_error(ErrorCode::POST_REPLY_INVALID, "回复不能为空");
     }
     if payload.content.chars().count() > REPLY_MAX_LEN {
-        return Json(
-            serde_json::json!({"success": false, "message": format!("回复不能超过{} 字", REPLY_MAX_LEN)}),
+        return json_error(
+            ErrorCode::POST_REPLY_INVALID,
+            format!("回复不能超过{} 字", REPLY_MAX_LEN),
         );
     }
     let mut p = match state.posts.read().await.get(&id).cloned() {
         Some(p) => p,
-        None => return Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
+        None => return json_error(ErrorCode::POST_NOT_FOUND, "帖子不存在"),
     };
     let display_name = user.display_name;
     let reply = PostReply {
@@ -672,19 +679,19 @@ pub async fn delete_post_reply(
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     let is_admin_user = check_permission(&state, &user, perms::MANAGE_POSTS).await;
     let mut p = match state.posts.read().await.get(&post_id).cloned() {
         Some(p) => p,
-        None => return Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
+        None => return json_error(ErrorCode::POST_NOT_FOUND, "帖子不存在"),
     };
     if let Some(reply) = p.replies.iter().find(|r| r.id == reply_id) {
         if !is_admin_user && reply.author_id != user_id {
-            return Json(serde_json::json!({"success": false, "message": "无权删除"}));
+            return json_error(ErrorCode::POST_FORBIDDEN, "无权删除");
         }
     } else {
-        return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
+        return json_error(ErrorCode::POST_NOT_FOUND, "回复不存在");
     }
     p.replies.retain(|r| r.id != reply_id);
     p.replies
@@ -719,14 +726,14 @@ pub async fn react_to_post(
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     if payload.emoji.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "表情不能为空"}));
+        return json_error(ErrorCode::POST_INVALID_CONTENT, "表情不能为空");
     }
     let mut p = match state.posts.read().await.get(&id).cloned() {
         Some(p) => p,
-        None => return Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
+        None => return json_error(ErrorCode::POST_NOT_FOUND, "帖子不存在"),
     };
     let emoji = payload.emoji.trim().to_string();
     let users_set = p.reactions.entry(emoji.clone()).or_insert_with(Vec::new);
@@ -751,14 +758,14 @@ pub async fn react_to_reply(
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     if payload.emoji.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "表情不能为空"}));
+        return json_error(ErrorCode::POST_INVALID_CONTENT, "表情不能为空");
     }
     let mut p = match state.posts.read().await.get(&post_id).cloned() {
         Some(p) => p,
-        None => return Json(serde_json::json!({"success": false, "message": "帖子不存在"})),
+        None => return json_error(ErrorCode::POST_NOT_FOUND, "帖子不存在"),
     };
     let emoji = payload.emoji.trim().to_string();
     if let Some(reply) = p.replies.iter_mut().find(|r| r.id == reply_id) {
@@ -777,7 +784,7 @@ pub async fn react_to_reply(
         state.upsert_post(&p).await;
         return Json(serde_json::json!({"success": true}));
     }
-    Json(serde_json::json!({"success": false, "message": "回复不存在"}))
+    json_error(ErrorCode::POST_NOT_FOUND, "回复不存在")
 }
 
 // ============== Cleanup Orphan Reactions ==============
@@ -893,10 +900,10 @@ pub async fn create_suggestion(
     // Forward to create_post with "建议" tag
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     if user.team_status == "pending" {
-        return Json(serde_json::json!({"success": false, "message": "待审核用户无法提交建议"}));
+        return json_error(ErrorCode::POST_INVALID_CONTENT, "待审核用户无法提交建议");
     }
     let title = payload
         .get("title")
@@ -909,7 +916,7 @@ pub async fn create_suggestion(
         .unwrap_or("")
         .to_string();
     if title.trim().is_empty() {
-        return Json(serde_json::json!({"success": false, "message": "标题不能为空"}));
+        return json_error(ErrorCode::POST_INVALID_CONTENT, "标题不能为空");
     }
     let now = Utc::now();
     let post = Post {
@@ -944,7 +951,7 @@ pub async fn get_suggestion_detail(
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
@@ -952,7 +959,7 @@ pub async fn get_suggestion_detail(
             .await
             || user.team_status == "joined";
         if !can_view_all && p.author_id != user_id {
-            return Json(serde_json::json!({"success": false, "message": "无权查看"}));
+            return json_error(ErrorCode::POST_FORBIDDEN, "无权查看");
         }
         let users = state.users.read().await;
         let author_name = users
@@ -972,7 +979,7 @@ pub async fn get_suggestion_detail(
             "updated_at": p.updated_at,
         }));
     }
-    Json(serde_json::json!({"success": false, "message": "建议不存在"}))
+    json_error(ErrorCode::POST_NOT_FOUND, "建议不存在")
 }
 
 // ============== Update Suggestion (backward compat) ==============
@@ -994,9 +1001,7 @@ pub async fn update_suggestion(
         if let Some(new_status) = payload.get("status").and_then(|v| v.as_str()) {
             let valid = ["open", "in_progress", "resolved", "closed"];
             if !valid.contains(&new_status) {
-                return Ok(Json(
-                    serde_json::json!({"success": false, "message": "无效状态"}),
-                ));
+                return Ok(json_error(ErrorCode::POST_INVALID_CONTENT, "无效状态"));
             }
             p.status = new_status.to_string();
         }
@@ -1028,9 +1033,7 @@ pub async fn update_suggestion(
             serde_json::json!({"success": true, "message": "建议已更新"}),
         ));
     }
-    Ok(Json(
-        serde_json::json!({"success": false, "message": "建议不存在"}),
-    ))
+    Ok(json_error(ErrorCode::POST_NOT_FOUND, "建议不存在"))
 }
 
 // ============== Reply to Suggestion (backward compat) ==============
@@ -1049,9 +1052,7 @@ pub async fn reply_to_suggestion(
         .unwrap_or("")
         .to_string();
     if content.trim().is_empty() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "回复不能为空"}),
-        ));
+        return Ok(json_error(ErrorCode::POST_REPLY_INVALID, "回复不能为空"));
     }
     let posts = state.posts.read().await;
     let p = posts.get(&id).cloned();
@@ -1086,9 +1087,7 @@ pub async fn reply_to_suggestion(
             serde_json::json!({"success": true, "message": "回复成功"}),
         ));
     }
-    Ok(Json(
-        serde_json::json!({"success": false, "message": "建议不存在"}),
-    ))
+    Ok(json_error(ErrorCode::POST_NOT_FOUND, "建议不存在"))
 }
 
 // ============== Delete Reply ==============
@@ -1100,7 +1099,7 @@ pub async fn delete_suggestion_reply(
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_POSTS).await;
     let posts = state.posts.read().await;
@@ -1109,16 +1108,16 @@ pub async fn delete_suggestion_reply(
     if let Some(mut p) = p {
         if let Some(reply) = p.replies.iter().find(|r| r.id == reply_id) {
             if !can_manage && reply.author_id != user_id {
-                return Json(serde_json::json!({"success": false, "message": "无权删除"}));
+                return json_error(ErrorCode::POST_FORBIDDEN, "无权删除");
             }
         } else {
-            return Json(serde_json::json!({"success": false, "message": "回复不存在"}));
+            return json_error(ErrorCode::POST_NOT_FOUND, "回复不存在");
         }
         p.replies.retain(|r| r.id != reply_id);
         state.upsert_post(&p).await;
         return Json(serde_json::json!({"success": true, "message": "回复已删除"}));
     }
-    Json(serde_json::json!({"success": false, "message": "建议不存在"}))
+    json_error(ErrorCode::POST_NOT_FOUND, "建议不存在")
 }
 
 // ============== Delete Suggestion ==============
@@ -1130,19 +1129,19 @@ pub async fn delete_suggestion(
 ) -> Json<serde_json::Value> {
     let (user_id, user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
     let can_manage = check_permission(&state, &user, crate::types::perms::MANAGE_POSTS).await;
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
         if !can_manage && p.author_id != user_id {
-            return Json(serde_json::json!({"success": false, "message": "无权删除"}));
+            return json_error(ErrorCode::POST_FORBIDDEN, "无权删除");
         }
         drop(posts);
         state.delete_post_by_id(&id).await;
         return Json(serde_json::json!({"success": true, "message": "建议已删除"}));
     }
-    Json(serde_json::json!({"success": false, "message": "建议不存在"}))
+    json_error(ErrorCode::POST_NOT_FOUND, "建议不存在")
 }
 
 // ============== List Announcements (backward compat) ==============
@@ -1236,9 +1235,7 @@ pub async fn create_announcement(
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     if title.trim().is_empty() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "标题不能为空"}),
-        ));
+        return Ok(json_error(ErrorCode::POST_INVALID_CONTENT, "标题不能为空"));
     }
     let now = Utc::now();
     let post = Post {
@@ -1287,7 +1284,7 @@ pub async fn get_announcement_detail(
     let posts = state.posts.read().await;
     if let Some(p) = posts.get(&id) {
         if !is_admin_user && !is_team && p.team_only {
-            return Json(serde_json::json!({"success": false, "message": "无权查看"}));
+            return json_error(ErrorCode::POST_FORBIDDEN, "无权查看");
         }
         let users = state.users.read().await;
         let author_name = users
@@ -1307,7 +1304,7 @@ pub async fn get_announcement_detail(
             "updated_at": p.updated_at,
         }));
     }
-    Json(serde_json::json!({"success": false, "message": "公告不存在"}))
+    json_error(ErrorCode::POST_NOT_FOUND, "公告不存在")
 }
 
 // ============== Update Announcement (backward compat) ==============
@@ -1327,9 +1324,7 @@ pub async fn update_announcement(
     if let Some(mut p) = p_opt {
         if let Some(title) = payload.get("title").and_then(|v| v.as_str()) {
             if title.trim().is_empty() {
-                return Ok(Json(
-                    serde_json::json!({"success": false, "message": "标题不能为空"}),
-                ));
+                return Ok(json_error(ErrorCode::POST_INVALID_CONTENT, "标题不能为空"));
             }
             p.title = title.trim().to_string();
         }
@@ -1348,9 +1343,7 @@ pub async fn update_announcement(
             serde_json::json!({"success": true, "message": "公告已更新"}),
         ));
     }
-    Ok(Json(
-        serde_json::json!({"success": false, "message": "公告不存在"}),
-    ))
+    Ok(json_error(ErrorCode::POST_NOT_FOUND, "公告不存在"))
 }
 
 // ============== Delete Announcement ==============
@@ -1369,9 +1362,7 @@ pub async fn delete_announcement(
             serde_json::json!({"success": true, "message": "公告已删除"}),
         ));
     }
-    Ok(Json(
-        serde_json::json!({"success": false, "message": "公告不存在"}),
-    ))
+    Ok(json_error(ErrorCode::POST_NOT_FOUND, "公告不存在"))
 }
 
 // ============== Unified Community Feed ==============

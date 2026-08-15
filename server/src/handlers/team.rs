@@ -29,6 +29,7 @@ use axum::{
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::{AppState, ADMIN_USER_ID};
 use crate::types::*;
 use crate::utils::{check_permission, get_token_from_headers, AuthUser};
@@ -146,7 +147,7 @@ pub async fn get_pending_requests(
     .map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "数据库查询失败"})),
+            json_error(ErrorCode::DATABASE_ERROR, "数据库查询失败"),
         )
     })?;
 

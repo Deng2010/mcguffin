@@ -7,6 +7,8 @@ import MarkdownRenderer from "../../components/MarkdownRenderer";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
 import type { ProblemDetail } from "../../types";
+import { useToast } from "../../errors/ToastContext";
+import { errorMessage } from "../../errors/normalize";
 
 interface Contest {
   id: string;
@@ -15,6 +17,7 @@ interface Contest {
 
 export default function ProblemDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const toast = useToast();
   const { user } = useAuthStore();
   const { difficultyMap, difficulties } = useDifficulties();
   const [problem, setProblem] = useState<ProblemDetail | null>(null);
@@ -164,13 +167,13 @@ export default function ProblemDetailPage() {
         },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       setVsSaved(true);
       setTimeout(() => setVsSaved(false), 2000);
     } catch (err) {
-      alert(`保存失败: ${err}`);
+      toast.error(`保存失败: ${errorMessage(err)}`);
     }
   };
 

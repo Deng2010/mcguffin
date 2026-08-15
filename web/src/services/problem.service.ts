@@ -56,7 +56,7 @@ export async function unclaimProblem(id: string): Promise<Record<string, any>> {
 
 export async function reviewProblem(
   id: string,
-  action: "approve" | "reject" | "publish",
+  action: "approve" | "reply" | "publish" | "return" | "unpublish",
   reason?: string,
 ): Promise<Record<string, any>> {
   return apiFetch<Record<string, any>>(`/problems/review/${id}/${action}`, {

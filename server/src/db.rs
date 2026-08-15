@@ -43,8 +43,10 @@ pub async fn init_db(db_path: &str) -> Result<SqlitePool, sqlx::Error> {
     let mem_opts = SqliteConnectOptions::new()
         .filename(":memory:")
         .foreign_keys(false);
+    // `:memory:` 数据库每个连接都是独立的，必须用单连接池，
+    // 否则迁移建的表在其它池连接上不可见。
     let pool = SqlitePoolOptions::new()
-        .max_connections(5)
+        .max_connections(1)
         .min_connections(1)
         .connect_with(mem_opts)
         .await?;

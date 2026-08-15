@@ -1,6 +1,7 @@
 use axum::{extract::State, http::StatusCode, Json};
 use sqlx::FromRow;
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::utils::AuthUser;
 
@@ -36,7 +37,7 @@ pub async fn get_audit_log(
     .map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "数据库查询失败"})),
+            json_error(ErrorCode::DATABASE_ERROR, "数据库查询失败"),
         )
     })?;
 

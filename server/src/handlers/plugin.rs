@@ -28,8 +28,10 @@ use axum::{
 use std::collections::HashMap;
 
 use crate::domain::plugin::{
-    plugin_perms, NotifyPayload, PluginManifest, PluginRegistration, SetDataPayload,
+    plugin_perms, NotifyPayload, PluginManifest, PluginRegistration, PluginTogglePayload,
+    SetDataPayload,
 };
+use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::types::{Notification, PERM_WILDCARD};
 use crate::utils::AuthUser;
@@ -42,14 +44,26 @@ fn plugin_has_perm(plugin: &PluginManifest, perm: &str) -> bool {
 }
 
 /// Check if a plugin is enabled, returning 403 if disabled.
-fn require_plugin_enabled(plugin: &PluginManifest) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+fn require_plugin_enabled(
+    plugin: &PluginManifest,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
     if !plugin.enabled {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(serde_json::json!({
-                "success": false,
-                "message": "插件已被禁用，请联系管理员启用"
-            })),
+            json_error(ErrorCode::PLUGIN_DISABLED, "插件已被禁用，请联系管理员启用"),
+        ));
+    }
+    Ok(())
+}
+
+/// Check whether the plugin feature is globally disabled, returning 403 if so.
+async fn require_plugins_globally_enabled(
+    state: &AppState,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if *state.plugins_disabled.read().await {
+        return Err((
+            StatusCode::FORBIDDEN,
+            json_error(ErrorCode::PLUGIN_DISABLED, "插件功能已被管理员全局禁用"),
         ));
     }
     Ok(())
@@ -61,10 +75,10 @@ macro_rules! require_plugin_perm {
         if !plugin_has_perm($plugin, $perm) {
             return Err((
                 StatusCode::FORBIDDEN,
-                Json(serde_json::json!({
-                    "success": false,
-                    "message": format!("插件未申请权限: {}", $perm)
-                })),
+                json_error(
+                    ErrorCode::PLUGIN_PERMISSION_DENIED,
+                    format!("插件未申请权限: {}", $perm),
+                ),
             ));
         }
     };
@@ -92,10 +106,7 @@ pub async fn register_plugin(
     // and re-POST to /register). New plugins default to enabled.
     let existing_enabled = {
         let plugins = state.plugins.read().await;
-        plugins
-            .get(&payload.id)
-            .map(|p| p.enabled)
-            .unwrap_or(true)
+        plugins.get(&payload.id).map(|p| p.enabled).unwrap_or(true)
     };
 
     let manifest = PluginManifest {
@@ -137,10 +148,9 @@ pub async fn register_plugin(
 /// GET /api/plugins
 /// Returns minimal plugin info (no auth required). Used by the frontend to
 /// know which plugins are enabled/disabled so it can hide disabled ones.
-pub async fn list_plugins_public(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+pub async fn list_plugins_public(State(state): State<AppState>) -> Json<serde_json::Value> {
     let plugins = state.plugins.read().await;
+    let globally_disabled = *state.plugins_disabled.read().await;
     let list: Vec<serde_json::Value> = plugins
         .values()
         .map(|p| {
@@ -153,7 +163,10 @@ pub async fn list_plugins_public(
         })
         .collect();
 
-    Json(serde_json::json!({"plugins": list}))
+    Json(serde_json::json!({
+        "plugins": list,
+        "plugins_disabled": globally_disabled,
+    }))
 }
 
 // ── List plugins (admin) ──
@@ -167,9 +180,11 @@ pub async fn list_plugins(
 
     let plugins = state.plugins.read().await;
     let list: Vec<&PluginManifest> = plugins.values().collect();
+    let globally_disabled = *state.plugins_disabled.read().await;
 
     Ok(Json(serde_json::json!({
         "plugins": list,
+        "plugins_disabled": globally_disabled,
     })))
 }
 
@@ -202,10 +217,7 @@ pub async fn unregister_plugin(
                 "message": format!("插件「{}」已卸载", p.name),
             })))
         }
-        None => Ok(Json(serde_json::json!({
-            "success": false,
-            "message": "插件不存在",
-        }))),
+        None => Ok(json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件不存在")),
     }
 }
 
@@ -228,10 +240,7 @@ pub async fn enable_plugin(
             "message": format!("插件「{}」已启用", plugin.name),
         })))
     } else {
-        Ok(Json(serde_json::json!({
-            "success": false,
-            "message": "插件不存在",
-        })))
+        Ok(json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件不存在"))
     }
 }
 
@@ -252,11 +261,51 @@ pub async fn disable_plugin(
             "message": format!("插件「{}」已禁用", plugin.name),
         })))
     } else {
-        Ok(Json(serde_json::json!({
-            "success": false,
-            "message": "插件不存在",
-        })))
+        Ok(json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件不存在"))
     }
+}
+
+// ── Global plugin enable / disable (superadmin) ──
+
+/// GET /api/admin/plugins/global
+/// Returns the global plugin enable/disable state.
+pub async fn get_global_plugin_state(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let disabled = *state.plugins_disabled.read().await;
+    Ok(Json(serde_json::json!({
+        "plugins_disabled": disabled,
+    })))
+}
+
+/// POST /api/admin/plugins/global
+/// Body: { "enabled": bool } — set the global plugin feature on/off.
+pub async fn set_global_plugin_state(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<PluginTogglePayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+
+    let new_disabled = !payload.enabled;
+    *state.plugins_disabled.write().await = new_disabled;
+
+    tracing::info!(
+        "plugin feature globally {}",
+        if new_disabled { "disabled" } else { "enabled" }
+    );
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "plugins_disabled": new_disabled,
+        "message": if new_disabled {
+            "插件功能已全局禁用".to_string()
+        } else {
+            "插件功能已全局启用".to_string()
+        },
+    })))
 }
 
 // ── Users: list team members ──
@@ -268,13 +317,14 @@ pub async fn plugin_list_users(
     _auth: AuthUser,
     Path(plugin_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    require_plugins_globally_enabled(&state).await?;
     let plugins = state.plugins.read().await;
     let plugin = plugins
         .get(&plugin_id)
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"success": false, "message": "插件未注册"})),
+                json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件未注册"),
             )
         })?
         .clone();
@@ -317,23 +367,24 @@ pub async fn plugin_user_me(
     Path(plugin_id): Path<String>,
     auth: AuthUser,
 ) -> Json<serde_json::Value> {
+    if *state.plugins_disabled.read().await {
+        return json_error(ErrorCode::PLUGIN_DISABLED, "插件功能已被管理员全局禁用");
+    }
     let plugins = state.plugins.read().await;
     let plugin = match plugins.get(&plugin_id) {
         Some(p) => p.clone(),
-        None => return Json(serde_json::json!({"success": false, "message": "插件未注册"})),
+        None => return json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件未注册"),
     };
     drop(plugins);
 
     if !plugin.enabled {
-        return Json(serde_json::json!({"success": false, "message": "插件已被禁用"}));
+        return json_error(ErrorCode::PLUGIN_DISABLED, "插件已被禁用");
     }
 
     let users = state.users.read().await;
     let user = match users.get(&auth.user_id) {
         Some(u) => u.clone(),
-        None => {
-            return Json(serde_json::json!({"success": false, "message": "用户不存在"}))
-        }
+        None => return json_error(ErrorCode::USER_NOT_FOUND, "用户不存在"),
     };
 
     Json(serde_json::json!({
@@ -359,13 +410,14 @@ pub async fn plugin_user_get(
     _auth: AuthUser,
     Path((plugin_id, user_id)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    require_plugins_globally_enabled(&state).await?;
     let plugins = state.plugins.read().await;
     let plugin = plugins
         .get(&plugin_id)
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"success": false, "message": "插件未注册"})),
+                json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件未注册"),
             )
         })?
         .clone();
@@ -378,7 +430,7 @@ pub async fn plugin_user_get(
     let user = users.get(&user_id).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"success": false, "message": "用户不存在"})),
+            json_error(ErrorCode::USER_NOT_FOUND, "用户不存在"),
         )
     })?;
 
@@ -412,13 +464,14 @@ pub async fn plugin_get_data(
     Path(plugin_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    require_plugins_globally_enabled(&state).await?;
     let plugins = state.plugins.read().await;
     let plugin = plugins
         .get(&plugin_id)
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"success": false, "message": "插件未注册"})),
+                json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件未注册"),
             )
         })?
         .clone();
@@ -433,7 +486,7 @@ pub async fn plugin_get_data(
     if namespace.is_empty() || key.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"success": false, "message": "namespace 和 key 不能为空"})),
+            json_error(ErrorCode::PLUGIN_DATA_INVALID, "namespace 和 key 不能为空"),
         ));
     }
 
@@ -456,13 +509,14 @@ pub async fn plugin_set_data(
     Path(plugin_id): Path<String>,
     Json(payload): Json<SetDataPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    require_plugins_globally_enabled(&state).await?;
     let plugins = state.plugins.read().await;
     let plugin = plugins
         .get(&plugin_id)
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"success": false, "message": "插件未注册"})),
+                json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件未注册"),
             )
         })?
         .clone();
@@ -474,15 +528,13 @@ pub async fn plugin_set_data(
     if payload.namespace.is_empty() || payload.key.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"success": false, "message": "namespace 和 key 不能为空"})),
+            json_error(ErrorCode::PLUGIN_DATA_INVALID, "namespace 和 key 不能为空"),
         ));
     }
 
     {
         let mut data = state.plugin_data.write().await;
-        let ns = data
-            .entry(plugin_id.clone())
-            .or_insert_with(HashMap::new);
+        let ns = data.entry(plugin_id.clone()).or_insert_with(HashMap::new);
         let kv = ns
             .entry(payload.namespace.clone())
             .or_insert_with(HashMap::new);
@@ -502,13 +554,14 @@ pub async fn plugin_notify(
     Path(plugin_id): Path<String>,
     Json(payload): Json<NotifyPayload>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    require_plugins_globally_enabled(&state).await?;
     let plugins = state.plugins.read().await;
     let plugin = plugins
         .get(&plugin_id)
         .ok_or_else(|| {
             (
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"success": false, "message": "插件未注册"})),
+                json_error(ErrorCode::PLUGIN_NOT_FOUND, "插件未注册"),
             )
         })?
         .clone();
@@ -520,7 +573,7 @@ pub async fn plugin_notify(
     if payload.title.is_empty() || payload.body.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"success": false, "message": "title 和 body 不能为空"})),
+            json_error(ErrorCode::PLUGIN_DATA_INVALID, "title 和 body 不能为空"),
         ));
     }
 
@@ -537,5 +590,7 @@ pub async fn plugin_notify(
 
     state.insert_notification(&notif).await;
 
-    Ok(Json(serde_json::json!({"success": true, "message": "通知已发送"})))
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "通知已发送"}),
+    ))
 }

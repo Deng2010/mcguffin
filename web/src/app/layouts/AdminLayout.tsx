@@ -10,6 +10,7 @@ const navItems = [
   { path: "/admin/roles", label: "角色权限" },
   { path: "/admin/plugins", label: "插件管理" },
   { path: "/admin/backups", label: "备份管理" },
+  { path: "/admin/errors", label: "错误中心" },
 ];
 
 export default function AdminLayout() {

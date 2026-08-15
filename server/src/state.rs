@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use sqlx::SqlitePool;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::types::{
     Contest, DiscussionEmoji, DiscussionTag, JoinRequest, MemberGroup, Notification, Post, Problem,
@@ -112,12 +113,15 @@ pub struct AppState {
     /// Registered plugin manifests (plugin_id → PluginManifest)
     pub plugins: Arc<RwLock<HashMap<String, crate::domain::plugin::PluginManifest>>>,
     /// Plugin KV data storage (plugin_id → namespace → key → value)
-    pub plugin_data:
-        Arc<RwLock<HashMap<String, HashMap<String, HashMap<String, String>>>>>,
-    /// SQLite 连接池（双写模式：SQLite + HashMap）
+    pub plugin_data: Arc<RwLock<HashMap<String, HashMap<String, HashMap<String, String>>>>>,
+    /// Global plugin enable/disable switch (superadmin). When true, all plugin
+    /// features are disabled (data APIs reject, frontend hides plugins).
+    pub plugins_disabled: Arc<RwLock<bool>>,    /// SQLite 连接池（双写模式：SQLite + HashMap）
     pub db: SqlitePool,
     /// 自定义备份目录（None 时使用默认路径）
     pub backup_directory: Arc<RwLock<Option<String>>>,
     /// 复用 HTTP 客户端（带超时，连接池共享）
     pub http_client: reqwest::Client,
+    /// 错误上报接口的按 IP 限流记录（IP → 请求时间戳）
+    pub error_rate_limits: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
 }

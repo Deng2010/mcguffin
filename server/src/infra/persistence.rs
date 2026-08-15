@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json;
 use sqlx::Row;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
 use crate::db::{import_saved_data, init_db, load_all_from_sqlite, sqlite_has_data};
@@ -536,13 +536,12 @@ impl AppState {
             }
         }
         // Use NULL for empty-string Option fields to keep SQLite in sync with HashMap
-        let sql_value: Option<&str> = if val_str.is_empty() &&
-            (field == "claimed_by" || field == "verifier_solution")
-        {
-            None
-        } else {
-            Some(&val_str)
-        };
+        let sql_value: Option<&str> =
+            if val_str.is_empty() && (field == "claimed_by" || field == "verifier_solution") {
+                None
+            } else {
+                Some(&val_str)
+            };
         let _ = sqlx::query(&format!("UPDATE problems SET {} = ? WHERE id = ?", field))
             .bind(sql_value)
             .bind(problem_id)
@@ -1077,6 +1076,7 @@ impl AppState {
             member_groups: Arc::new(RwLock::new(member_groups)),
             plugins: Arc::new(RwLock::new(HashMap::new())),
             plugin_data: Arc::new(RwLock::new(HashMap::new())),
+            plugins_disabled: Arc::new(RwLock::new(false)),
             db,
             backup_directory: Arc::new(RwLock::new(None)),
             http_client: reqwest::Client::builder()
@@ -1084,6 +1084,7 @@ impl AppState {
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("创建 HTTP 客户端失败"),
+            error_rate_limits: Arc::new(Mutex::new(HashMap::new())),
         };
 
         // SQLite 是权威数据源，确保 admin 存在于数据库中

@@ -6,6 +6,7 @@ use axum::{
 use chrono::Utc;
 use uuid::Uuid;
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::types::*;
 use crate::utils::resolve_user;
@@ -29,7 +30,7 @@ pub async fn get_notifications(
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
 
     let result: Result<Vec<NotificationRow>, _> = sqlx::query_as(
@@ -88,7 +89,7 @@ pub async fn mark_notification_read(
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
 
     // 验证所有权
@@ -102,7 +103,7 @@ pub async fn mark_notification_read(
         n.map(|n| n.user_id == user_id).unwrap_or(false)
     };
     if !owned {
-        return Json(serde_json::json!({"success": false, "message": "通知不存在或无权操作"}));
+        return json_error(ErrorCode::NOTIFICATION_NOT_FOUND, "通知不存在或无权操作");
     }
 
     state.mark_notification_read(&notification_id).await;
@@ -117,7 +118,7 @@ pub async fn mark_all_notifications_read(
 ) -> Json<serde_json::Value> {
     let (user_id, _) = match resolve_user(&state, &headers).await {
         Some(u) => u,
-        None => return Json(serde_json::json!({"success": false, "message": "未登录"})),
+        None => return json_error(ErrorCode::AUTH_UNAUTHORIZED, "未登录"),
     };
 
     state.mark_all_user_notifications_read(&user_id).await;

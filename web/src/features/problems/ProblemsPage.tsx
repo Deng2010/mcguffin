@@ -5,6 +5,8 @@ import { apiFetch } from "../../services/api";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import type { ProblemListItem } from "../../types";
+import { useToast } from "../../errors/ToastContext";
+import { errorMessage } from "../../errors/normalize";
 
 interface TeamMemberOption {
   user_id: string;
@@ -20,6 +22,7 @@ type TabId = "list" | "mine" | "pending" | "approved" | "published";
 
 export default function ProblemsPage() {
   const { user, hasPermission, isAuthenticated } = useAuthStore();
+  const toast = useToast();
   const { difficultyMap, difficulties } = useDifficulties();
   const navigate = useNavigate();
   const isGuest = !isAuthenticated || user?.role === "guest";
@@ -59,7 +62,7 @@ export default function ProblemsPage() {
 
   const [activeTab, setActiveTab] = useState<TabId>("list");
 
-  // Reason dialog for return/reject
+  // Reason dialog for return/reply
   const [reasonDialog, setReasonDialog] = useState<{
     open: boolean;
     problemId: string;
@@ -186,12 +189,12 @@ export default function ProblemsPage() {
         { method: "POST" },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       loadProblems();
     } catch (err) {
-      alert(`认领失败: ${err}`);
+      toast.error(`认领失败: ${errorMessage(err)}`);
     }
   };
 
@@ -202,12 +205,12 @@ export default function ProblemsPage() {
         { method: "POST" },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       loadProblems();
     } catch (err) {
-      alert(`取消认领失败: ${err}`);
+      toast.error(`取消认领失败: ${errorMessage(err)}`);
     }
   };
 
@@ -223,16 +226,16 @@ export default function ProblemsPage() {
         { method: "POST", body },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       loadProblems();
     } catch (err) {
-      alert(`操作失败: ${err}`);
+      toast.error(`操作失败: ${errorMessage(err)}`);
     }
   };
 
-  // Open reason dialog for return/reject
+  // Open reason dialog for return/reply
   const openReasonDialog = (problemId: string, action: string) => {
     setReasonDialog({ open: true, problemId, action });
     setReasonText("");
@@ -255,12 +258,12 @@ export default function ProblemsPage() {
         { method: "POST", body: JSON.stringify({ user_ids: ids }) },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
-      alert("可见性已更新");
+      toast.success("可见性已更新");
     } catch (err) {
-      alert(`设置失败: ${err}`);
+      toast.error(`设置失败: ${errorMessage(err)}`);
     }
   };
 
@@ -274,12 +277,12 @@ export default function ProblemsPage() {
         { method: "POST", body: JSON.stringify(payload) },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       loadProblems();
     } catch (err) {
-      alert(`设置失败: ${err}`);
+      toast.error(`设置失败: ${errorMessage(err)}`);
     }
   };
 
@@ -292,12 +295,12 @@ export default function ProblemsPage() {
         { method: "DELETE" },
       );
       if (!res.success) {
-        alert(res.message);
+        toast.error(res.message);
         return;
       }
       loadProblems();
     } catch (err) {
-      alert(`删除失败: ${err}`);
+      toast.error(`删除失败: ${errorMessage(err)}`);
     }
   };
 
@@ -914,10 +917,10 @@ export default function ProblemsPage() {
                       通过
                     </button>
                     <button
-                      onClick={() => openReasonDialog(p.id, "reject")}
-                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                      onClick={() => openReasonDialog(p.id, "reply")}
+                      className="px-3 py-1.5 text-xs border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
                     >
-                      拒绝
+                      回复
                     </button>
                   </>
                 )}
@@ -1116,7 +1119,7 @@ export default function ProblemsPage() {
         </>
       )}
 
-      {/* Reason dialog for return/reject */}
+      {/* Reason dialog for return/reply */}
       {reasonDialog && reasonDialog.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div
@@ -1124,12 +1127,12 @@ export default function ProblemsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-              {reasonDialog.action === "return" ? "退回理由" : "拒绝理由"}
+              {reasonDialog.action === "return" ? "退回理由" : "回复建议"}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
               {reasonDialog.action === "return"
                 ? "请输入退回理由（可选），系统将通知出题人："
-                : "请输入拒绝理由（可选），系统将通知出题人："}
+                : "请输入对题目的建议，系统将通知出题人："}
             </p>
             <textarea
               value={reasonText}
@@ -1138,7 +1141,7 @@ export default function ProblemsPage() {
               placeholder={
                 reasonDialog.action === "return"
                   ? "如：请补充题解后再提交..."
-                  : "如：与已有题目重复..."
+                  : "如：请补充数据范围说明..."
               }
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm mb-4"
               autoFocus
@@ -1152,13 +1155,14 @@ export default function ProblemsPage() {
               </button>
               <button
                 onClick={handleReviewWithReason}
-                className={`px-4 py-2 text-sm text-white ${
+                disabled={reasonDialog.action === "reply" && !reasonText.trim()}
+                className={`px-4 py-2 text-sm text-white disabled:opacity-50 ${
                   reasonDialog.action === "return"
                     ? "bg-yellow-600 hover:bg-yellow-500"
-                    : "bg-red-600 hover:bg-red-500"
+                    : "bg-blue-600 hover:bg-blue-500"
                 }`}
               >
-                确认{reasonDialog.action === "return" ? "退回" : "拒绝"}
+                确认{reasonDialog.action === "return" ? "退回" : "回复"}
               </button>
             </div>
           </div>

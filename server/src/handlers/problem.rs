@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::error::{json_error, ErrorCode};
 use crate::handlers::notification::create_notification;
 use crate::state::AppState;
 use crate::types::*;
@@ -365,7 +366,7 @@ pub async fn get_problem_detail(
         None => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"error": "题目不存在"})),
+                json_error(ErrorCode::PROBLEM_NOT_FOUND, "题目不存在"),
             ))
         }
     };
@@ -404,7 +405,7 @@ pub async fn get_problem_detail(
     if !can_view {
         return Err((
             StatusCode::FORBIDDEN,
-            Json(serde_json::json!({"error": "无权限查看"})),
+            json_error(ErrorCode::PROBLEM_FORBIDDEN, "无权限查看"),
         ));
     }
 
@@ -553,8 +554,8 @@ pub async fn submit_problem(
 // ============== Review Problem ==============
 
 /// POST /api/problems/review/:problem_id/:action
-/// action = "approve" | "reject" | "publish" | "return" | "unpublish"
-/// Body (optional): { "reason": "..." } — used for "return" and "reject" actions
+/// action = "approve" | "reply" | "publish" | "return" | "unpublish"
+/// Body (optional): { "reason": "..." } — used for "return" and "reply" actions
 pub async fn review_problem(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -585,8 +586,16 @@ pub async fn review_problem(
         });
     }
 
-    // For 'reject', delete the problem entirely (not just mark as rejected)
-    if action == "reject" {
+    // For 'reply', notify the author with the admin's suggestion. The problem
+    // stays in "pending" so the author can revise and resubmit (instead of the
+    // old "reject" behavior which deleted the problem and hid the reason).
+    if action == "reply" {
+        if reason.trim().is_empty() {
+            return Json(ReviewResponse {
+                success: false,
+                message: "请填写建议内容".to_string(),
+            });
+        }
         let problems = state.problems.read().await;
         let problem = match problems.get(&problem_id) {
             Some(p) => p.clone(),
@@ -600,35 +609,26 @@ pub async fn review_problem(
         if problem.status != "pending" {
             return Json(ReviewResponse {
                 success: false,
-                message: "只能拒绝待审核题目".to_string(),
+                message: "只能回复待审核题目".to_string(),
             });
         }
         let author_id = problem.author_id.clone();
         let problem_title = problem.title.clone();
         drop(problems);
 
-        state.delete_problem_by_id(&problem_id).await;
-
-        let reject_msg = if reason.is_empty() {
-            format!("题目「{}」未通过审核，已被删除", problem_title)
-        } else {
-            format!(
-                "题目「{}」未通过审核，已被删除。\n审核意见：{}",
-                problem_title, reason
-            )
-        };
+        let reply_msg = format!("题目「{}」的审核建议：{}", problem_title, reason);
         create_notification(
             &state,
             &author_id,
-            "题目未通过",
-            &reject_msg,
-            Some("/problems"),
+            "题目审核建议",
+            &reply_msg,
+            Some(&format!("/problems/{}", problem_id)),
         )
         .await;
 
         return Json(ReviewResponse {
             success: true,
-            message: "已拒绝题目，数据已删除".to_string(),
+            message: "已发送建议给出题人".to_string(),
         });
     }
 
@@ -785,9 +785,6 @@ pub async fn review_problem(
                 Some("/problems"),
             )
             .await;
-        }
-        "reject" => {
-            // 拒绝的通知已在前面内联处理（因为需要提前返回）
         }
         _ => {}
     }
@@ -1304,11 +1301,7 @@ pub async fn set_problem_contest(
         let problems = state.problems.read().await;
         match problems.get(&problem_id) {
             Some(p) => p.clone(),
-            None => {
-                return Ok(Json(
-                    serde_json::json!({"success": false, "message": "题目不存在"}),
-                ))
-            }
+            None => return Ok(json_error(ErrorCode::PROBLEM_NOT_FOUND, "题目不存在")),
         }
     };
 
@@ -1319,9 +1312,7 @@ pub async fn set_problem_contest(
             problem.contest = c.name.clone();
             problem.contest_id = Some(cid.clone());
         } else {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "比赛不存在"}),
-            ));
+            return Ok(json_error(ErrorCode::CONTEST_NOT_FOUND, "比赛不存在"));
         }
     } else {
         // Clear contest

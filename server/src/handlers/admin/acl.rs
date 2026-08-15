@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 
+use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::types::{SetAclPayload, SetProblemAclPayload, PERM_WILDCARD};
 use crate::utils::AuthUser;
@@ -94,11 +95,7 @@ pub async fn set_problem_acl(
     auth.require_perm(&state, PERM_WILDCARD).await?;
     let mut problem = match state.problems.read().await.get(&problem_id) {
         Some(p) => p.clone(),
-        None => {
-            return Ok(Json(
-                serde_json::json!({"success": false, "message": "题目不存在"}),
-            ))
-        }
+        None => return Ok(json_error(ErrorCode::PROBLEM_NOT_FOUND, "题目不存在")),
     };
     problem.editable_by = payload.editable_by;
     state.insert_problem(&problem).await;
@@ -149,14 +146,14 @@ pub async fn set_resource_acl(
             _ => {
                 return Err((
                     StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({"success": false, "message": "无效的资源类型"})),
+                    json_error(ErrorCode::VALIDATION_INVALID, "无效的资源类型"),
                 ))
             }
         }
         if !found {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(serde_json::json!({"success": false, "message": "资源不存在"})),
+                json_error(ErrorCode::NOT_FOUND, "资源不存在"),
             ));
         }
     } // write locks dropped here

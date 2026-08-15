@@ -33,6 +33,8 @@ class PluginRegistry {
   /** IDs of plugins that are disabled on the backend */
   private disabledPluginIds = new Set<string>();
   private statusFetched = false;
+  /** Whether the plugin feature is globally disabled by an admin */
+  private globallyDisabled = false;
 
   static getInstance(): PluginRegistry {
     if (!PluginRegistry.instance) {
@@ -59,6 +61,8 @@ class PluginRegistry {
     this.mainNavItems = [];
     this.adminNavItems = [];
     this.pluginRoutes = [];
+    // When the plugin feature is globally disabled, hide everything.
+    if (this.globallyDisabled) return;
     for (const [pluginId, reg] of this.plugins.entries()) {
       if (this.disabledPluginIds.has(pluginId)) continue;
       for (const route of reg.routes) {
@@ -151,6 +155,7 @@ class PluginRegistry {
     try {
       const res = await apiFetch<{
         plugins: Array<{ id: string; enabled: boolean }>;
+        plugins_disabled?: boolean;
       }>("/plugins");
       const disabled = new Set<string>();
       for (const p of res.plugins) {
@@ -159,6 +164,7 @@ class PluginRegistry {
         }
       }
       this.disabledPluginIds = disabled;
+      this.globallyDisabled = res.plugins_disabled === true;
       this.notify();
     } catch {
       // Backend may not be available; treat all as enabled
@@ -167,7 +173,22 @@ class PluginRegistry {
 
   /** Check whether a plugin is currently enabled. */
   isPluginEnabled(pluginId: string): boolean {
-    return !this.disabledPluginIds.has(pluginId);
+    return !this.globallyDisabled && !this.disabledPluginIds.has(pluginId);
+  }
+
+  /** Whether the plugin feature is globally disabled by an admin. */
+  isGloballyDisabled(): boolean {
+    return this.globallyDisabled;
+  }
+
+  /**
+   * Update the local global-disabled state (called after an admin toggles it,
+   * so the nav/routes re-render immediately without a full page reload).
+   */
+  setGloballyDisabled(disabled: boolean): void {
+    if (this.globallyDisabled === disabled) return;
+    this.globallyDisabled = disabled;
+    this.notify();
   }
 
   /**
@@ -186,6 +207,7 @@ class PluginRegistry {
     slot: string,
   ): Array<{ pluginId: string; component: ComponentType<any> }> {
     const all = this.slotComponents.get(slot) ?? [];
+    if (this.globallyDisabled) return [];
     return all.filter((s) => !this.disabledPluginIds.has(s.pluginId));
   }
 

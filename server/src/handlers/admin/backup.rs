@@ -7,6 +7,7 @@ use chrono::Local;
 use std::path::PathBuf;
 
 use crate::db::{create_consistent_backup, restore_from_backup};
+use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::utils::AuthUser;
 
@@ -76,9 +77,7 @@ pub async fn create_backup(
 
     let dir = backup_dir(&state).await;
     if std::fs::create_dir_all(&dir).is_err() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "无法创建备份目录"}),
-        ));
+        return Ok(json_error(ErrorCode::BACKUP_FAILED, "无法创建备份目录"));
     }
 
     let timestamp = Local::now().format("%Y%m%d_%H%M%S");
@@ -87,8 +86,9 @@ pub async fn create_backup(
     let db_backup_path = dir.join(&db_backup_name);
 
     if !db_path.exists() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "数据库文件不存在，无法创建备份"}),
+        return Ok(json_error(
+            ErrorCode::BACKUP_FAILED,
+            "数据库文件不存在，无法创建备份",
         ));
     }
 
@@ -107,8 +107,9 @@ pub async fn create_backup(
                 "backup": db_backup_name,
             })))
         }
-        Err(e) => Ok(Json(
-            serde_json::json!({"success": false, "message": format!("备份失败: {}", e)}),
+        Err(e) => Ok(json_error(
+            ErrorCode::BACKUP_FAILED,
+            format!("备份失败: {}", e),
         )),
     }
 }
@@ -147,22 +148,22 @@ pub async fn restore_backup(
         || name_clean.contains('\\')
         || name_clean.contains("..")
     {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "无效的备份文件名"}),
+        return Ok(json_error(
+            ErrorCode::VALIDATION_INVALID,
+            "无效的备份文件名",
         ));
     }
     if !name_clean.ends_with(".db") {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "仅支持 .db 备份文件恢复"}),
+        return Ok(json_error(
+            ErrorCode::VALIDATION_INVALID,
+            "仅支持 .db 备份文件恢复",
         ));
     }
 
     let dir = backup_dir(&state).await;
     let backup_path = dir.join(name_clean);
     if !backup_path.exists() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "备份文件不存在"}),
-        ));
+        return Ok(json_error(ErrorCode::NOT_FOUND, "备份文件不存在"));
     }
 
     let safety_timestamp = Local::now().format("%Y%m%d_%H%M%S");
@@ -180,8 +181,9 @@ pub async fn restore_backup(
     // 2. 使用 SQLite 在线备份 API 将备份恢复到主数据库（无需关闭连接池）
     if let Err(e) = restore_from_backup(&backup_path.to_string_lossy(), &db_path.to_string_lossy())
     {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}),
+        return Ok(json_error(
+            ErrorCode::BACKUP_RESTORE_FAILED,
+            format!("恢复失败: {}", e),
         ));
     }
 
@@ -193,8 +195,12 @@ pub async fn restore_backup(
 
     if integrity != "ok" {
         tracing::error!("恢复后完整性检查失败: {}", integrity);
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": format!("数据完整性检查失败: {}，建议手动恢复安全备份 {}", integrity, safety_name)}),
+        return Ok(json_error(
+            ErrorCode::BACKUP_INTEGRITY_FAILED,
+            format!(
+                "数据完整性检查失败: {}，建议手动恢复安全备份 {}",
+                integrity, safety_name
+            ),
         ));
     }
 
@@ -225,9 +231,7 @@ pub async fn restore_upload_backup(
         .ok_or_else(|| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "success": false, "message": "缺少 content 字段"
-                })),
+                json_error(ErrorCode::VALIDATION_INVALID, "缺少 content 字段"),
             )
         })?;
 
@@ -238,9 +242,7 @@ pub async fn restore_upload_backup(
 
     // 确保文件名安全
     if filename.contains('/') || filename.contains('\\') || filename.contains("..") {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "无效的文件名"}),
-        ));
+        return Ok(json_error(ErrorCode::VALIDATION_INVALID, "无效的文件名"));
     }
 
     // 解码 base64
@@ -250,17 +252,13 @@ pub async fn restore_upload_backup(
         .map_err(|_| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
-                    "success": false, "message": "base64 解码失败"
-                })),
+                json_error(ErrorCode::VALIDATION_INVALID, "base64 解码失败"),
             )
         })?;
 
     let dir = backup_dir(&state).await;
     if std::fs::create_dir_all(&dir).is_err() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "无法创建备份目录"}),
-        ));
+        return Ok(json_error(ErrorCode::BACKUP_FAILED, "无法创建备份目录"));
     }
 
     // 写入备份目录
@@ -268,8 +266,9 @@ pub async fn restore_upload_backup(
     let upload_name = format!("uploaded_{}_{}", timestamp, filename);
     let upload_path = dir.join(&upload_name);
     if let Err(e) = std::fs::write(&upload_path, &bytes) {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": format!("文件写入失败: {}", e)}),
+        return Ok(json_error(
+            ErrorCode::BACKUP_FAILED,
+            format!("文件写入失败: {}", e),
         ));
     }
 
@@ -288,8 +287,9 @@ pub async fn restore_upload_backup(
     // 使用 SQLite 在线备份 API 将上传的备份恢复到主数据库（无需关闭连接池）
     if let Err(e) = restore_from_backup(&upload_path.to_string_lossy(), &db_path.to_string_lossy())
     {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": format!("恢复失败: {}", e)}),
+        return Ok(json_error(
+            ErrorCode::BACKUP_RESTORE_FAILED,
+            format!("恢复失败: {}", e),
         ));
     }
 
@@ -301,8 +301,12 @@ pub async fn restore_upload_backup(
 
     if integrity != "ok" {
         tracing::error!("上传恢复后完整性检查失败: {}", integrity);
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": format!("数据完整性检查失败: {}，建议手动恢复安全备份 {}", integrity, safety_name)}),
+        return Ok(json_error(
+            ErrorCode::BACKUP_INTEGRITY_FAILED,
+            format!(
+                "数据完整性检查失败: {}，建议手动恢复安全备份 {}",
+                integrity, safety_name
+            ),
         ));
     }
 
@@ -333,16 +337,15 @@ pub async fn download_backup(
         || name_clean.contains('\\')
         || name_clean.contains("..")
     {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "无效的备份文件名"}),
+        return Ok(json_error(
+            ErrorCode::VALIDATION_INVALID,
+            "无效的备份文件名",
         ));
     }
 
     let backup_path = backup_dir(&state).await.join(name_clean);
     if !backup_path.exists() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "备份文件不存在"}),
-        ));
+        return Ok(json_error(ErrorCode::NOT_FOUND, "备份文件不存在"));
     }
 
     let is_json = name_clean.ends_with(".json");
@@ -356,8 +359,9 @@ pub async fn download_backup(
                 "filename": name_clean,
                 "mime": "application/json",
             }))),
-            Err(e) => Ok(Json(
-                serde_json::json!({"success": false, "message": format!("读取备份失败: {}", e)}),
+            Err(e) => Ok(json_error(
+                ErrorCode::BACKUP_FAILED,
+                format!("读取备份失败: {}", e),
             )),
         }
     } else {
@@ -374,8 +378,9 @@ pub async fn download_backup(
                     "encoding": "base64",
                 })))
             }
-            Err(e) => Ok(Json(
-                serde_json::json!({"success": false, "message": format!("读取备份失败: {}", e)}),
+            Err(e) => Ok(json_error(
+                ErrorCode::BACKUP_FAILED,
+                format!("读取备份失败: {}", e),
             )),
         }
     }
@@ -396,17 +401,16 @@ pub async fn delete_backup(
         || name_clean.contains('\\')
         || name_clean.contains("..")
     {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "无效的备份文件名"}),
+        return Ok(json_error(
+            ErrorCode::VALIDATION_INVALID,
+            "无效的备份文件名",
         ));
     }
 
     let dir = backup_dir(&state).await;
     let backup_path = dir.join(name_clean);
     if !backup_path.exists() {
-        return Ok(Json(
-            serde_json::json!({"success": false, "message": "备份文件不存在"}),
-        ));
+        return Ok(json_error(ErrorCode::NOT_FOUND, "备份文件不存在"));
     }
 
     match std::fs::remove_file(&backup_path) {
@@ -416,8 +420,9 @@ pub async fn delete_backup(
                 serde_json::json!({"success": true, "message": "备份已删除"}),
             ))
         }
-        Err(e) => Ok(Json(
-            serde_json::json!({"success": false, "message": format!("删除失败: {}", e)}),
+        Err(e) => Ok(json_error(
+            ErrorCode::BACKUP_FAILED,
+            format!("删除失败: {}", e),
         )),
     }
 }

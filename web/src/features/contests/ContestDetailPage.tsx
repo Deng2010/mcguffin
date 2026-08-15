@@ -4,6 +4,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
+import { useToast } from "../../errors/ToastContext";
 
 interface ContestDetail {
   id: string;
@@ -29,6 +30,7 @@ interface ContestProblem {
 
 export default function ContestDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const toast = useToast();
   const { user, hasPermission } = useAuthStore();
   const { difficultyMap } = useDifficulties();
   const isAdmin = hasPermission("approve_all_problems");
@@ -172,12 +174,12 @@ export default function ContestDetailPage() {
           },
         );
         if (!r.success) {
-          alert("操作失败");
+          toast.error("操作失败");
           return;
         }
         loadData();
       } catch {
-        alert("操作失败");
+        toast.error("操作失败");
       }
     } else {
       if (!confirm("确定要取消公开此比赛吗？")) return;
@@ -190,12 +192,12 @@ export default function ContestDetailPage() {
           },
         );
         if (!r.success) {
-          alert("操作失败");
+          toast.error("操作失败");
           return;
         }
         loadData();
       } catch {
-        alert("操作失败");
+        toast.error("操作失败");
       }
     }
   };

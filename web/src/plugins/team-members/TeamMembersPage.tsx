@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
 import { usePluginUserMe, usePluginTeamMembers } from "../sdk";
+import { useToast } from "../../errors/ToastContext";
+import { errorMessage } from "../../errors/normalize";
 
 // ── Types ──
 
@@ -32,6 +34,7 @@ const ROLE_LABEL: Record<string, string> = {
 
 export default function TeamMembersPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const { user, hasPermission } = useAuthStore();
 
   // SDK hooks — 通过后端插件 API 获取数据（自动鉴权）
@@ -84,7 +87,7 @@ export default function TeamMembersPage() {
           .then(setRequests)
           .catch(() => {});
       } catch (err) {
-        alert(`操作失败: ${err}`);
+        toast.error(`操作失败: ${errorMessage(err)}`);
       }
     },
     [refresh],
@@ -98,12 +101,12 @@ export default function TeamMembersPage() {
           { method: "POST", body: JSON.stringify({ role: newRole }) },
         );
         if (!res.success) {
-          alert(res.message);
+          toast.error(res.message);
           return;
         }
         refresh();
       } catch (err) {
-        alert(`角色修改失败: ${err}`);
+        toast.error(`角色修改失败: ${errorMessage(err)}`);
       }
     },
     [refresh],
@@ -118,12 +121,12 @@ export default function TeamMembersPage() {
           { method: "POST" },
         );
         if (!res.success) {
-          alert(res.message);
+          toast.error(res.message);
           return;
         }
         refresh();
       } catch (err) {
-        alert(`移除失败: ${err}`);
+        toast.error(`移除失败: ${errorMessage(err)}`);
       }
     },
     [refresh],
