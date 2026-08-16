@@ -286,8 +286,8 @@ async fn import_problems(
             r#"INSERT OR IGNORE INTO problems
                 (id, title, author_id, author_name, contest, contest_id, difficulty,
                  content, solution, status, created_at, public_at, claimed_by,
-                 verifier_solution, visible_to, link, remark, editable_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
+                 verifier_solution, visible_to, link, remark, editable_by, verifiers)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
         )
         .bind(&p.id)
         .bind(&p.title)
@@ -307,6 +307,7 @@ async fn import_problems(
         .bind(&p.link)
         .bind(&p.remark)
         .bind(serde_json::to_string(&p.editable_by).unwrap_or_default())
+        .bind(serde_json::to_string(&p.verifiers).unwrap_or_default())
         .execute(pool)
         .await?;
         count += res.rows_affected() as u32;
@@ -616,6 +617,7 @@ pub struct DataProblem {
     pub public_at: Option<String>,
     pub claimed_by: Option<String>,
     pub verifier_solution: Option<String>,
+    pub verifiers: String,
     pub visible_to: String,
     pub link: Option<String>,
     pub remark: Option<String>,
@@ -870,13 +872,31 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
     if let Ok(rows) = sqlx::query(
         "SELECT id, title, author_id, author_name, contest, contest_id, difficulty, \
          content, solution, status, created_at, public_at, claimed_by, \
-         verifier_solution, visible_to, link, remark, editable_by FROM problems",
+         verifier_solution, visible_to, link, remark, editable_by, verifiers FROM problems",
     )
     .fetch_all(pool)
     .await
     {
         for row in rows {
             let id: String = row.get("id");
+            let verifiers_str: String = row.try_get::<String, _>("verifiers").unwrap_or_default();
+            let mut verifiers: Vec<crate::types::VerifierEntry> =
+                serde_json::from_str(&verifiers_str).unwrap_or_default();
+            // Migration: legacy single verifier (claimed_by + verifier_solution)
+            // becomes the first entry in the multi-verifier list.
+            if verifiers.is_empty() {
+                let legacy_claimed: Option<String> = row.get("claimed_by");
+                if let Some(uid) = legacy_claimed {
+                    let legacy_solution: Option<String> = row.get("verifier_solution");
+                    verifiers.push(crate::types::VerifierEntry {
+                        user_id: uid,
+                        user_name: String::new(),
+                        solution: legacy_solution,
+                        comments: vec![],
+                        claimed_at: Utc::now(),
+                    });
+                }
+            }
             data.problems.insert(
                 id.clone(),
                 crate::types::Problem {
@@ -899,6 +919,7 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
                         .and_then(|s| s.parse().ok()),
                     claimed_by: row.get("claimed_by"),
                     verifier_solution: row.get("verifier_solution"),
+                    verifiers,
                     visible_to: serde_json::from_str(&row.get::<String, _>("visible_to"))
                         .unwrap_or_default(),
                     link: row.get("link"),
@@ -998,9 +1019,15 @@ mod tests {
 
     /// 创建测试用的内存 SQLite 数据库
     async fn setup_test_db() -> SqlitePool {
+        // :memory: 数据库的每个连接都是独立的，必须用单连接池，否则迁移建的表
+        // 在其它连接上不可见（与 init_db 的内存回退路径保持一致）。
+        let opts = SqliteConnectOptions::new()
+            .filename(":memory:")
+            .foreign_keys(false);
         let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect("sqlite::memory:")
+            .max_connections(1)
+            .min_connections(1)
+            .connect_with(opts)
             .await
             .expect("创建测试数据库失败");
 
@@ -1133,6 +1160,7 @@ mod tests {
                 public_at: Some(now),
                 claimed_by: None,
                 verifier_solution: None,
+                verifiers: vec![],
                 visible_to: vec!["member".to_string()],
                 link: None,
                 remark: None,

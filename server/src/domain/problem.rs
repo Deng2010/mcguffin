@@ -1,6 +1,27 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// A comment posted by a verifier on a problem they are verifying.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifierComment {
+    pub id: String,
+    pub user_id: String,
+    pub user_name: String,
+    pub content: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A single verifier's contribution to a problem (solution + comments).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifierEntry {
+    pub user_id: String,
+    pub user_name: String,
+    pub solution: Option<String>,
+    #[serde(default)]
+    pub comments: Vec<VerifierComment>,
+    pub claimed_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Problem {
     pub id: String,
@@ -16,9 +37,12 @@ pub struct Problem {
     pub status: String,           // pending | approved | published | rejected
     pub created_at: DateTime<Utc>,
     pub public_at: Option<DateTime<Utc>>,
-    pub claimed_by: Option<String>, // user_id of verifier who claimed this
-    pub verifier_solution: Option<String>, // verifier's solution (markdown)
-    pub visible_to: Vec<String>,    // user_ids who can see pending problem content
+    pub claimed_by: Option<String>, // user_id of primary verifier (backward-compat mirror)
+    pub verifier_solution: Option<String>, // primary verifier's solution (backward-compat mirror)
+    /// All verifiers with their own solutions and comments.
+    #[serde(default)]
+    pub verifiers: Vec<VerifierEntry>,
+    pub visible_to: Vec<String>, // user_ids who can see pending problem content
     #[serde(default)]
     pub link: Option<String>,
     #[serde(default)]
@@ -88,6 +112,11 @@ pub struct VerifierSolutionPayload {
 }
 
 #[derive(Deserialize)]
+pub struct VerifierCommentPayload {
+    pub content: String,
+}
+
+#[derive(Deserialize)]
 pub struct VisibilityPayload {
     pub user_ids: Vec<String>,
 }
@@ -124,12 +153,23 @@ pub struct ProblemListItem {
     pub public_at: Option<DateTime<Utc>>,
     pub claimed_by: Option<String>,
     pub has_verifier_solution: bool,
+    /// Verifier summary for the card (user_id + name + whether they submitted a solution).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verifiers: Vec<VerifierSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remark: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub visible_to: Vec<String>,
+}
+
+/// Lightweight verifier info exposed in problem list items.
+#[derive(Debug, Clone, Serialize)]
+pub struct VerifierSummary {
+    pub user_id: String,
+    pub user_name: String,
+    pub has_solution: bool,
 }
 
 #[cfg(test)]
@@ -153,6 +193,7 @@ mod tests {
             public_at: Some(Utc::now()),
             claimed_by: None,
             verifier_solution: None,
+            verifiers: vec![],
             visible_to: vec![],
             link: Some("https://example.com".to_string()),
             remark: None,
@@ -183,6 +224,7 @@ mod tests {
             public_at: None,
             claimed_by: None,
             has_verifier_solution: false,
+            verifiers: vec![],
             link: None,
             remark: None,
             visible_to: vec![],

@@ -42,8 +42,9 @@ use crate::handlers::post::{
 };
 use crate::handlers::problem::{
     claim_problem, delete_problem, get_pending_problems_admin, get_problem_detail, get_problems,
-    get_team_members_for_visibility, review_problem, set_problem_contest, set_problem_visibility,
-    submit_problem, submit_verifier_solution, unclaim_problem, update_problem,
+    get_team_members_for_visibility, resubmit_problem, review_problem, set_problem_contest,
+    set_problem_visibility, submit_problem, submit_verifier_comment, submit_verifier_solution,
+    unclaim_problem, update_problem,
 };
 use crate::handlers::team::{
     apply_to_join, change_member_role, get_pending_requests, get_team_members, remove_member,
@@ -103,6 +104,11 @@ pub fn build_router(state: AppState) -> Router {
             "/problems/verifier-solution/{problem_id}",
             post(submit_verifier_solution),
         )
+        .route(
+            "/problems/verifier-comment/{problem_id}",
+            post(submit_verifier_comment),
+        )
+        .route("/problems/{problem_id}/resubmit", post(resubmit_problem))
         .route(
             "/problems/visibility/{problem_id}",
             post(set_problem_visibility),
@@ -348,8 +354,7 @@ mod tests {
     #[test]
     fn env_var_overrides_candidates() {
         // 指向一个不存在的候选路径，但环境变量指向真实 dist 时应优先命中
-        let real = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../web/dist");
+        let real = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist");
         if !real.join("index.html").is_file() {
             // 构建产物不存在时跳过（CI 无人先 build 前端）
             return;

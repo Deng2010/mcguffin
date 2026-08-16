@@ -18,7 +18,13 @@ interface ContestOption {
   name: string;
 }
 
-type TabId = "list" | "mine" | "pending" | "approved" | "published";
+type TabId =
+  | "list"
+  | "mine"
+  | "pending"
+  | "approved"
+  | "published"
+  | "returned";
 
 export default function ProblemsPage() {
   const { user, hasPermission, isAuthenticated } = useAuthStore();
@@ -88,6 +94,10 @@ export default function ProblemsPage() {
     () => problems.filter((p) => p.status === "published"),
     [problems],
   );
+  const returnedList = useMemo(
+    () => problems.filter((p) => p.status === "returned"),
+    [problems],
+  );
   const approvedCount = approvedList.length;
   const publishedCount = publishedList.length;
 
@@ -107,6 +117,9 @@ export default function ProblemsPage() {
       { id: "approved", label: "已通过", count: approvedCount },
       { id: "published", label: "已发布", count: publishedCount },
     );
+    if (returnedList.length > 0) {
+      tabs.push({ id: "returned", label: "已退回", count: returnedList.length });
+    }
   }
 
   const loadProblems = () => {
@@ -235,17 +248,39 @@ export default function ProblemsPage() {
     }
   };
 
-  // Open reason dialog for return/reply
+  // Open reason dialog for return/reject/reply
   const openReasonDialog = (problemId: string, action: string) => {
     setReasonDialog({ open: true, problemId, action });
     setReasonText("");
+  };
+
+  const handleResubmit = async (problemId: string) => {
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>(
+        `/problems/${problemId}/resubmit`,
+        { method: "POST" },
+      );
+      if (!res.success) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success("已重新提交");
+      loadProblems();
+    } catch (err) {
+      toast.error(`再次提交失败: ${errorMessage(err)}`);
+    }
   };
 
   // Submit with reason
   const handleReviewWithReason = async () => {
     if (!reasonDialog) return;
     const { problemId, action } = reasonDialog;
-    await handleReview(problemId, action, reasonText.trim() || undefined);
+    const trimmed = reasonText.trim();
+    if (action === "reject" && trimmed.length < 10) {
+      toast.error("退回理由不能少于 10 个字");
+      return;
+    }
+    await handleReview(problemId, action, trimmed || undefined);
     setReasonDialog(null);
     setReasonText("");
   };
@@ -393,6 +428,12 @@ export default function ProblemsPage() {
         return (
           <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
             已发布
+          </span>
+        );
+      case "returned":
+        return (
+          <span className="px-2 py-0.5 text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+            已退回
           </span>
         );
       default:
@@ -765,17 +806,16 @@ export default function ProblemsPage() {
                   我的题目
                 </span>
               )}
-              {"claimed_by" in p && (p as any).claimed_by && (
+              {(p.verifiers || []).length > 0 && (
                 <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 font-medium dark:bg-purple-900/30 dark:text-purple-300">
-                  已认领
+                  已有 {(p.verifiers || []).length} 人验题
                 </span>
               )}
-              {"has_verifier_solution" in p &&
-                (p as any).has_verifier_solution && (
-                  <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-500 font-medium dark:bg-purple-900/20 dark:text-purple-400">
-                    有验题题解
-                  </span>
-                )}
+              {(p.verifiers || []).some((v) => v.has_solution) && (
+                <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-500 font-medium dark:bg-purple-900/20 dark:text-purple-400">
+                  有验题题解
+                </span>
+              )}
             </div>
             {renderMeta(p)}
           </div>
@@ -798,26 +838,6 @@ export default function ProblemsPage() {
               <span className="text-xs text-gray-400 dark:text-gray-500 italic">
                 仅团队成员可查看
               </span>
-            )}
-            {!isGuest &&
-              canSubmit &&
-              p.status === "approved" &&
-              !(p as any).claimed_by &&
-              user?.id !== (p as any).author_id && (
-                <button
-                  onClick={() => handleClaim(p.id)}
-                  className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  认领验题
-                </button>
-              )}
-            {!isGuest && canSubmit && (p as any).claimed_by === user?.id && (
-              <button
-                onClick={() => handleUnclaim(p.id)}
-                className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-              >
-                取消认领
-              </button>
             )}
             {!isGuest && extraActions}
           </div>
@@ -926,10 +946,10 @@ export default function ProblemsPage() {
                 )}
                 {canApprove && (
                   <button
-                    onClick={() => handleDelete(p.id, p.title)}
+                    onClick={() => openReasonDialog(p.id, "reject")}
                     className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
                   >
-                    删除
+                    退回
                   </button>
                 )}
               </div>
@@ -967,6 +987,27 @@ export default function ProblemsPage() {
                 className="flex items-center gap-2 ml-4 shrink-0"
                 onClick={(e) => e.stopPropagation()}
               >
+                {!isGuest &&
+                  canSubmit &&
+                  user?.id !== p.author_id &&
+                  !(p.verifiers || []).some((v) => v.user_id === user?.id) && (
+                    <button
+                      onClick={() => handleClaim(p.id)}
+                      className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      认领验题
+                    </button>
+                  )}
+                {!isGuest &&
+                  canSubmit &&
+                  (p.verifiers || []).some((v) => v.user_id === user?.id) && (
+                    <button
+                      onClick={() => handleUnclaim(p.id)}
+                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                    >
+                      取消认领
+                    </button>
+                  )}
                 {canApprove && (
                   <>
                     <button
@@ -1048,6 +1089,58 @@ export default function ProblemsPage() {
     );
   };
 
+  // ====== Tab: Returned (已退回 — author only) ======
+
+  const renderReturned = () => {
+    if (returnedList.length === 0)
+      return (
+        <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
+          暂无已退回题目
+        </div>
+      );
+    return (
+      <div className="space-y-4">
+        {returnedList.map((p) => (
+          <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
+            <div className="flex items-start justify-between">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">
+                    {p.title}
+                  </span>
+                  {statusBadge(p.status)}
+                  {p.remark && (
+                    <span className="text-xs text-red-500 dark:text-red-400">
+                      退回理由：{p.remark}
+                    </span>
+                  )}
+                </div>
+                {renderMeta(p)}
+              </div>
+              <div
+                className="flex items-center gap-2 ml-4 shrink-0"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => handleResubmit(p.id)}
+                  className="px-3 py-1.5 text-xs bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                >
+                  再次提交
+                </button>
+                <button
+                  onClick={() => handleDelete(p.id, p.title)}
+                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {/* Header */}
@@ -1116,10 +1209,11 @@ export default function ProblemsPage() {
           {activeTab === "pending" && renderPending()}
           {activeTab === "approved" && renderApproved()}
           {activeTab === "published" && renderPublished()}
+          {activeTab === "returned" && renderReturned()}
         </>
       )}
 
-      {/* Reason dialog for return/reply */}
+      {/* Reason dialog for return/reject/reply */}
       {reasonDialog && reasonDialog.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
           <div
@@ -1127,25 +1221,38 @@ export default function ProblemsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-              {reasonDialog.action === "return" ? "退回理由" : "回复建议"}
+              {reasonDialog.action === "reply"
+                ? "回复建议"
+                : reasonDialog.action === "reject"
+                  ? "退回理由"
+                  : "退回理由"}
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-              {reasonDialog.action === "return"
-                ? "请输入退回理由（可选），系统将通知出题人："
-                : "请输入对题目的建议，系统将通知出题人："}
+              {reasonDialog.action === "reply"
+                ? "请输入对题目的建议，系统将通知出题人："
+                : reasonDialog.action === "reject"
+                  ? "请输入退回理由（不少于 10 个字），系统将通知出题人："
+                  : "请输入退回理由（可选），系统将通知出题人："}
             </p>
             <textarea
               value={reasonText}
               onChange={(e) => setReasonText(e.target.value)}
               rows={4}
               placeholder={
-                reasonDialog.action === "return"
-                  ? "如：请补充题解后再提交..."
-                  : "如：请补充数据范围说明..."
+                reasonDialog.action === "reply"
+                  ? "如：请补充数据范围说明..."
+                  : "如：本题描述不够清晰，请补充题解后再提交..."
               }
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm mb-4"
               autoFocus
             />
+            {reasonDialog.action === "reject" && reasonText.trim().length > 0 && (
+              <p
+                className={`text-xs mb-3 ${reasonText.trim().length >= 10 ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
+              >
+                已输入 {reasonText.trim().length} / 10 字
+              </p>
+            )}
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setReasonDialog(null)}
@@ -1155,14 +1262,18 @@ export default function ProblemsPage() {
               </button>
               <button
                 onClick={handleReviewWithReason}
-                disabled={reasonDialog.action === "reply" && !reasonText.trim()}
+                disabled={
+                  reasonDialog.action === "reply" && !reasonText.trim()
+                }
                 className={`px-4 py-2 text-sm text-white disabled:opacity-50 ${
-                  reasonDialog.action === "return"
-                    ? "bg-yellow-600 hover:bg-yellow-500"
-                    : "bg-blue-600 hover:bg-blue-500"
+                  reasonDialog.action === "reply"
+                    ? "bg-blue-600 hover:bg-blue-500"
+                    : reasonDialog.action === "reject"
+                      ? "bg-red-600 hover:bg-red-500"
+                      : "bg-yellow-600 hover:bg-yellow-500"
                 }`}
               >
-                确认{reasonDialog.action === "return" ? "退回" : "回复"}
+                确认{reasonDialog.action === "reply" ? "回复" : "退回"}
               </button>
             </div>
           </div>

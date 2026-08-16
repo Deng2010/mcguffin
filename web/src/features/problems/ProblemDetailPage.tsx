@@ -25,6 +25,8 @@ export default function ProblemDetailPage() {
   const [error, setError] = useState("");
   const [verifierSolution, setVerifierSolution] = useState("");
   const [vsSaved, setVsSaved] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [commentSaving, setCommentSaving] = useState(false);
 
   // Edit state
   const [editing, setEditing] = useState(false);
@@ -50,6 +52,11 @@ export default function ProblemDetailPage() {
       .then((p) => {
         setProblem(p);
         if (p.verifier_solution) setVerifierSolution(p.verifier_solution);
+        // Pre-fill current user's own verifier solution if present
+        if (p.is_verifier && p.verifiers && user) {
+          const mine = p.verifiers.find((v) => v.user_id === user.id);
+          if (mine && mine.solution) setVerifierSolution(mine.solution);
+        }
       })
       .catch(() => setError("无法加载题目"))
       .finally(() => setLoading(false));
@@ -174,6 +181,32 @@ export default function ProblemDetailPage() {
       setTimeout(() => setVsSaved(false), 2000);
     } catch (err) {
       toast.error(`保存失败: ${errorMessage(err)}`);
+    }
+  };
+
+  const handleSubmitComment = async () => {
+    if (!commentText.trim()) return;
+    setCommentSaving(true);
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>(
+        `/problems/verifier-comment/${id}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ content: commentText.trim() }),
+        },
+      );
+      if (!res.success) {
+        toast.error(res.message);
+        return;
+      }
+      setCommentText("");
+      // Reload detail to reflect the new comment
+      const updated = await apiFetch<ProblemDetail>(`/problems/detail/${id}`);
+      setProblem(updated);
+    } catch (err) {
+      toast.error(`评论失败: ${errorMessage(err)}`);
+    } finally {
+      setCommentSaving(false);
     }
   };
 
@@ -463,52 +496,120 @@ export default function ProblemDetailPage() {
         )}
       </div>
 
-      {/* Verifier solution — editable for the verifier, read-only for other members */}
-      {problem.can_submit_verifier_solution ? (
-        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
+      {/* Verifiers — multi-verifier solutions + comments */}
+      {problem.can_submit_verifier_solution && (
+        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mb-6">
           <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">
             验题人题解
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-            您已认领此题，可以编写验题人题解（出题人题解不可见）
+            您已认领此题，可以编写自己的验题人题解（出题人题解不可见）
           </p>
           <MarkdownEditor
             value={verifierSolution}
             onChange={setVerifierSolution}
-            label="验题人题解"
-            placeholder="# 验题人题解\\n\\n请在这里编写您的题解..."
+            label="我的验题人题解"
+            placeholder="# 验题人题解\n\n请在这里编写您的题解..."
             rows={30}
           />
-          <button
-            onClick={handleSaveVerifierSolution}
-            className="px-4 py-2 bg-gray-800 dark:bg-gray-700 text-white text-sm hover:bg-gray-700 dark:hover:bg-gray-600"
-          >
-            {vsSaved ? "已保存!" : "保存题解"}
-          </button>
-        </div>
-      ) : problem.verifier_solution && problem.claimed_by ? (
-        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6">
-          <h2 className="text-lg font-semibold mb-2 text-gray-700 dark:text-gray-200">
-            验题人题解
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-            此题目已被认领，以下为验题人题解
-          </p>
-          <MarkdownRenderer
-            content={problem.verifier_solution}
-            className="bg-purple-50 dark:bg-purple-900/30 p-4 border border-purple-200 dark:border-purple-800"
-          />
-        </div>
-      ) : null}
-
-      {/* Claimed by info (no verifier solution yet) */}
-      {problem.claimed_by &&
-        !problem.verifier_solution &&
-        !problem.can_submit_verifier_solution && (
-          <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-            此题目已被认领验题
+          <div className="flex gap-2">
+            <button
+              onClick={handleSaveVerifierSolution}
+              className="px-4 py-2 bg-gray-800 dark:bg-gray-700 text-white text-sm hover:bg-gray-700 dark:hover:bg-gray-600"
+            >
+              {vsSaved ? "已保存!" : "保存题解"}
+            </button>
           </div>
-        )}
+        </div>
+      )}
+
+      {/* All verifiers' solutions (read-only) */}
+      {(problem.verifiers || []).map((v) => {
+        const mine = problem.can_submit_verifier_solution && v.user_id === user?.id;
+        return (
+          <div
+            key={v.user_id}
+            className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 p-6 mb-6"
+          >
+            <h2 className="text-lg font-semibold mb-1 text-gray-700 dark:text-gray-200">
+              验题人题解 · {v.user_name}
+            </h2>
+            {mine && (
+              <p className="text-xs text-blue-500 dark:text-blue-400 mb-2">
+                （这是您）
+              </p>
+            )}
+            {v.solution && v.solution !== "" ? (
+              <MarkdownRenderer
+                content={v.solution}
+                className="bg-purple-50 dark:bg-purple-900/30 p-4 border border-purple-200 dark:border-purple-800"
+              />
+            ) : (
+              <p className="text-sm text-gray-400 dark:text-gray-500">
+                暂无题解
+              </p>
+            )}
+
+            {/* Verifier comments */}
+            <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-4">
+              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2">
+                验题评论（{v.comments.length}）
+              </h3>
+              {v.comments.length === 0 ? (
+                <p className="text-xs text-gray-400 dark:text-gray-500">
+                  暂无评论
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {v.comments.map((c) => (
+                    <div
+                      key={c.id}
+                      className="bg-gray-50 dark:bg-gray-800/50 p-3 border border-gray-200 dark:border-gray-700"
+                    >
+                      <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        <span className="font-medium text-gray-700 dark:text-gray-200">
+                          {c.user_name}
+                        </span>
+                        <span>{new Date(c.created_at).toLocaleString()}</span>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
+                        {c.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Comment input (only if current user is this verifier) */}
+              {mine && (
+                <div className="mt-3">
+                  <textarea
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    rows={2}
+                    placeholder="发表验题评论..."
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 focus:outline-none focus:border-gray-500 text-sm"
+                  />
+                  <button
+                    onClick={handleSubmitComment}
+                    disabled={commentSaving || !commentText.trim()}
+                    className="mt-2 px-3 py-1.5 text-xs bg-gray-800 dark:bg-gray-700 text-white hover:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
+                  >
+                    {commentSaving ? "发布中..." : "发布评论"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Claimed by info (multi-verifier, no solutions yet) */}
+      {(problem.verifiers || []).length > 0 && !problem.can_submit_verifier_solution && (
+        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+          此题目已被 {(problem.verifiers || []).length} 位成员认领验题
+        </div>
+      )}
     </div>
   );
 }

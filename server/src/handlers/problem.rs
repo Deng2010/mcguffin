@@ -36,6 +36,7 @@ struct ProblemRow {
     link: Option<String>,
     remark: Option<String>,
     editable_by: String,
+    verifiers: String,
 }
 
 // ============== List Problems ==============
@@ -90,12 +91,19 @@ pub async fn get_problems(
          COALESCE(c.name, p.contest) AS contest, p.contest_id, \
          p.difficulty, p.content, p.solution, p.status, \
          p.created_at, p.public_at, p.claimed_by, \
-         p.verifier_solution, p.visible_to, p.link, p.remark, p.editable_by \
+         p.verifier_solution, p.visible_to, p.link, p.remark, p.editable_by, p.verifiers \
          FROM problems p \
          LEFT JOIN contests c ON p.contest_id = c.id \
          WHERE p.status != 'rejected'",
     );
     let mut binds: Vec<String> = Vec::new();
+
+    // "returned" (已退回) problems are visible only to their author. This
+    // restriction applies even to admins using ?all=true, matching the "仅出题人可见"
+    // contract. We bind the current user id (empty string when unauthenticated,
+    // which never matches an author id).
+    sql.push_str(" AND (p.status != 'returned' OR p.author_id = ?)");
+    binds.push(current_uid.clone().unwrap_or_default());
 
     // Filter 1-4: Role-based access control
     if !skip_all_filters {
@@ -166,37 +174,54 @@ pub async fn get_problems(
             // Map rows to ProblemListItem (Filter 9: contest name already resolved via COALESCE)
             let mut problems: Vec<ProblemListItem> = rows
                 .into_iter()
-                .map(|row| ProblemListItem {
-                    id: row.id,
-                    title: row.title,
-                    author_id: row.author_id.clone(),
-                    author_name: row.author_name.clone(),
-                    contest: row.contest.unwrap_or_default(),
-                    contest_id: row.contest_id,
-                    difficulty: row.difficulty,
-                    status: row.status.clone(),
-                    created_at: DateTime::parse_from_rfc3339(&row.created_at)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or(Utc::now()),
-                    public_at: row.public_at.and_then(|s| {
-                        DateTime::parse_from_rfc3339(&s)
-                            .ok()
+                .map(|row| {
+                    let verifiers: Vec<VerifierEntry> =
+                        serde_json::from_str(&row.verifiers).unwrap_or_default();
+                    let verifier_summaries: Vec<VerifierSummary> = verifiers
+                        .iter()
+                        .map(|v| VerifierSummary {
+                            user_id: v.user_id.clone(),
+                            user_name: v.user_name.clone(),
+                            has_solution: v.solution.is_some(),
+                        })
+                        .collect();
+                    ProblemListItem {
+                        id: row.id,
+                        title: row.title,
+                        author_id: row.author_id.clone(),
+                        author_name: row.author_name.clone(),
+                        contest: row.contest.unwrap_or_default(),
+                        contest_id: row.contest_id,
+                        difficulty: row.difficulty,
+                        status: row.status.clone(),
+                        created_at: DateTime::parse_from_rfc3339(&row.created_at)
                             .map(|dt| dt.with_timezone(&Utc))
-                    }),
-                    claimed_by: row.claimed_by,
-                    has_verifier_solution: row.verifier_solution.is_some(),
-                    visible_to: serde_json::from_str(&row.visible_to).unwrap_or_default(),
-                    link: row.link,
-                    remark: if row.status == "pending"
-                        && (is_admin_user
-                            || current_uid
-                                .as_ref()
-                                .is_some_and(|uid| row.author_id == *uid))
-                    {
-                        row.remark.clone()
-                    } else {
-                        None
-                    },
+                            .unwrap_or(Utc::now()),
+                        public_at: row.public_at.and_then(|s| {
+                            DateTime::parse_from_rfc3339(&s)
+                                .ok()
+                                .map(|dt| dt.with_timezone(&Utc))
+                        }),
+                        claimed_by: row.claimed_by,
+                        has_verifier_solution: row.verifier_solution.is_some(),
+                        verifiers: verifier_summaries,
+                        visible_to: serde_json::from_str(&row.visible_to).unwrap_or_default(),
+                        link: row.link,
+                        remark: if (row.status == "pending"
+                            && (is_admin_user
+                                || current_uid
+                                    .as_ref()
+                                    .is_some_and(|uid| row.author_id == *uid)))
+                            || (row.status == "returned"
+                                && current_uid
+                                    .as_ref()
+                                    .is_some_and(|uid| row.author_id == *uid))
+                        {
+                            row.remark.clone()
+                        } else {
+                            None
+                        },
+                    }
                 })
                 .collect();
 
@@ -221,6 +246,12 @@ pub async fn get_problems(
                 .filter(|p| {
                     // Always exclude rejected problems
                     if p.status == "rejected" {
+                        return false;
+                    }
+                    // "returned" problems are visible only to their author (always)
+                    if p.status == "returned"
+                        && !current_uid.as_ref().is_some_and(|uid| p.is_author(uid))
+                    {
                         return false;
                     }
                     if skip_all_filters {
@@ -293,11 +324,22 @@ pub async fn get_problems(
                         public_at: p.public_at,
                         claimed_by: p.claimed_by.clone(),
                         has_verifier_solution: p.verifier_solution.is_some(),
+                        verifiers: p
+                            .verifiers
+                            .iter()
+                            .map(|v| VerifierSummary {
+                                user_id: v.user_id.clone(),
+                                user_name: v.user_name.clone(),
+                                has_solution: v.solution.is_some(),
+                            })
+                            .collect(),
                         visible_to: p.visible_to.clone(),
                         link: p.link.clone(),
-                        remark: if p.status == "pending"
+                        remark: if (p.status == "pending"
                             && (is_admin_user
-                                || current_uid.as_ref().is_some_and(|uid| p.is_author(uid)))
+                                || current_uid.as_ref().is_some_and(|uid| p.is_author(uid))))
+                            || (p.status == "returned"
+                                && current_uid.as_ref().is_some_and(|uid| p.is_author(uid)))
                         {
                             p.remark.clone()
                         } else {
@@ -352,6 +394,7 @@ pub async fn get_problem_detail(
             public_at: row.public_at.and_then(|s| s.parse().ok()),
             claimed_by: row.claimed_by,
             verifier_solution: row.verifier_solution,
+            verifiers: serde_json::from_str(&row.verifiers).unwrap_or_default(),
             visible_to: serde_json::from_str(&row.visible_to).unwrap_or_default(),
             link: row.link,
             remark: row.remark,
@@ -385,6 +428,10 @@ pub async fn get_problem_detail(
     let is_author = current_user
         .as_ref()
         .is_some_and(|(uid, _)| problem.is_author(uid));
+    // Whether the current user is one of the verifiers
+    let is_verifier = current_user
+        .as_ref()
+        .is_some_and(|(uid, _)| problem.verifiers.iter().any(|v| v.user_id == *uid));
 
     // Permission check
     let can_view = match problem.status.as_str() {
@@ -400,6 +447,8 @@ pub async fn get_problem_detail(
                 false
             }
         }
+        // "returned" (已退回) is visible only to its author
+        "returned" => is_author,
         _ => false,
     };
     if !can_view {
@@ -414,13 +463,12 @@ pub async fn get_problem_detail(
         "published" => is_member_user || is_admin_user,
         "approved" => is_member_user || is_admin_user,
         "pending" => is_admin_user || is_author,
+        "returned" => is_author,
         _ => false,
     };
-    // User who claimed this problem cannot see the author's solution (impartiality)
-    if let Some((uid, _)) = &current_user {
-        if problem.claimed_by.as_ref() == Some(uid) {
-            show_solution = false;
-        }
+    // A verifier (claimed) cannot see the author's solution (impartiality)
+    if is_verifier {
+        show_solution = false;
     }
     let in_visible_to = current_user
         .as_ref()
@@ -429,6 +477,7 @@ pub async fn get_problem_detail(
         "published" => true,
         "approved" => true,
         "pending" => is_admin_user || is_author || in_visible_to,
+        "returned" => is_author,
         _ => false,
     };
 
@@ -455,6 +504,9 @@ pub async fn get_problem_detail(
         "public_at": problem.public_at,
         "claimed_by": problem.claimed_by,
         "has_verifier_solution": problem.verifier_solution.is_some(),
+        "verifiers": problem.verifiers,
+        "is_verifier": is_verifier,
+        "is_author": is_author,
         "link": problem.link,
     });
 
@@ -467,15 +519,15 @@ pub async fn get_problem_detail(
     if show_solution {
         resp["solution"] = serde_json::Value::String(problem.solution.unwrap_or_default());
     }
-    // All members can see the verifier's solution
+    // All members can see the verifier's solution (backward-compat mirror)
     if let Some(vs) = &problem.verifier_solution {
         if is_member_user || is_admin_user {
             resp["verifier_solution"] = serde_json::Value::String(vs.clone());
         }
     }
-    // Only the actual verifier can submit/edit their solution
+    // Only a verifier can submit/edit their solution or post comments
     if let Some((user_id, _)) = &current_user {
-        if problem.claimed_by.as_ref() == Some(user_id) {
+        if problem.verifiers.iter().any(|v| v.user_id == *user_id) {
             resp["can_submit_verifier_solution"] = serde_json::Value::Bool(true);
         }
     }
@@ -535,6 +587,7 @@ pub async fn submit_problem(
         public_at: None,
         claimed_by: None,
         verifier_solution: None,
+        verifiers: vec![],
         visible_to: vec![],
         link: payload.link,
         remark: payload.remark,
@@ -554,8 +607,10 @@ pub async fn submit_problem(
 // ============== Review Problem ==============
 
 /// POST /api/problems/review/:problem_id/:action
-/// action = "approve" | "reply" | "publish" | "return" | "unpublish"
-/// Body (optional): { "reason": "..." } — used for "return" and "reply" actions
+/// action = "approve" | "reply" | "publish" | "return" | "reject" | "unpublish"
+/// Body (optional): { "reason": "..." } — used for "return", "reject" and "reply" actions.
+/// - "reject": pending -> returned (已退回), requires a reason of at least 10 chars.
+/// - "return": approved -> pending, clearing all verifier solutions and comments.
 pub async fn review_problem(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -693,6 +748,35 @@ pub async fn review_problem(
                 message: "已发布题目".to_string(),
             })
         }
+        "reject" => {
+            // 待审核 -> 已退回 (returned). Requires a reason of at least 10 chars.
+            if problem.status != "pending" {
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "只能退回待审核题目".to_string(),
+                });
+            }
+            if reason.trim().chars().count() < 10 {
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "退回理由不能少于 10 个字".to_string(),
+                });
+            }
+            let mut p = state
+                .problems
+                .read()
+                .await
+                .get(&problem_id)
+                .cloned()
+                .unwrap();
+            p.status = "returned".to_string();
+            p.remark = Some(reason.trim().to_string());
+            state.insert_problem(&p).await;
+            Json(ReviewResponse {
+                success: true,
+                message: "已退回给出题人".to_string(),
+            })
+        }
         "return" => {
             if problem.status != "approved" {
                 return Json(ReviewResponse {
@@ -700,15 +784,19 @@ pub async fn review_problem(
                     message: "只能退回已批准题目".to_string(),
                 });
             }
-            state
-                .update_problem_field(&problem_id, "status", "pending")
-                .await;
-            state
-                .update_problem_field(&problem_id, "claimed_by", "")
-                .await;
-            state
-                .update_problem_field(&problem_id, "verifier_solution", "")
-                .await;
+            // approved -> pending, clearing ALL verifier solutions and comments.
+            let mut p = state
+                .problems
+                .read()
+                .await
+                .get(&problem_id)
+                .cloned()
+                .unwrap();
+            p.status = "pending".to_string();
+            p.claimed_by = None;
+            p.verifier_solution = None;
+            p.verifiers.clear();
+            state.insert_problem(&p).await;
             Json(ReviewResponse {
                 success: true,
                 message: "已退回至待审核".to_string(),
@@ -765,15 +853,26 @@ pub async fn review_problem(
             )
             .await;
         }
+        "reject" => {
+            let reject_msg = format!("题目「{}」已被退回。\n退回理由：{}", problem_title, reason);
+            create_notification(
+                &state,
+                &author_id,
+                "题目已退回",
+                &reject_msg,
+                Some(&format!("/problems/{}", problem_id)),
+            )
+            .await;
+        }
         "return" => {
             let return_msg = if reason.is_empty() {
                 format!(
-                    "题目「{}」已被退回至待审核状态，验题人题解已清除",
+                    "题目「{}」已被退回至待审核状态，所有验题人题解和评论已清除",
                     problem_title
                 )
             } else {
                 format!(
-                    "题目「{}」已被退回至待审核状态，验题人题解已清除。\n退回理由：{}",
+                    "题目「{}」已被退回至待审核状态，所有验题人题解和评论已清除。\n退回理由：{}",
                     problem_title, reason
                 )
             };
@@ -795,6 +894,8 @@ pub async fn review_problem(
 // ============== Claim Problem ==============
 
 /// POST /api/problems/claim/:id
+/// Multiple verifiers may claim the same approved problem. Each verifier keeps
+/// their own solution and comments.
 pub async fn claim_problem(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -816,14 +917,16 @@ pub async fn claim_problem(
         });
     }
     // Author cannot claim their own problem
-    let problems = state.problems.read().await;
-    let problem = match problems.get(&problem_id) {
-        Some(p) => p,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "题目不存在".to_string(),
-            })
+    let mut problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ClaimResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
         }
     };
     if problem.is_author(&user_id) {
@@ -838,25 +941,31 @@ pub async fn claim_problem(
             message: "只能认领已批准的题目".to_string(),
         });
     }
-    if problem.claimed_by.is_some() {
+    if problem.verifiers.iter().any(|v| v.user_id == user_id) {
         return Json(ClaimResponse {
             success: false,
-            message: "该题目已被认领".to_string(),
+            message: "您已认领该题目".to_string(),
         });
     }
-    drop(problems);
 
-    state
-        .update_problem_field(&problem_id, "claimed_by", &user_id)
-        .await;
+    let first_verifier = problem.verifiers.is_empty();
+    problem.verifiers.push(VerifierEntry {
+        user_id: user_id.clone(),
+        user_name: user.display_name.clone(),
+        solution: None,
+        comments: vec![],
+        claimed_at: Utc::now(),
+    });
+    if first_verifier {
+        problem.claimed_by = Some(user_id.clone());
+    }
+    state.insert_problem(&problem).await;
 
     Json(ClaimResponse {
         success: true,
         message: "认领成功".to_string(),
     })
 }
-
-// ============== Unclaim Problem ==============
 
 /// POST /api/problems/unclaim/:id
 pub async fn unclaim_problem(
@@ -874,7 +983,7 @@ pub async fn unclaim_problem(
         }
     };
 
-    let problem = {
+    let mut problem = {
         let problems = state.problems.read().await;
         match problems.get(&problem_id) {
             Some(p) => p.clone(),
@@ -886,18 +995,26 @@ pub async fn unclaim_problem(
             }
         }
     };
-    if problem.claimed_by.as_deref() != Some(&user_id) {
+    let before = problem.verifiers.len();
+    problem.verifiers.retain(|v| v.user_id != user_id);
+    if problem.verifiers.len() == before {
         return Json(ClaimResponse {
             success: false,
             message: "您不是该题目的验题人".to_string(),
         });
     }
-    state
-        .update_problem_field(&problem_id, "claimed_by", "")
-        .await;
-    state
-        .update_problem_field(&problem_id, "verifier_solution", "")
-        .await;
+    // Re-sync backward-compat mirror to the first remaining verifier (if any).
+    match problem.verifiers.first() {
+        Some(first) => {
+            problem.claimed_by = Some(first.user_id.clone());
+            problem.verifier_solution = first.solution.clone();
+        }
+        None => {
+            problem.claimed_by = None;
+            problem.verifier_solution = None;
+        }
+    }
+    state.insert_problem(&problem).await;
 
     Json(ClaimResponse {
         success: true,
@@ -924,7 +1041,7 @@ pub async fn submit_verifier_solution(
         }
     };
 
-    let problem = {
+    let mut problem = {
         let problems = state.problems.read().await;
         match problems.get(&problem_id) {
             Some(p) => p.clone(),
@@ -936,19 +1053,107 @@ pub async fn submit_verifier_solution(
             }
         }
     };
-    if problem.claimed_by.as_deref() != Some(&user_id) {
+    let is_first = problem
+        .verifiers
+        .first()
+        .is_some_and(|v| v.user_id == user_id);
+    let mut found = false;
+    for v in problem.verifiers.iter_mut() {
+        if v.user_id == user_id {
+            v.solution = if payload.solution.is_empty() {
+                None
+            } else {
+                Some(payload.solution.clone())
+            };
+            found = true;
+        }
+    }
+    if !found {
         return Json(ClaimResponse {
             success: false,
             message: "您不是该题目的验题人".to_string(),
         });
     }
-    state
-        .update_problem_field(&problem_id, "verifier_solution", &payload.solution)
-        .await;
+    // Keep backward-compat mirror in sync if this is the first verifier.
+    if is_first {
+        problem.verifier_solution = if payload.solution.is_empty() {
+            None
+        } else {
+            Some(payload.solution.clone())
+        };
+    }
+    state.insert_problem(&problem).await;
 
     Json(ClaimResponse {
         success: true,
         message: "验题人题解已保存".to_string(),
+    })
+}
+
+// ============== Verifier Comments ==============
+
+/// POST /api/problems/verifier-comment/:id
+/// A verifier posts a comment on the problem they are verifying.
+pub async fn submit_verifier_comment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(problem_id): Path<String>,
+    Json(payload): Json<VerifierCommentPayload>,
+) -> Json<ClaimResponse> {
+    let content = payload.content.trim();
+    if content.is_empty() {
+        return Json(ClaimResponse {
+            success: false,
+            message: "评论内容不能为空".to_string(),
+        });
+    }
+
+    let (user_id, user) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => {
+            return Json(ClaimResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
+    };
+
+    let mut problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ClaimResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
+        }
+    };
+    if !problem.verifiers.iter().any(|v| v.user_id == user_id) {
+        return Json(ClaimResponse {
+            success: false,
+            message: "您不是该题目的验题人".to_string(),
+        });
+    }
+
+    let comment = VerifierComment {
+        id: Uuid::new_v4().to_string(),
+        user_id: user_id.clone(),
+        user_name: user.display_name.clone(),
+        content: content.to_string(),
+        created_at: Utc::now(),
+    };
+    for v in problem.verifiers.iter_mut() {
+        if v.user_id == user_id {
+            v.comments.push(comment.clone());
+        }
+    }
+    state.insert_problem(&problem).await;
+
+    Json(ClaimResponse {
+        success: true,
+        message: "评论已发布".to_string(),
     })
 }
 
@@ -1228,10 +1433,67 @@ pub async fn update_problem(
     })
 }
 
-// ============== Delete Problem (Admin only) ==============
+// ============== Resubmit Returned Problem (Author) ==============
+
+/// POST /api/problems/:id/resubmit
+/// Author resubmits a "returned" (已退回) problem back into "pending" (待审核).
+pub async fn resubmit_problem(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(problem_id): Path<String>,
+) -> Json<ReviewResponse> {
+    let (user_id, user) = match resolve_user(&state, &headers).await {
+        Some(u) => u,
+        None => {
+            return Json(ReviewResponse {
+                success: false,
+                message: "未登录".to_string(),
+            })
+        }
+    };
+    let is_admin_user =
+        check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
+
+    let mut problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
+        }
+    };
+
+    if !problem.is_author(&user_id) && !is_admin_user {
+        return Json(ReviewResponse {
+            success: false,
+            message: "权限不足".to_string(),
+        });
+    }
+    if problem.status != "returned" {
+        return Json(ReviewResponse {
+            success: false,
+            message: "只能再次提交已退回的题目".to_string(),
+        });
+    }
+
+    problem.status = "pending".to_string();
+    problem.remark = None;
+    state.insert_problem(&problem).await;
+
+    Json(ReviewResponse {
+        success: true,
+        message: "已重新提交，等待审核".to_string(),
+    })
+}
+
+// ============== Delete Problem ==============
 
 /// DELETE /api/problems/:id
-/// Admin can delete any problem; author can delete their own pending problem.
+/// Admin can delete any problem; author can delete their own pending/returned problem.
 pub async fn delete_problem(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1262,17 +1524,17 @@ pub async fn delete_problem(
         }
     };
 
-    // Author can delete their own pending problem; admin can delete anything
+    // Author can delete their own pending/returned problem; admin can delete anything
     if !problem.is_author(&user_id) && !is_admin_user {
         return Json(ReviewResponse {
             success: false,
             message: "权限不足".to_string(),
         });
     }
-    if !is_admin_user && problem.status != "pending" {
+    if !is_admin_user && problem.status != "pending" && problem.status != "returned" {
         return Json(ReviewResponse {
             success: false,
-            message: "只能删除自己的待审核题目".to_string(),
+            message: "只能删除自己的待审核或已退回题目".to_string(),
         });
     }
 

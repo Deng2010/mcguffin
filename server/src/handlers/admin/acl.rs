@@ -116,47 +116,52 @@ pub async fn set_resource_acl(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     auth.require_perm(&state, PERM_WILDCARD).await?;
 
-    {
-        let mut found = false;
-        match resource_type.as_str() {
-            "problem" => {
-                if let Some(mut p) = state.problems.read().await.get(&resource_id).cloned() {
-                    p.visible_to = payload.visible_to.clone();
-                    p.editable_by = payload.editable_by.clone();
-                    state.insert_problem(&p).await;
-                    found = true;
-                }
-            }
-            "contest" => {
-                if let Some(mut c) = state.contests.read().await.get(&resource_id).cloned() {
-                    c.visible_to = payload.visible_to.clone();
-                    c.editable_by = payload.editable_by.clone();
-                    state.insert_contest(&c).await;
-                    found = true;
-                }
-            }
-            "post" | "discussion" => {
-                if let Some(mut p) = state.posts.read().await.get(&resource_id).cloned() {
-                    p.visible_to = payload.visible_to.clone();
-                    p.editable_by = payload.editable_by.clone();
-                    state.upsert_post(&p).await;
-                    found = true;
-                }
-            }
-            _ => {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    json_error(ErrorCode::VALIDATION_INVALID, "无效的资源类型"),
-                ))
+    // IMPORTANT: clone the target resource out of the read guard FIRST, then
+    // drop the guard. Holding a tokio RwLock read guard while awaiting the
+    // write lock in `insert_problem`/`insert_contest`/`upsert_post` below would
+    // deadlock (tokio RwLock is not re-entrant).
+    let mut found = false;
+    match resource_type.as_str() {
+        "problem" => {
+            let problem = state.problems.read().await.get(&resource_id).cloned();
+            if let Some(mut p) = problem {
+                p.visible_to = payload.visible_to.clone();
+                p.editable_by = payload.editable_by.clone();
+                state.insert_problem(&p).await;
+                found = true;
             }
         }
-        if !found {
+        "contest" => {
+            let contest = state.contests.read().await.get(&resource_id).cloned();
+            if let Some(mut c) = contest {
+                c.visible_to = payload.visible_to.clone();
+                c.editable_by = payload.editable_by.clone();
+                state.insert_contest(&c).await;
+                found = true;
+            }
+        }
+        "post" | "discussion" => {
+            let post = state.posts.read().await.get(&resource_id).cloned();
+            if let Some(mut p) = post {
+                p.visible_to = payload.visible_to.clone();
+                p.editable_by = payload.editable_by.clone();
+                state.upsert_post(&p).await;
+                found = true;
+            }
+        }
+        _ => {
             return Err((
-                StatusCode::NOT_FOUND,
-                json_error(ErrorCode::NOT_FOUND, "资源不存在"),
-            ));
+                StatusCode::BAD_REQUEST,
+                json_error(ErrorCode::VALIDATION_INVALID, "无效的资源类型"),
+            ))
         }
-    } // write locks dropped here
+    }
+    if !found {
+        return Err((
+            StatusCode::NOT_FOUND,
+            json_error(ErrorCode::NOT_FOUND, "资源不存在"),
+        ));
+    }
 
     Ok(Json(
         serde_json::json!({"success": true, "message": "访问控制已更新"}),

@@ -452,6 +452,7 @@ async fn test_problem_state_operations() {
         public_at: None,
         claimed_by: None,
         verifier_solution: None,
+        verifiers: vec![],
         visible_to: vec![],
         link: None,
         remark: None,
@@ -510,7 +511,10 @@ async fn test_admin_password_loaded() {
 
 /// Helper: insert a pending problem with the given author and return its id.
 async fn seed_pending_problem(state: &AppState, author_id: &str) -> String {
-    let id = format!("test-pending-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default());
+    let id = format!(
+        "test-pending-{}",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    );
     let problem = Problem {
         id: id.clone(),
         title: "待审核测试题".to_string(),
@@ -526,6 +530,7 @@ async fn seed_pending_problem(state: &AppState, author_id: &str) -> String {
         public_at: None,
         claimed_by: None,
         verifier_solution: None,
+        verifiers: vec![],
         visible_to: vec![],
         link: None,
         remark: None,
@@ -557,21 +562,23 @@ async fn test_reply_problem_keeps_pending_and_notifies_author() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1_000_000).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["success"], true);
 
     // Problem must still exist and remain pending (not deleted)
     let problems = state.problems.read().await;
-    let p = problems.get(&problem_id).expect("problem should not be deleted");
+    let p = problems
+        .get(&problem_id)
+        .expect("problem should not be deleted");
     assert_eq!(p.status, "pending");
 
     // Author received a notification with the suggestion
     let notifications = state.notifications.read().await;
     let has_notif = notifications.values().any(|n| {
-        n.user_id == author_id
-            && n.title == "题目审核建议"
-            && n.body.contains("请补充数据范围说明")
+        n.user_id == author_id && n.title == "题目审核建议" && n.body.contains("请补充数据范围说明")
     });
     assert!(has_notif, "author should receive a reply notification");
 }
@@ -597,7 +604,9 @@ async fn test_reply_problem_requires_reason() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1_000_000).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["success"], false);
     assert!(v["message"].as_str().unwrap().contains("建议"));
@@ -646,7 +655,9 @@ async fn test_reply_problem_requires_permission() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1_000_000).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["success"], false);
     assert_eq!(v["message"], "权限不足");
@@ -680,7 +691,9 @@ async fn test_global_plugin_disable() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
-    let body = axum::body::to_bytes(res.into_body(), 1_000_000).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["success"], true);
     assert_eq!(v["plugins_disabled"], true);
@@ -699,7 +712,9 @@ async fn test_global_plugin_disable() {
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(res.into_body(), 1_000_000).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let list: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(list["plugins_disabled"], true);
 
@@ -716,7 +731,9 @@ async fn test_global_plugin_disable() {
         )
         .await
         .unwrap();
-    let body = axum::body::to_bytes(res.into_body(), 1_000_000).await.unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(v["success"], true);
     assert_eq!(v["plugins_disabled"], false);
@@ -761,4 +778,365 @@ async fn test_global_plugin_disable_requires_permission() {
     assert_eq!(res.status(), StatusCode::FORBIDDEN);
     // State unchanged
     assert!(!*state.plugins_disabled.read().await);
+}
+
+// ============== "reject" (待审核 -> 已退回) tests ==============
+
+/// Rejecting a pending problem requires a reason of at least 10 chars.
+#[tokio::test]
+async fn test_reject_problem_requires_reason_at_least_10_chars() {
+    let state = AppState::new().await;
+    let problem_id = seed_pending_problem(&state, "member1").await;
+    let token = create_session(&state, "admin").await;
+    let app = test_router(state.clone());
+
+    // Short reason (rejected)
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/problems/review/{}/reject", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"reason":"太短"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], false);
+    assert!(v["message"].as_str().unwrap().contains("10"));
+
+    // Still pending
+    assert_eq!(
+        state.problems.read().await.get(&problem_id).unwrap().status,
+        "pending"
+    );
+
+    // Valid reason (>= 10 chars)
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/problems/review/{}/reject", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"reason":"题目描述不够清晰需要补充更多细节。"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let p = state
+        .problems
+        .read()
+        .await
+        .get(&problem_id)
+        .unwrap()
+        .clone();
+    assert_eq!(p.status, "returned");
+    assert!(p.remark.is_some());
+}
+
+/// Resubmitting a returned problem brings it back to pending.
+#[tokio::test]
+async fn test_resubmit_returned_problem() {
+    let state = AppState::new().await;
+
+    // Ensure the author (member1) exists as a joined member
+    let author = User {
+        id: "member1".to_string(),
+        username: "member1".to_string(),
+        display_name: "测试出题人".to_string(),
+        avatar_url: None,
+        email: None,
+        role: "member".to_string(),
+        team_status: "joined".to_string(),
+        created_at: chrono::Utc::now(),
+        bio: String::new(),
+        password_hash: None,
+        effective_role: "member".to_string(),
+        group_ids: vec![],
+        user_permissions: vec![],
+    };
+    state
+        .users
+        .write()
+        .await
+        .insert("member1".to_string(), author);
+
+    let problem_id = seed_pending_problem(&state, "member1").await;
+    let admin_token = create_session(&state, "admin").await;
+    let app = test_router(state.clone());
+
+    // Reject first (admin) -> returned
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/problems/review/{}/reject", problem_id))
+                .header("Authorization", format!("Bearer {}", admin_token))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"reason":"题目描述不够清晰需要补充更多细节。"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        state.problems.read().await.get(&problem_id).unwrap().status,
+        "returned"
+    );
+
+    // Author (member1) resubmits -> pending
+    let author_token = create_session(&state, "member1").await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/problems/{}/resubmit", problem_id))
+                .header("Authorization", format!("Bearer {}", author_token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let p = state
+        .problems
+        .read()
+        .await
+        .get(&problem_id)
+        .unwrap()
+        .clone();
+    assert_eq!(p.status, "pending");
+    assert!(p.remark.is_none());
+}
+
+// ============== Multi-verifier claim tests ==============
+
+/// Multiple distinct members can claim the same approved problem.
+#[tokio::test]
+async fn test_multi_verifier_claim() {
+    let state = AppState::new().await;
+
+    for (id, name) in [("v1", "验题人一"), ("v2", "验题人二")] {
+        let member = User {
+            id: id.to_string(),
+            username: id.to_string(),
+            display_name: name.to_string(),
+            avatar_url: None,
+            email: None,
+            role: "member".to_string(),
+            team_status: "joined".to_string(),
+            created_at: chrono::Utc::now(),
+            bio: String::new(),
+            password_hash: None,
+            effective_role: "member".to_string(),
+            group_ids: vec![],
+            user_permissions: vec![],
+        };
+        state.users.write().await.insert(id.to_string(), member);
+    }
+
+    let author = User {
+        id: "author".to_string(),
+        username: "author".to_string(),
+        display_name: "出题人".to_string(),
+        avatar_url: None,
+        email: None,
+        role: "member".to_string(),
+        team_status: "joined".to_string(),
+        created_at: chrono::Utc::now(),
+        bio: String::new(),
+        password_hash: None,
+        effective_role: "member".to_string(),
+        group_ids: vec![],
+        user_permissions: vec![],
+    };
+    state
+        .users
+        .write()
+        .await
+        .insert("author".to_string(), author);
+    let problem = Problem {
+        id: "multi-verifier-problem".to_string(),
+        title: "多验题人测试题".to_string(),
+        author_id: "author".to_string(),
+        author_name: "出题人".to_string(),
+        contest: String::new(),
+        contest_id: None,
+        difficulty: "Easy".to_string(),
+        content: "内容".to_string(),
+        solution: None,
+        status: "approved".to_string(),
+        created_at: chrono::Utc::now(),
+        public_at: None,
+        claimed_by: None,
+        verifier_solution: None,
+        verifiers: vec![],
+        visible_to: vec![],
+        link: None,
+        remark: None,
+        editable_by: vec![],
+    };
+    state.insert_problem(&problem).await;
+
+    let app = test_router(state.clone());
+
+    let t1 = create_session(&state, "v1").await;
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/problems/claim/multi-verifier-problem")
+                .header("Authorization", format!("Bearer {}", t1))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let t2 = create_session(&state, "v2").await;
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/problems/claim/multi-verifier-problem")
+                .header("Authorization", format!("Bearer {}", t2))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let p = state
+        .problems
+        .read()
+        .await
+        .get("multi-verifier-problem")
+        .unwrap()
+        .clone();
+    assert_eq!(p.verifiers.len(), 2);
+    assert_eq!(p.claimed_by.as_deref(), Some("v1"));
+}
+
+/// A verifier can post a comment; a non-verifier cannot.
+#[tokio::test]
+async fn test_verifier_comment() {
+    let state = AppState::new().await;
+    let problem = Problem {
+        id: "comment-problem".to_string(),
+        title: "评论测试题".to_string(),
+        author_id: "someone".to_string(),
+        author_name: "某人".to_string(),
+        contest: String::new(),
+        contest_id: None,
+        difficulty: "Easy".to_string(),
+        content: "内容".to_string(),
+        solution: None,
+        status: "approved".to_string(),
+        created_at: chrono::Utc::now(),
+        public_at: None,
+        claimed_by: None,
+        verifier_solution: None,
+        verifiers: vec![],
+        visible_to: vec![],
+        link: None,
+        remark: None,
+        editable_by: vec![],
+    };
+    state.insert_problem(&problem).await;
+
+    for (id, name) in [("cv", "评论验题人"), ("other", "其他人")] {
+        let member = User {
+            id: id.to_string(),
+            username: id.to_string(),
+            display_name: name.to_string(),
+            avatar_url: None,
+            email: None,
+            role: "member".to_string(),
+            team_status: "joined".to_string(),
+            created_at: chrono::Utc::now(),
+            bio: String::new(),
+            password_hash: None,
+            effective_role: "member".to_string(),
+            group_ids: vec![],
+            user_permissions: vec![],
+        };
+        state.users.write().await.insert(id.to_string(), member);
+    }
+
+    let app = test_router(state.clone());
+
+    // Non-verifier cannot comment
+    let t_other = create_session(&state, "other").await;
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/problems/verifier-comment/comment-problem")
+                .header("Authorization", format!("Bearer {}", t_other))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"content":"hello"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], false);
+
+    // "cv" claims then comments
+    let t_cv = create_session(&state, "cv").await;
+    let _ = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/problems/claim/comment-problem")
+                .header("Authorization", format!("Bearer {}", t_cv))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/problems/verifier-comment/comment-problem")
+                .header("Authorization", format!("Bearer {}", t_cv))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"content":"这是一个验题评论"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let p = state
+        .problems
+        .read()
+        .await
+        .get("comment-problem")
+        .unwrap()
+        .clone();
+    assert_eq!(p.verifiers.len(), 1);
+    assert_eq!(p.verifiers[0].comments.len(), 1);
+    assert_eq!(p.verifiers[0].comments[0].content, "这是一个验题评论");
 }

@@ -176,7 +176,11 @@ export interface JoinRequest {
 // ============== Problem Types ==============
 
 export type Difficulty = "Easy" | "Medium" | "Hard";
-export type ProblemStatus = "pending" | "approved" | "published";
+export type ProblemStatus =
+  | "pending"
+  | "approved"
+  | "published"
+  | "returned";
 
 export interface Problem {
   id: string;
@@ -191,6 +195,28 @@ export interface Problem {
   public_at: string | null;
 }
 
+export interface VerifierComment {
+  id: string;
+  user_id: string;
+  user_name: string;
+  content: string;
+  created_at: string;
+}
+
+export interface VerifierEntry {
+  user_id: string;
+  user_name: string;
+  solution: string | null;
+  comments: VerifierComment[];
+  claimed_at: string;
+}
+
+export interface VerifierSummary {
+  user_id: string;
+  user_name: string;
+  has_solution: boolean;
+}
+
 export interface ProblemListItem {
   id: string;
   title: string;
@@ -203,6 +229,7 @@ export interface ProblemListItem {
   public_at: string | null;
   claimed_by: string | null;
   has_verifier_solution: boolean;
+  verifiers?: VerifierSummary[];
   link?: string | null;
   remark?: string | null;
   visible_to?: string[];
@@ -226,6 +253,9 @@ export interface ProblemDetail {
   has_verifier_solution: boolean;
   can_submit_verifier_solution?: boolean;
   verifier_solution?: string;
+  verifiers?: VerifierEntry[];
+  is_verifier?: boolean;
+  is_author?: boolean;
 }
 
 export interface AdminPendingProblem {

@@ -475,8 +475,8 @@ impl AppState {
             "INSERT OR REPLACE INTO problems
              (id, title, author_id, author_name, contest, contest_id, difficulty, \
               content, solution, status, created_at, public_at, claimed_by, \
-              verifier_solution, visible_to, link, remark, editable_by) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              verifier_solution, visible_to, link, remark, editable_by, verifiers) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&problem.id)
         .bind(&problem.title)
@@ -496,6 +496,7 @@ impl AppState {
         .bind(&problem.link)
         .bind(&problem.remark)
         .bind(serde_json::to_string(&problem.editable_by).unwrap_or_default())
+        .bind(serde_json::to_string(&problem.verifiers).unwrap_or_default())
         .execute(&self.db)
         .await
         {
