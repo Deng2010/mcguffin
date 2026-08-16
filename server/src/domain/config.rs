@@ -78,6 +78,9 @@ pub struct SiteConfig {
     pub title: Option<String>,
     #[serde(default)]
     pub difficulty_order: Option<Vec<String>>,
+    /// 站点时区（如 "UTC+8"、"UTC-5:30"），用于解释比赛时间。
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 #[derive(Deserialize)]

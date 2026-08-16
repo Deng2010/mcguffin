@@ -1029,7 +1029,23 @@ impl AppState {
                     }
                 }
             }
-            config.permissions.clone()
+            // 兼容旧版配置：view_all_problems 已拆分为三个浏览权限，自动展开，
+            // 避免既有部署升级后管理员/成员丢失题目浏览能力。
+            let mut migrated = config.permissions.clone();
+            for perms in migrated.values_mut() {
+                if perms.iter().any(|p| p == "view_all_problems") {
+                    for new_perm in [
+                        perms::VIEW_PENDING_PROBLEMS,
+                        perms::VIEW_APPROVED_PROBLEMS,
+                        perms::VIEW_PUBLIC_PROBLEMS,
+                    ] {
+                        if !perms.iter().any(|p| p == new_perm) {
+                            perms.push(new_perm.to_string());
+                        }
+                    }
+                }
+            }
+            migrated
         } else {
             default_role_permissions()
         };
@@ -1057,6 +1073,14 @@ impl AppState {
                 .unwrap_or_else(|| config.site.name.unwrap_or_else(|| "McGuffin".to_string())),
             site_version,
             site_description: Arc::new(RwLock::new(site_description)),
+            site_timezone: Arc::new(RwLock::new(
+                config
+                    .site
+                    .timezone
+                    .clone()
+                    .filter(|t| !t.trim().is_empty())
+                    .unwrap_or_else(|| "UTC+8".to_string()),
+            )),
             site_url: config.server.site_url,
             db_path: db_path_str,
             difficulty: Arc::new(RwLock::new(difficulty_config.clone())),

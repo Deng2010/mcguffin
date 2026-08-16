@@ -65,93 +65,77 @@ pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginPayload>,
 ) -> Json<LoginResponse> {
-    // If identifier is provided, try account login (by username or display_name)
-    if let Some(identifier) = &payload.identifier {
-        let identifier = identifier.trim();
-        if identifier.is_empty() {
+    // 必须填写账户名或显示名称。超级管理员也需使用 admin 或其当前显示名称登录，
+    // 不再支持“用户名留空 + 管理员密码”的后门登录。
+    let identifier = match payload.identifier.as_deref() {
+        Some(id) if !id.trim().is_empty() => id.trim(),
+        _ => {
             return Json(LoginResponse {
                 success: false,
                 message: "请输入账户名或显示名称".to_string(),
                 token: None,
             });
         }
+    };
 
-        // Try SQLite first, then fallback to HashMap
-        let found = match sqlx::query_as::<_, UserRow>(
-            "SELECT id, username, display_name, avatar_url, email, role, team_status, \
-             created_at, bio, password_hash, effective_role, group_ids, user_permissions \
-             FROM users WHERE username = ? OR display_name = ?",
-        )
-        .bind(identifier)
-        .bind(identifier)
-        .fetch_optional(&state.db)
-        .await
-        {
-            Ok(Some(row)) => Some(row.into_user()),
-            _ => {
-                // Fallback to HashMap
-                let users = state.users.read().await;
-                users
-                    .values()
-                    .find(|u| u.username == *identifier || u.display_name == *identifier)
-                    .cloned()
-            }
-        };
+    // Try SQLite first, then fallback to HashMap
+    let found = match sqlx::query_as::<_, UserRow>(
+        "SELECT id, username, display_name, avatar_url, email, role, team_status, \
+         created_at, bio, password_hash, effective_role, group_ids, user_permissions \
+         FROM users WHERE username = ? OR display_name = ?",
+    )
+    .bind(identifier)
+    .bind(identifier)
+    .fetch_optional(&state.db)
+    .await
+    {
+        Ok(Some(row)) => Some(row.into_user()),
+        _ => {
+            // Fallback to HashMap
+            let users = state.users.read().await;
+            users
+                .values()
+                .find(|u| u.username == identifier || u.display_name == identifier)
+                .cloned()
+        }
+    };
 
-        match found {
-            Some(user) => {
-                let password_ok = match &user.password_hash {
-                    Some(hash) => bcrypt::verify(&payload.password, hash).unwrap_or(false),
-                    // 若用户未设密码哈希，管理员（admin）可回退到配置密码
-                    None if user.id == ADMIN_USER_ID => {
-                        payload.password == *state.admin_password.read().await
-                    }
-                    None => false,
-                };
-                if password_ok {
-                    let session_token = state.create_session(&user.id).await;
-                    Json(LoginResponse {
-                        success: true,
-                        message: "登录成功".to_string(),
-                        token: Some(session_token),
-                    })
-                } else if user.id == ADMIN_USER_ID && user.password_hash.is_none() {
-                    Json(LoginResponse {
-                        success: false,
-                        message: "密码错误（可在配置文件 admin.password 中修改）".to_string(),
-                        token: None,
-                    })
-                } else {
-                    Json(LoginResponse {
-                        success: false,
-                        message: "密码错误".to_string(),
-                        token: None,
-                    })
+    match found {
+        Some(user) => {
+            let password_ok = match &user.password_hash {
+                Some(hash) => bcrypt::verify(&payload.password, hash).unwrap_or(false),
+                // 若用户未设密码哈希，管理员（admin）可回退到配置密码
+                None if user.id == ADMIN_USER_ID => {
+                    payload.password == *state.admin_password.read().await
                 }
+                None => false,
+            };
+            if password_ok {
+                let session_token = state.create_session(&user.id).await;
+                Json(LoginResponse {
+                    success: true,
+                    message: "登录成功".to_string(),
+                    token: Some(session_token),
+                })
+            } else if user.id == ADMIN_USER_ID && user.password_hash.is_none() {
+                Json(LoginResponse {
+                    success: false,
+                    message: "密码错误（可在配置文件 admin.password 中修改）".to_string(),
+                    token: None,
+                })
+            } else {
+                Json(LoginResponse {
+                    success: false,
+                    message: "密码错误".to_string(),
+                    token: None,
+                })
             }
-            None => Json(LoginResponse {
-                success: false,
-                message: "未找到该账户".to_string(),
-                token: None,
-            }),
         }
-    } else {
-        // No identifier — admin password login (backward compatible)
-        if payload.password != *state.admin_password.read().await {
-            return Json(LoginResponse {
-                success: false,
-                message: "密码错误".to_string(),
-                token: None,
-            });
-        }
-
-        let session_token = state.create_session(ADMIN_USER_ID).await;
-
-        Json(LoginResponse {
-            success: true,
-            message: "登录成功".to_string(),
-            token: Some(session_token),
-        })
+        None => Json(LoginResponse {
+            success: false,
+            message: "未找到该账户".to_string(),
+            token: None,
+        }),
     }
 }
 

@@ -16,7 +16,9 @@ pub mod perms {
 
     // ── Problems ──
     pub const SUBMIT_PROBLEM: &str = "submit_problem";
-    pub const VIEW_ALL_PROBLEMS: &str = "view_all_problems";
+    pub const VIEW_PENDING_PROBLEMS: &str = "view_pending_problems";
+    pub const VIEW_APPROVED_PROBLEMS: &str = "view_approved_problems";
+    pub const VIEW_PUBLIC_PROBLEMS: &str = "view_public_problems";
     pub const APPROVE_ALL_PROBLEMS: &str = "approve_all_problems";
 
     // ── Contests ──
@@ -50,7 +52,9 @@ pub mod perms {
         MANAGE_TEAM,
         MANAGE_MEMBERS,
         SUBMIT_PROBLEM,
-        VIEW_ALL_PROBLEMS,
+        VIEW_PENDING_PROBLEMS,
+        VIEW_APPROVED_PROBLEMS,
+        VIEW_PUBLIC_PROBLEMS,
         APPROVE_ALL_PROBLEMS,
         MANAGE_ALL_CONTESTS,
         VIEW_ALL_CONTESTS,
@@ -85,7 +89,9 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
             perms::MANAGE_TEAM.to_string(),
             perms::MANAGE_MEMBERS.to_string(),
             perms::SUBMIT_PROBLEM.to_string(),
-            perms::VIEW_ALL_PROBLEMS.to_string(),
+            perms::VIEW_PENDING_PROBLEMS.to_string(),
+            perms::VIEW_APPROVED_PROBLEMS.to_string(),
+            perms::VIEW_PUBLIC_PROBLEMS.to_string(),
             perms::APPROVE_ALL_PROBLEMS.to_string(),
             perms::MANAGE_ALL_CONTESTS.to_string(),
             perms::VIEW_ALL_CONTESTS.to_string(),
@@ -105,7 +111,8 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
             perms::VIEW_SHOWCASE.to_string(),
             perms::VIEW_TEAM.to_string(),
             perms::SUBMIT_PROBLEM.to_string(),
-            perms::VIEW_ALL_PROBLEMS.to_string(),
+            perms::VIEW_APPROVED_PROBLEMS.to_string(),
+            perms::VIEW_PUBLIC_PROBLEMS.to_string(),
             perms::VIEW_ALL_CONTESTS.to_string(),
             perms::VIEW_PUBLIC_CONTESTS.to_string(),
             perms::VIEW_ALL_POSTS.to_string(),
@@ -116,6 +123,7 @@ pub fn default_role_permissions() -> HashMap<String, Vec<String>> {
         vec![
             perms::VIEW_SHOWCASE.to_string(),
             perms::APPLY_JOIN.to_string(),
+            perms::VIEW_PUBLIC_PROBLEMS.to_string(),
             perms::VIEW_PUBLIC_CONTESTS.to_string(),
             perms::VIEW_ALL_POSTS.to_string(),
         ],

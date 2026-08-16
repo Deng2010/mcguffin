@@ -56,7 +56,7 @@ export default function AppRoutes() {
           <Route
             path="/problems/:id"
             element={
-              <ProtectedRoute requiredPermission="view_all_problems">
+              <ProtectedRoute requiredPermission="view_public_problems">
                 <ProblemDetailPage />
               </ProtectedRoute>
             }

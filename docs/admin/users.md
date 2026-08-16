@@ -22,7 +22,9 @@
 | `manage_team` | 审核入队申请 |
 | `manage_members` | 踢出成员/变更角色 |
 | `submit_problem` | 投稿题目 |
-| `view_problems` | 查看题目 |
+| `view_pending_problems` | 浏览待审核题目 |
+| `view_approved_problems` | 浏览已通过题目 |
+| `view_public_problems` | 浏览公开题目 |
 | `approve_problem` | 审核题目 |
 | `manage_contests` | 管理赛事 |
 | `view_all_contests` | 查看全部赛事 |
@@ -56,9 +58,9 @@
 | 角色 | 权限 |
 |------|------|
 | superadmin | 全部（通配符 `*`） |
-| admin | 全部（manage_site、approve_problem 等所有管理权限） |
-| member | submit_problem、view_problems、view_discussions 等 |
-| guest | view_showcase、apply_join、view_public_contests |
+| admin | 全部题目浏览（待审核/已通过/公开）及所有管理权限 |
+| member | view_approved_problems、view_public_problems、submit_problem 等 |
+| guest | view_public_problems、view_showcase、apply_join、view_public_contests |
 | pending | 仅 apply_join |
 
 可通过 `config.toml` 的 `[permissions]` 段自定义覆盖。

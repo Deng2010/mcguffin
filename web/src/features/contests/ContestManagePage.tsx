@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
 import MarkdownEditor from "../../components/MarkdownEditor";
+import DateTimePicker from "../../components/DateTimePicker";
+import { buildContestTime } from "../../utils/time";
 import { useToast } from "../../errors/ToastContext";
 import { errorMessage } from "../../errors/normalize";
 
@@ -28,8 +30,13 @@ export default function ContestManagePage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const today = new Date().toISOString().slice(0, 10);
+  const [startDate, setStartDate] = useState(today);
+  const [startHour, setStartHour] = useState(9);
+  const [startMinute, setStartMinute] = useState(0);
+  const [endDate, setEndDate] = useState(today);
+  const [endHour, setEndHour] = useState(12);
+  const [endMinute, setEndMinute] = useState(0);
   const [description, setDescription] = useState("");
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
@@ -67,10 +74,12 @@ export default function ContestManagePage() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !startTime.trim() || !endTime.trim()) {
+    if (!name.trim() || !startDate || !endDate) {
       setError("请填写比赛名称、开始时间和结束时间");
       return;
     }
+    const startTime = buildContestTime(startDate, startHour, startMinute);
+    const endTime = buildContestTime(endDate, endHour, endMinute);
     try {
       const res = await apiFetch<{ success: boolean; message: string }>(
         "/contests",
@@ -90,8 +99,12 @@ export default function ContestManagePage() {
         return;
       }
       setName("");
-      setStartTime("");
-      setEndTime("");
+      setStartDate(today);
+      setStartHour(9);
+      setStartMinute(0);
+      setEndDate(today);
+      setEndHour(12);
+      setEndMinute(0);
       setDescription("");
       setLink("");
       setShowForm(false);
@@ -153,46 +166,40 @@ export default function ContestManagePage() {
           <h2 className="text-lg font-semibold mb-4 text-gray-700 dark:text-gray-200">
             创建新比赛
           </h2>
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">
-                比赛名称 *
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
-                placeholder="如：2026春季周赛"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">
-                开始时间 *
-              </label>
-              <input
-                type="text"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
-                placeholder="如：2026-05-01 10:00"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">
-                结束时间 *
-              </label>
-              <input
-                type="text"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
-                placeholder="如：2026-05-01 12:00"
-              />
-            </div>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-200">
+              比赛名称 *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800"
+              placeholder="如：2026春季周赛"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <DateTimePicker
+              label="开始时间"
+              date={startDate}
+              hour={startHour}
+              minute={startMinute}
+              required
+              onDateChange={setStartDate}
+              onHourChange={setStartHour}
+              onMinuteChange={setStartMinute}
+            />
+            <DateTimePicker
+              label="结束时间"
+              date={endDate}
+              hour={endHour}
+              minute={endMinute}
+              required
+              onDateChange={setEndDate}
+              onHourChange={setEndHour}
+              onMinuteChange={setEndMinute}
+            />
           </div>
           <div className="mb-4">
             <MarkdownEditor

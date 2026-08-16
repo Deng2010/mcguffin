@@ -34,6 +34,9 @@ export default function ProblemsPage() {
   const isGuest = !isAuthenticated || user?.role === "guest";
   const canApprove = hasPermission("approve_all_problems");
   const canSubmit = hasPermission("submit_problem");
+  const canViewPending = hasPermission("view_pending_problems");
+  const canViewApproved = hasPermission("view_approved_problems");
+  const canViewPublic = hasPermission("view_public_problems");
 
   // All problems tab
   const [problems, setProblems] = useState<ProblemListItem[]>([]);
@@ -107,23 +110,21 @@ export default function ProblemsPage() {
   if (user) {
     tabs.push({ id: "mine", label: "我的题目", count: myProblems.length });
   }
-  if (canSubmit) {
-    tabs.push(
-      {
-        id: "pending",
-        label: "待审核",
-        count: pendingCount,
-      },
-      { id: "approved", label: "已通过", count: approvedCount },
-      { id: "published", label: "已发布", count: publishedCount },
-    );
-    if (returnedList.length > 0) {
-      tabs.push({ id: "returned", label: "已退回", count: returnedList.length });
-    }
+  if (canViewPending) {
+    tabs.push({ id: "pending", label: "待审核", count: pendingCount });
+  }
+  if (canViewApproved) {
+    tabs.push({ id: "approved", label: "已通过", count: approvedCount });
+  }
+  if (canViewPublic) {
+    tabs.push({ id: "published", label: "已发布", count: publishedCount });
+  }
+  if (canSubmit && returnedList.length > 0) {
+    tabs.push({ id: "returned", label: "已退回", count: returnedList.length });
   }
 
   const loadProblems = () => {
-    const url = canApprove || canSubmit ? "/problems?all=true" : "/problems";
+    const url = canApprove ? "/problems?all=true" : "/problems";
     apiFetch<ProblemListItem[]>(url)
       .then(setProblems)
       .catch(() => setProblems([]))
@@ -144,7 +145,7 @@ export default function ProblemsPage() {
 
   useEffect(() => {
     loadProblems();
-  }, [canSubmit, canApprove]);
+  }, [canApprove, canViewPending, canViewApproved, canViewPublic]);
 
   // Lazy load members/contests when admin opens the pending tab
   useEffect(() => {

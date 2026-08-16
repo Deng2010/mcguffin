@@ -30,7 +30,9 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "manage_team",
     "manage_members",
     "submit_problem",
-    "view_all_problems",
+    "view_pending_problems",
+    "view_approved_problems",
+    "view_public_problems",
     "approve_all_problems",
     "manage_all_contests",
     "view_all_contests",
@@ -48,11 +50,17 @@ const DEFAULT_PERMISSIONS: Record<string, string[]> = {
     "apply_join",
     "view_team",
     "submit_problem",
-    "view_all_problems",
+    "view_approved_problems",
+    "view_public_problems",
     "view_public_contests",
     "view_all_posts",
   ],
-  guest: ["view_showcase", "apply_join", "view_public_contests"],
+  guest: [
+    "view_showcase",
+    "apply_join",
+    "view_public_problems",
+    "view_public_contests",
+  ],
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -71,7 +79,9 @@ const PERM_LABELS: Record<string, string> = {
   manage_team: "审批入队",
   manage_members: "管理成员",
   submit_problem: "投稿题目",
-  view_all_problems: "浏览所有题目",
+  view_pending_problems: "浏览待审核题目",
+  view_approved_problems: "浏览已通过题目",
+  view_public_problems: "浏览公开题目",
   approve_all_problems: "审核所有题目",
   manage_all_contests: "管理所有比赛",
   access_admin: "进入后台",
@@ -89,7 +99,13 @@ const PERMISSION_GROUPS: { label: string; perms: string[] }[] = [
   { label: "团队管理", perms: ["view_team", "manage_team", "manage_members"] },
   {
     label: "题目管理",
-    perms: ["submit_problem", "view_all_problems", "approve_all_problems"],
+    perms: [
+      "submit_problem",
+      "view_pending_problems",
+      "view_approved_problems",
+      "view_public_problems",
+      "approve_all_problems",
+    ],
   },
   {
     label: "赛事管理",
@@ -172,6 +188,7 @@ export default function AdminRolesPage() {
   const [localGroups, setLocalGroups] = useState<MemberGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [msg, setMsg] = useState("");
   const [activeTab, setActiveTab] = useState<TabId>("basic");
 
@@ -274,6 +291,33 @@ export default function AdminRolesPage() {
       setMsg(`保存失败: ${err}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleResetDefaults = async () => {
+    if (
+      !window.confirm(
+        "确定要恢复默认设置吗？角色权限将恢复默认映射，成员组与成员个人权限将被清空。",
+      )
+    )
+      return;
+    setResetting(true);
+    setMsg("");
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>(
+        "/admin/permissions/reset",
+        { method: "POST" },
+      );
+      if (!res.success) {
+        setMsg(`恢复失败: ${res.message}`);
+        return;
+      }
+      setMsg(res.message || "已恢复默认设置");
+      await load();
+    } catch (err) {
+      setMsg(`恢复失败: ${err}`);
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -402,8 +446,15 @@ export default function AdminRolesPage() {
         />
       </div>
 
-      {/* Save button */}
-      <div className="mt-6 flex justify-end">
+      {/* Actions */}
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          onClick={handleResetDefaults}
+          disabled={resetting}
+          className="px-6 py-2 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {resetting ? "恢复中..." : "恢复默认设置"}
+        </button>
         <button
           onClick={handleSave}
           disabled={saving}

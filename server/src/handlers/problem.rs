@@ -55,8 +55,22 @@ pub async fn get_problems(
     } else {
         false
     };
-    let is_member = if let Some((_, ref user)) = &current_user {
-        user.team_status == "joined"
+    // 细分后的题目浏览权限：待审核 / 已通过 / 公开
+    let can_view_pending = if let Some((_, ref user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::VIEW_PENDING_PROBLEMS).await
+    } else {
+        false
+    };
+    let can_view_approved = if let Some((_, ref user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::VIEW_APPROVED_PROBLEMS).await
+    } else {
+        false
+    };
+    // 公开题目沿用原有匿名可见行为：未登录也允许浏览公开题目。
+    let can_view_public = if current_user.is_none() {
+        true
+    } else if let Some((_, ref user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::VIEW_PUBLIC_PROBLEMS).await
     } else {
         false
     };
@@ -105,26 +119,34 @@ pub async fn get_problems(
     sql.push_str(" AND (p.status != 'returned' OR p.author_id = ?)");
     binds.push(current_uid.clone().unwrap_or_default());
 
-    // Filter 1-4: Role-based access control
+    // Filter 1-4: 按细分后的浏览权限判断可见性
     if !skip_all_filters {
-        if let Some(uid) = &current_uid {
-            if is_member {
-                // Members see: published, approved, pending, problems they authored,
-                // and problems where they're in visible_to
-                sql.push_str(
-                    " AND (p.status IN ('published','approved','pending')\
-                     OR p.author_id = ?\
-                     OR EXISTS (SELECT 1 FROM json_each(p.visible_to) WHERE value = ?))",
-                );
-                binds.push(uid.clone()); // for p.author_id = ?
-                binds.push(uid.clone()); // for json_each visible_to
-            } else {
-                // Logged-in non-members (guests): only published
-                sql.push_str(" AND p.status = 'published'");
-            }
+        let mut status_clauses: Vec<String> = Vec::new();
+        if can_view_public {
+            status_clauses.push("p.status = 'published'".to_string());
+        }
+        if can_view_approved {
+            status_clauses.push("p.status = 'approved'".to_string());
+        }
+        // 待审核题目：有浏览待审核权限的用户可见；作者与可见名单成员始终可见。
+        if can_view_pending {
+            status_clauses.push("p.status = 'pending'".to_string());
+        } else if let Some(uid) = &current_uid {
+            status_clauses.push(
+                "(p.status = 'pending' AND (p.author_id = ? OR EXISTS \
+                 (SELECT 1 FROM json_each(p.visible_to) WHERE value = ?)))"
+                    .to_string(),
+            );
+            binds.push(uid.clone());
+            binds.push(uid.clone());
+        }
+
+        if status_clauses.is_empty() {
+            sql.push_str(" AND 1 = 0");
         } else {
-            // Unauthenticated users: only published
-            sql.push_str(" AND p.status = 'published'");
+            sql.push_str(" AND (");
+            sql.push_str(&status_clauses.join(" OR "));
+            sql.push_str(")");
         }
     }
 
@@ -257,25 +279,22 @@ pub async fn get_problems(
                     if skip_all_filters {
                         return true;
                     }
-                    // Role-based access (filters 1-4)
-                    if is_member {
-                        let is_author = current_uid.as_ref().is_some_and(|uid| p.is_author(uid));
-                        let ok = p.status == "published"
-                            || p.status == "approved"
-                            || p.status == "pending"
-                            || is_author
-                            || current_uid
-                                .as_ref()
-                                .is_some_and(|uid| p.visible_to.contains(uid));
-                        if !ok {
-                            return false;
+                    // Role-based access: 按细分后的浏览权限判断可见性
+                    let is_author = current_uid.as_ref().is_some_and(|uid| p.is_author(uid));
+                    let visible = match p.status.as_str() {
+                        "published" => can_view_public,
+                        "approved" => can_view_approved,
+                        "pending" => {
+                            can_view_pending
+                                || is_author
+                                || current_uid
+                                    .as_ref()
+                                    .is_some_and(|uid| p.visible_to.contains(uid))
                         }
-                    } else {
-                        // Guests (including unauthenticated): only published
-                        // This also covers logged-in non-members
-                        if p.status != "published" {
-                            return false;
-                        }
+                        _ => false,
+                    };
+                    if !visible {
+                        return false;
                     }
                     // Filter 5: search on title
                     if let Some(q) = &search_q {
@@ -425,6 +444,24 @@ pub async fn get_problem_detail(
     } else {
         false
     };
+    // 细分后的浏览权限检查（公开题目对未登录用户沿用原匿名可见行为）
+    let can_view_pending = if let Some((_, ref user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::VIEW_PENDING_PROBLEMS).await
+    } else {
+        false
+    };
+    let can_view_approved = if let Some((_, ref user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::VIEW_APPROVED_PROBLEMS).await
+    } else {
+        false
+    };
+    let can_view_public = if current_user.is_none() {
+        true
+    } else if let Some((_, ref user)) = &current_user {
+        check_permission(&state, user, crate::types::perms::VIEW_PUBLIC_PROBLEMS).await
+    } else {
+        false
+    };
     let is_author = current_user
         .as_ref()
         .is_some_and(|(uid, _)| problem.is_author(uid));
@@ -435,10 +472,10 @@ pub async fn get_problem_detail(
 
     // Permission check
     let can_view = match problem.status.as_str() {
-        "published" => true,
-        "approved" => is_member_user || is_admin_user,
+        "published" => can_view_public,
+        "approved" => can_view_approved,
         "pending" => {
-            if is_admin_user {
+            if can_view_pending {
                 true
             } else if let Some((uid, _)) = &current_user {
                 // Author by user_id or display_name match

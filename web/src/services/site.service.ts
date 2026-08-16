@@ -4,6 +4,9 @@ export interface SiteInfo {
   name: string;
   description: string;
   version: string;
+  title?: string;
+  timezone?: string;
+  server_time?: number;
   showcase?: {
     problems: Record<string, any>[];
     contests: Record<string, any>[];

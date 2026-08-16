@@ -5,7 +5,7 @@ use toml_edit::{DocumentMut, Item, Value as TomlValue};
 use crate::error::{json_error, ErrorCode};
 use crate::state::resolve_config_path;
 use crate::state::AppState;
-use crate::types::DifficultyLevel;
+use crate::types::{DifficultyLevel, User};
 use crate::utils::AuthUser;
 
 // ============== Config Schema ==============
@@ -50,6 +50,9 @@ pub struct SiteSection {
     pub title: Option<String>,
     #[serde(default)]
     pub difficulty_order: Vec<String>,
+    /// 站点时区（如 "UTC+8"）
+    #[serde(default)]
+    pub timezone: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -123,6 +126,34 @@ fn write_config_raw(content: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 将角色默认权限写入 config.toml 的 [permissions.roles]（保留其他配置段）。
+fn write_role_permissions_to_config(
+    roles: &std::collections::HashMap<String, Vec<String>>,
+) -> Result<(), String> {
+    let raw = read_config_raw()?;
+    let mut doc = DocumentMut::from_str(&raw).map_err(|e| format!("配置文件格式错误: {}", e))?;
+    if doc.get("permissions").is_none() {
+        doc["permissions"] = Item::Table(toml_edit::Table::new());
+    }
+    {
+        let perms_root = doc["permissions"]
+            .as_table_mut()
+            .ok_or_else(|| "配置文件 [permissions] 段格式错误".to_string())?;
+        perms_root["roles"] = Item::Table(toml_edit::Table::new());
+        if let Some(roles_t) = perms_root.get_mut("roles").and_then(|s| s.as_table_mut()) {
+            for (role, perms) in roles {
+                if perms.is_empty() {
+                    continue;
+                }
+                let arr =
+                    toml_edit::Array::from_iter(perms.iter().map(|p| TomlValue::from(p.as_str())));
+                roles_t[role] = Item::Value(TomlValue::Array(arr));
+            }
+        }
+    }
+    write_config_raw(&doc.to_string())
+}
+
 /// Sync in-memory member_groups to [permissions.groups] in config.toml
 pub(super) async fn sync_groups_to_config(state: &AppState) {
     let groups = {
@@ -156,6 +187,7 @@ pub(super) async fn sync_groups_to_config(state: &AppState) {
                 name: String::new(),
                 title: None,
                 difficulty_order: vec![],
+                timezone: String::new(),
             },
             oauth: OAuthSection {
                 cp_client_id: String::new(),
@@ -444,6 +476,14 @@ fn parse_config(raw: &str) -> Result<ConfigResponse, String> {
                 }
             },
             difficulty_order: get_array("site", "difficulty_order"),
+            timezone: {
+                let t = get_str("site", "timezone");
+                if t.trim().is_empty() {
+                    "UTC+8".to_string()
+                } else {
+                    t
+                }
+            },
         },
         oauth: OAuthSection {
             cp_client_id: get_str("oauth", "cp_client_id"),
@@ -490,6 +530,18 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
         set_str(t, "password", &payload.admin.password);
         set_str(t, "display_name", &payload.admin.display_name);
     }
+    if !doc.contains_key("site")
+        && (!payload.site.name.trim().is_empty()
+            || !payload.site.timezone.trim().is_empty()
+            || !payload.site.difficulty_order.is_empty()
+            || payload
+                .site
+                .title
+                .as_deref()
+                .is_some_and(|t| !t.trim().is_empty()))
+    {
+        doc["site"] = Item::Table(toml_edit::Table::new());
+    }
     if let Some(t) = doc.get_mut("site").and_then(|s| s.as_table_mut()) {
         set_str(t, "name", &payload.site.name);
         match &payload.site.title {
@@ -510,6 +562,12 @@ fn apply_config(raw: &str, payload: &UpdateConfigPayload) -> Result<String, Stri
                     .map(|s| toml_edit::Value::from(s.as_str())),
             );
             t["difficulty_order"] = Item::Value(toml_edit::Value::Array(arr));
+        }
+        // Write timezone
+        if payload.site.timezone.trim().is_empty() {
+            t.remove("timezone");
+        } else {
+            set_str(t, "timezone", payload.site.timezone.trim());
         }
     }
     if let Some(t) = doc.get_mut("oauth").and_then(|s| s.as_table_mut()) {
@@ -789,6 +847,10 @@ pub async fn update_config(
             if !payload.site.difficulty_order.is_empty() {
                 *state.difficulty_order.write().await = payload.site.difficulty_order.clone();
             }
+            // Also update site timezone in-memory so it applies immediately
+            if !payload.site.timezone.trim().is_empty() {
+                *state.site_timezone.write().await = payload.site.timezone.trim().to_string();
+            }
             // Update in-memory discussion_tags and discussion_emojis immediately
             {
                 let mut tags = state.discussion_tags.write().await;
@@ -876,6 +938,50 @@ pub async fn update_config(
         }
         Err(e) => Ok(json_error(ErrorCode::EXPORT_FAILED, e)),
     }
+}
+
+/// POST /api/admin/permissions/reset
+/// 将基本权限恢复为系统默认：角色权限恢复默认映射，成员组与成员个人权限清空。
+pub async fn reset_permissions(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, crate::types::PERM_WILDCARD)
+        .await?;
+
+    let defaults = crate::types::default_role_permissions();
+
+    // 1. 角色权限恢复默认
+    *state.role_permissions.write().await = defaults.clone();
+
+    // 2. 成员组权限清空（保留成员组本身）
+    {
+        let mut groups = state.member_groups.write().await;
+        for group in groups.values_mut() {
+            group.permissions.clear();
+        }
+    }
+
+    // 3. 成员个人额外权限清空
+    {
+        let users: Vec<User> = state.users.read().await.values().cloned().collect();
+        for mut user in users {
+            if !user.user_permissions.is_empty() {
+                user.user_permissions.clear();
+                state.upsert_user(&user).await;
+            }
+        }
+    }
+
+    // 4. 持久化：写入默认角色权限到 config.toml，并同步成员组
+    if let Err(e) = write_role_permissions_to_config(&defaults) {
+        return Ok(json_error(ErrorCode::SITE_CONFIG_INVALID, e));
+    }
+    sync_groups_to_config(&state).await;
+
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "基本权限已恢复为默认设置"}),
+    ))
 }
 
 // ============== Admin Initialization ==============

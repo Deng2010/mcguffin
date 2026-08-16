@@ -38,15 +38,18 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   accountLogin: async (identifier, password) => {
     try {
-      const body: Record<string, any> = { password };
-      if (identifier.trim()) {
-        body.identifier = identifier.trim();
+      const trimmed = identifier.trim();
+      if (!trimmed) {
+        return { success: false, message: "请输入账户名或显示名称" };
       }
       const res = await apiFetch<{
         success: boolean;
         message: string;
         token?: string;
-      }>("/auth/login", { method: "POST", body: JSON.stringify(body) });
+      }>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ identifier: trimmed, password }),
+      });
       if (res.success && res.token) {
         setToken(res.token);
         await get().refreshUser();

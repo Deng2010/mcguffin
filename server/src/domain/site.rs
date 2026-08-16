@@ -13,6 +13,11 @@ pub struct SiteInfo {
     pub showcase_problem_ids: Vec<String>,
     #[serde(default)]
     pub showcase_contest_ids: Vec<String>,
+    /// 站点时区（如 "UTC+8"）
+    #[serde(default)]
+    pub timezone: String,
+    /// 服务器当前时间（Unix 毫秒），用于判定比赛状态。
+    pub server_time: i64,
 }
 
 #[derive(Deserialize)]
@@ -34,11 +39,14 @@ mod tests {
             difficulty_order: vec![],
             showcase_problem_ids: vec![],
             showcase_contest_ids: vec![],
+            timezone: "UTC+8".to_string(),
+            server_time: 0,
         };
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("\"name\":\"My Site\""));
         assert!(json.contains("\"version\":\"1.0.0\""));
         assert!(json.contains("\"description\":\"A site\""));
         assert!(json.contains("\"title\":\"My Site\""));
+        assert!(json.contains("\"timezone\":\"UTC+8\""));
     }
 }

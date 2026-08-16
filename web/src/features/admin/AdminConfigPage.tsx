@@ -62,6 +62,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
   const [displayName, setDisplayName] = useState("");
   const [siteName, setSiteName] = useState("");
   const [siteTitle, setSiteTitle] = useState("");
+  const [siteTimezone, setSiteTimezone] = useState("UTC+8");
   const [cpClientId, setCpClientId] = useState("");
   const [cpClientSecret, setCpClientSecret] = useState("");
   const [difficulties, setDifficulties] = useState<DifficultyEntry[]>([]);
@@ -98,6 +99,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       setDisplayName(res.config.admin.display_name);
       setSiteName(res.config.site.name);
       setSiteTitle(res.config.site.title ?? "");
+      setSiteTimezone(res.config.site.timezone ?? "UTC+8");
       setCpClientId(res.config.oauth.cp_client_id);
       setCpClientSecret(res.config.oauth.cp_client_secret);
       setBackupInterval(res.config.backup?.interval_minutes ?? 60);
@@ -229,6 +231,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
               name: siteName,
               title: siteTitle || undefined,
               difficulty_order: order,
+              timezone: siteTimezone || "UTC+8",
             },
             oauth: {
               cp_client_id: cpClientId,
@@ -315,6 +318,8 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
     setSiteName,
     siteTitle,
     setSiteTitle,
+    siteTimezone,
+    setSiteTimezone,
     cpClientId,
     setCpClientId,
     cpClientSecret,

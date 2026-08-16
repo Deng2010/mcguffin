@@ -6,6 +6,7 @@ import { apiFetch } from "../../services/api";
 import MarkdownRenderer from "../../components/MarkdownRenderer";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
+import { contestStatus as calcContestStatus } from "../../utils/time";
 import type { Announcement } from "../../types";
 import { useToast } from "../../errors/ToastContext";
 
@@ -41,24 +42,24 @@ interface ProblemItem {
 function contestStatus(
   start: string,
   end: string,
+  serverNowMs: number | null,
+  timezone?: string | null,
 ): { label: string; color: string } {
-  const now = new Date();
-  const s = new Date(start);
-  const e = new Date(end);
-  if (now < s)
-    return {
-      label: "未开始",
-      color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
-    };
-  if (now > e)
+  const status = calcContestStatus(start, end, serverNowMs, timezone);
+  if (status === "ended")
     return {
       label: "已结束",
       color: "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
     };
+  if (status === "running")
+    return {
+      label: "进行中",
+      color:
+        "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+    };
   return {
-    label: "进行中",
-    color:
-      "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300",
+    label: "未开始",
+    color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
   };
 }
 
@@ -185,7 +186,12 @@ function CompactProblemCard({
 export default function ShowcasePage() {
   const { user, hasPermission } = useAuthStore();
   const toast = useToast();
-  const { siteInfo, updateDescription, refresh: refreshSite } = useSiteStore();
+  const {
+    siteInfo,
+    updateDescription,
+    refresh: refreshSite,
+    getServerNow,
+  } = useSiteStore();
   const [allContests, setAllContests] = useState<ContestItem[]>([]);
   const [allProblems, setAllProblems] = useState<ProblemItem[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -690,7 +696,12 @@ export default function ShowcasePage() {
           </div>
           <div className="space-y-4">
             {showcaseContests.map((c) => {
-              const status = contestStatus(c.start_time, c.end_time);
+              const status = contestStatus(
+                c.start_time,
+                c.end_time,
+                getServerNow(),
+                siteInfo?.timezone,
+              );
               const cProblems = contestProblems[c.id] || [];
               return (
                 <div key={c.id} className="mg-box-shadow p-5">

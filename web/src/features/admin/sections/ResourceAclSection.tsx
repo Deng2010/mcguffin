@@ -65,6 +65,7 @@ export default function ResourceAclSection() {
     Record<string, { visible_to: string[]; editable_by: string[] }>
   >({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -75,6 +76,35 @@ export default function ResourceAclSection() {
       setMsg(`加载失败: ${err}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetDefaults = async () => {
+    if (
+      !window.confirm(
+        "确定要恢复资源权限默认设置吗？所有资源的可见成员和可编辑成员将被清空（即按默认权限判断）。",
+      )
+    )
+      return;
+    setResetting(true);
+    setMsg("");
+    try {
+      const res = await apiFetch<{ success: boolean; message: string }>(
+        "/admin/acl/reset",
+        { method: "POST" },
+      );
+      if (!res.success) {
+        setMsg(res.message || "恢复失败");
+        return;
+      }
+      setMsg(res.message || "资源权限已恢复默认");
+      setEditingAcl(new Set());
+      setAclEdits({});
+      await loadData();
+    } catch (err) {
+      setMsg(`恢复失败: ${err}`);
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -259,9 +289,18 @@ export default function ResourceAclSection() {
         </div>
       )}
 
-      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-        按资源类型和状态分组，可逐资源设置哪些成员可查看（visible_to）和可编辑（editable_by）。超级管理员不受限制。
-      </p>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          按资源类型和状态分组，可逐资源设置哪些成员可查看（visible_to）和可编辑（editable_by）。超级管理员不受限制。
+        </p>
+        <button
+          onClick={handleResetDefaults}
+          disabled={resetting}
+          className="shrink-0 ml-4 px-4 py-1.5 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {resetting ? "恢复中..." : "恢复默认设置"}
+        </button>
+      </div>
 
       <div className="space-y-4">
         {resourceTypes.map(({ type, label, items, statusLabels }) => {
@@ -391,7 +430,7 @@ export default function ResourceAclSection() {
                                         </span>
                                         {currentV.length === 0 ? (
                                           <span className="text-gray-400">
-                                            全部
+                                            默认
                                           </span>
                                         ) : (
                                           currentV.map((uid, i) => {

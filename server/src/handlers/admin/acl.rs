@@ -167,3 +167,45 @@ pub async fn set_resource_acl(
         serde_json::json!({"success": true, "message": "访问控制已更新"}),
     ))
 }
+
+/// POST /api/admin/acl/reset — 将所有资源的可见/可编辑 ACL 恢复为默认（空）。
+pub async fn reset_resource_acl(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+
+    // Problem ACL
+    {
+        let problems: Vec<_> = state.problems.read().await.values().cloned().collect();
+        for mut p in problems {
+            p.visible_to.clear();
+            p.editable_by.clear();
+            state.insert_problem(&p).await;
+        }
+    }
+
+    // Contest ACL
+    {
+        let contests: Vec<_> = state.contests.read().await.values().cloned().collect();
+        for mut c in contests {
+            c.visible_to.clear();
+            c.editable_by.clear();
+            state.insert_contest(&c).await;
+        }
+    }
+
+    // Post / discussion ACL
+    {
+        let posts: Vec<_> = state.posts.read().await.values().cloned().collect();
+        for mut p in posts {
+            p.visible_to.clear();
+            p.editable_by.clear();
+            state.upsert_post(&p).await;
+        }
+    }
+
+    Ok(Json(
+        serde_json::json!({"success": true, "message": "资源权限已恢复为默认设置"}),
+    ))
+}

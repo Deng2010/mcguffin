@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
+import { useSiteStore } from "../../stores/siteStore";
 import { apiFetch } from "../../services/api";
 import MarkdownEditor from "../../components/MarkdownEditor";
+import DateTimePicker from "../../components/DateTimePicker";
+import { buildContestTime, splitContestTime } from "../../utils/time";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
 import { useToast } from "../../errors/ToastContext";
 
@@ -32,6 +35,7 @@ export default function ContestDetailPage() {
   const { id } = useParams<{ id: string }>();
   const toast = useToast();
   const { user, hasPermission } = useAuthStore();
+  const { siteInfo } = useSiteStore();
   const { difficultyMap } = useDifficulties();
   const isAdmin = hasPermission("approve_all_problems");
   const canEdit =
@@ -45,8 +49,12 @@ export default function ContestDetailPage() {
   // Edit state
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState("");
-  const [editStartTime, setEditStartTime] = useState("");
-  const [editEndTime, setEditEndTime] = useState("");
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editStartHour, setEditStartHour] = useState(0);
+  const [editStartMinute, setEditStartMinute] = useState(0);
+  const [editEndDate, setEditEndDate] = useState("");
+  const [editEndHour, setEditEndHour] = useState(0);
+  const [editEndMinute, setEditEndMinute] = useState(0);
   const [editDescription, setEditDescription] = useState("");
   const [editLink, setEditLink] = useState("");
   const [editProblems, setEditProblems] = useState<ContestProblem[]>([]);
@@ -83,8 +91,14 @@ export default function ContestDetailPage() {
   const openEdit = () => {
     if (!contest) return;
     setEditName(contest.name);
-    setEditStartTime(contest.start_time);
-    setEditEndTime(contest.end_time);
+    const start = splitContestTime(contest.start_time, siteInfo?.timezone);
+    const end = splitContestTime(contest.end_time, siteInfo?.timezone);
+    setEditStartDate(start.date);
+    setEditStartHour(start.hour);
+    setEditStartMinute(start.minute);
+    setEditEndDate(end.date);
+    setEditEndHour(end.hour);
+    setEditEndMinute(end.minute);
     setEditDescription(contest.description);
     setEditLink(contest.link || "");
     setEditProblemsReady(false);
@@ -112,15 +126,16 @@ export default function ContestDetailPage() {
   };
 
   const handleSave = async () => {
-    if (
-      !id ||
-      !editName.trim() ||
-      !editStartTime.trim() ||
-      !editEndTime.trim()
-    ) {
+    if (!id || !editName.trim() || !editStartDate || !editEndDate) {
       setError("请填写比赛名称、开始时间和结束时间");
       return;
     }
+    const startTime = buildContestTime(
+      editStartDate,
+      editStartHour,
+      editStartMinute,
+    );
+    const endTime = buildContestTime(editEndDate, editEndHour, editEndMinute);
     setSaving(true);
     setError("");
     try {
@@ -128,8 +143,8 @@ export default function ContestDetailPage() {
         method: "PUT",
         body: JSON.stringify({
           name: editName,
-          start_time: editStartTime,
-          end_time: editEndTime,
+          start_time: startTime,
+          end_time: endTime,
           description: editDescription,
           link: editLink || undefined,
         }),
@@ -352,42 +367,36 @@ export default function ContestDetailPage() {
           编辑比赛 — {contest.name}
         </h2>
 
-        <div className="grid grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">
-              比赛名称
-            </label>
-            <input
-              type="text"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">
-              开始时间
-            </label>
-            <input
-              type="text"
-              value={editStartTime}
-              onChange={(e) => setEditStartTime(e.target.value)}
-              className={inputClass}
-              placeholder="2026-05-01 10:00"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">
-              结束时间
-            </label>
-            <input
-              type="text"
-              value={editEndTime}
-              onChange={(e) => setEditEndTime(e.target.value)}
-              className={inputClass}
-              placeholder="2026-05-01 12:00"
-            />
-          </div>
+        <div className="mb-4">
+          <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">
+            比赛名称
+          </label>
+          <input
+            type="text"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <DateTimePicker
+            label="开始时间"
+            date={editStartDate}
+            hour={editStartHour}
+            minute={editStartMinute}
+            onDateChange={setEditStartDate}
+            onHourChange={setEditStartHour}
+            onMinuteChange={setEditStartMinute}
+          />
+          <DateTimePicker
+            label="结束时间"
+            date={editEndDate}
+            hour={editEndHour}
+            minute={editEndMinute}
+            onDateChange={setEditEndDate}
+            onHourChange={setEditEndHour}
+            onMinuteChange={setEditEndMinute}
+          />
         </div>
         <div className="mb-4">
           <label className="block text-xs font-medium mb-1 text-gray-600 dark:text-gray-300">

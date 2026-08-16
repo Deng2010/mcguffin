@@ -16,6 +16,8 @@ pub async fn get_site_info(State(state): State<AppState>) -> Json<SiteInfo> {
         difficulty_order,
         showcase_problem_ids: state.showcase_problem_ids.read().await.clone(),
         showcase_contest_ids: state.showcase_contest_ids.read().await.clone(),
+        timezone: state.site_timezone.read().await.clone(),
+        server_time: chrono::Utc::now().timestamp_millis(),
     })
 }
 

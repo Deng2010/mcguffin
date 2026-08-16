@@ -12,12 +12,17 @@ export interface SiteInfo {
   difficulty_order: string[];
   showcase_problem_ids: string[];
   showcase_contest_ids: string[];
+  timezone: string;
+  server_time: number;
 }
 
 // ============== State & Actions ==============
 
 interface SiteState {
   siteInfo: SiteInfo | null;
+  /** 记录最近一次拿到 server_time 的客户端时间，用于估算当前服务器时间 */
+  serverTimeFetchedAt: number;
+  getServerNow: () => number | null;
   updateDescription: (
     description: string,
   ) => Promise<{ success: boolean; message: string }>;
@@ -32,18 +37,32 @@ const DEFAULT_SITE_INFO: SiteInfo = {
   difficulty_order: [],
   showcase_problem_ids: [],
   showcase_contest_ids: [],
+  timezone: "UTC+8",
+  server_time: Date.now(),
 };
+
+export const DEFAULT_TIMEZONE = "UTC+8";
 
 export const useSiteStore = create<SiteState>()((set, get) => ({
   siteInfo: null,
+  serverTimeFetchedAt: 0,
+
+  getServerNow: () => {
+    const { siteInfo, serverTimeFetchedAt } = get();
+    if (!siteInfo || !serverTimeFetchedAt) return null;
+    return siteInfo.server_time + (Date.now() - serverTimeFetchedAt);
+  },
 
   refresh: async () => {
     try {
       const info = await apiFetch<SiteInfo>("/site/info");
-      set({ siteInfo: info });
+      set({ siteInfo: info, serverTimeFetchedAt: Date.now() });
       document.title = info.title || "McGuffin";
     } catch {
-      set({ siteInfo: DEFAULT_SITE_INFO });
+      set({
+        siteInfo: DEFAULT_SITE_INFO,
+        serverTimeFetchedAt: Date.now(),
+      });
       document.title = "McGuffin";
     }
   },

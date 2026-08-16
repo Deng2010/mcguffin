@@ -48,9 +48,12 @@ export function toastInfo(message: string) {
 }
 
 const TYPE_STYLES: Record<ToastType, string> = {
-  success: "border-green-500 bg-white dark:bg-gray-800",
-  error: "border-red-500 bg-white dark:bg-gray-800",
-  info: "border-blue-500 bg-white dark:bg-gray-800",
+  success:
+    "border bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300",
+  error:
+    "border bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300",
+  info:
+    "border bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300",
 };
 
 const ICONS: Record<ToastType, string> = {
@@ -112,7 +115,7 @@ function ToastCard({ toast, onClose }: { toast: ToastItem; onClose: () => void }
   return (
     <div
       role="alert"
-      className={`rounded-md border-l-4 shadow-lg px-4 py-3 text-sm text-gray-800 dark:text-gray-100 ${TYPE_STYLES[toast.type]}`}
+      className={`shadow-lg px-4 py-3 text-sm ${TYPE_STYLES[toast.type]}`}
     >
       <div className="flex items-start gap-2">
         <span className="font-bold flex-shrink-0">{ICONS[toast.type]}</span>

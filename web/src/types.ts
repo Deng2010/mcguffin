@@ -27,8 +27,12 @@ export type Permission =
   | "manage_members"
   /** Submit problems */
   | "submit_problem"
-  /** View problem list and details (all problems, regardless of per-problem ACL) */
-  | "view_all_problems"
+  /** View pending (待审核) problems */
+  | "view_pending_problems"
+  /** View approved (已通过) problems */
+  | "view_approved_problems"
+  /** View published/public (公开) problems */
+  | "view_public_problems"
   /** Review/approve any problem */
   | "approve_all_problems"
   /** Manage all contests (create/edit/delete/toggle visibility) */
@@ -64,7 +68,9 @@ export const defaultRolePermissions: Record<string, Permission[]> = {
     "manage_team",
     "manage_members",
     "submit_problem",
-    "view_all_problems",
+    "view_pending_problems",
+    "view_approved_problems",
+    "view_public_problems",
     "approve_all_problems",
     "manage_all_contests",
     "view_all_contests",
@@ -84,7 +90,9 @@ export const defaultRolePermissions: Record<string, Permission[]> = {
     "manage_team",
     "manage_members",
     "submit_problem",
-    "view_all_problems",
+    "view_pending_problems",
+    "view_approved_problems",
+    "view_public_problems",
     "approve_all_problems",
     "manage_all_contests",
     "view_all_contests",
@@ -101,7 +109,8 @@ export const defaultRolePermissions: Record<string, Permission[]> = {
     "view_showcase",
     "view_team",
     "submit_problem",
-    "view_all_problems",
+    "view_approved_problems",
+    "view_public_problems",
     "view_all_contests",
     "view_public_contests",
     "view_all_posts",
@@ -109,6 +118,7 @@ export const defaultRolePermissions: Record<string, Permission[]> = {
   guest: [
     "view_showcase",
     "apply_join",
+    "view_public_problems",
     "view_public_contests",
     "view_all_posts",
   ],

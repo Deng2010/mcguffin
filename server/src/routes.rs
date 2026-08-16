@@ -9,9 +9,10 @@ use crate::handlers::admin::{
     admin_change_user_role, admin_list_users, admin_remove_user, create_backup, create_group,
     delete_backup, delete_group, download_backup, export_config, export_data, export_db,
     get_acl_resources, get_audit_log, get_config, get_showcase_config, import_config, import_data,
-    init_admin, init_admin_status, list_backups, list_groups, restart_service, restore_backup,
-    restore_upload_backup, set_problem_acl, set_resource_acl, set_user_groups,
-    set_user_permissions, update_config, update_group, update_showcase_config,
+    init_admin, init_admin_status, list_backups, list_groups, reset_permissions,
+    reset_resource_acl, restart_service, restore_backup, restore_upload_backup, set_problem_acl,
+    set_resource_acl, set_user_groups, set_user_permissions, update_config, update_group,
+    update_showcase_config,
 };
 use crate::handlers::auth::{
     get_permissions, login, oauth_authorize, oauth_callback, refresh_token,
@@ -162,6 +163,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/notifications/read-all", post(mark_all_notifications_read))
         // Admin config
         .route("/admin/config", get(get_config).put(update_config))
+        .route("/admin/permissions/reset", post(reset_permissions))
         .route("/admin/init-status", get(init_admin_status))
         .route("/admin/init", post(init_admin))
         .route("/admin/restart", post(restart_service))
@@ -205,6 +207,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/admin/problems/{problem_id}/acl", put(set_problem_acl))
         // Admin unified resource ACL
         .route("/admin/acl/resources", get(get_acl_resources))
+        .route("/admin/acl/reset", post(reset_resource_acl))
         .route(
             "/admin/acl/{resource_type}/{resource_id}",
             put(set_resource_acl),

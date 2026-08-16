@@ -87,6 +87,8 @@ pub struct AppState {
     pub site_title: String,
     pub site_version: String,
     pub site_description: Arc<RwLock<String>>,
+    /// 站点时区（如 "UTC+8"），保存后立即生效。
+    pub site_timezone: Arc<RwLock<String>>,
     /// Public-facing site URL (e.g. https://lba-oi.team)
     pub site_url: String,
     /// Path to the SQLite database file

@@ -12,7 +12,9 @@ describe("defaultRolePermissions", () => {
       "manage_team",
       "manage_members",
       "submit_problem",
-      "view_all_problems",
+      "view_pending_problems",
+      "view_approved_problems",
+      "view_public_problems",
       "approve_all_problems",
       "manage_all_contests",
       "access_admin",
@@ -42,8 +44,10 @@ describe("defaultRolePermissions", () => {
     expect(perms).toContain("view_showcase");
     expect(perms).toContain("view_team");
     expect(perms).toContain("submit_problem");
-    expect(perms).toContain("view_all_problems");
-    // Member should NOT have admin permissions
+    expect(perms).toContain("view_approved_problems");
+    expect(perms).toContain("view_public_problems");
+    // Member should NOT have pending view or admin permissions
+    expect(perms).not.toContain("view_pending_problems");
     expect(perms).not.toContain("approve_all_problems");
     expect(perms).not.toContain("manage_team");
     expect(perms).not.toContain("manage_all_contests");
@@ -54,7 +58,9 @@ describe("defaultRolePermissions", () => {
     const perms = defaultRolePermissions.guest;
     expect(perms).toContain("view_showcase");
     expect(perms).toContain("apply_join");
-    expect(perms).not.toContain("view_all_problems");
+    expect(perms).toContain("view_public_problems");
+    expect(perms).not.toContain("view_pending_problems");
+    expect(perms).not.toContain("view_approved_problems");
     expect(perms).not.toContain("submit_problem");
     expect(perms).not.toContain("view_team");
   });

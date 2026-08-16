@@ -29,6 +29,21 @@ export default function SiteSection() {
           placeholder="与站点名称相同"
         />
       </div>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+          站点时区
+        </label>
+        <input
+          type="text"
+          value={c.siteTimezone}
+          onChange={(e) => c.setSiteTimezone(e.target.value)}
+          className={inputClass}
+          placeholder="如：UTC+8"
+        />
+        <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+          比赛在创建/编辑时选择的日期和时间按此时区解释，例如 UTC+8、UTC-5:30。
+        </p>
+      </div>
     </div>
   );
 }

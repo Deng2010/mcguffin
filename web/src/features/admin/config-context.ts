@@ -3,7 +3,12 @@ import { createContext } from "react";
 export interface ConfigData {
   server: { site_url: string; port: number };
   admin: { password: string; display_name: string };
-  site: { name: string; title?: string | null; difficulty_order: string[] };
+  site: {
+    name: string;
+    title?: string | null;
+    difficulty_order: string[];
+    timezone?: string;
+  };
   oauth: { cp_client_id: string; cp_client_secret: string };
   backup: {
     interval_minutes: number;
@@ -47,6 +52,8 @@ export interface ConfigCtx {
   setSiteName: (v: string) => void;
   siteTitle: string;
   setSiteTitle: (v: string) => void;
+  siteTimezone: string;
+  setSiteTimezone: (v: string) => void;
   cpClientId: string;
   setCpClientId: (v: string) => void;
   cpClientSecret: string;
@@ -90,7 +97,9 @@ export const PERM_LABELS: Record<string, string> = {
   manage_team: "审批入队",
   manage_members: "管理成员",
   submit_problem: "投稿题目",
-  view_all_problems: "浏览所有题目",
+  view_pending_problems: "浏览待审核题目",
+  view_approved_problems: "浏览已通过题目",
+  view_public_problems: "浏览公开题目",
   approve_all_problems: "审核所有题目",
   manage_all_contests: "管理所有比赛",
   access_admin: "进入后台",
