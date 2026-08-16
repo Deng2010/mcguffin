@@ -102,13 +102,21 @@ pub async fn login(
 
     match found {
         Some(user) => {
+            // 超级管理员密码兼容两种来源：已初始化的 bcrypt 哈希，或 config.toml 中的 admin.password。
+            let configured_admin_password = if user.id == ADMIN_USER_ID {
+                Some(state.admin_password.read().await.clone())
+            } else {
+                None
+            };
+            let password_matches_config = configured_admin_password
+                .as_deref()
+                .is_some_and(|pw| payload.password == pw);
             let password_ok = match &user.password_hash {
-                Some(hash) => bcrypt::verify(&payload.password, hash).unwrap_or(false),
-                // 若用户未设密码哈希，管理员（admin）可回退到配置密码
-                None if user.id == ADMIN_USER_ID => {
-                    payload.password == *state.admin_password.read().await
+                Some(hash) => {
+                    bcrypt::verify(&payload.password, hash).unwrap_or(false)
+                        || password_matches_config
                 }
-                None => false,
+                None => password_matches_config,
             };
             if password_ok {
                 let session_token = state.create_session(&user.id).await;
