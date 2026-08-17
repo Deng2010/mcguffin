@@ -192,7 +192,7 @@ mcguffin/
 | `MANAGE_TEAM` | `manage_team` | 审核入队申请 |
 | `MANAGE_MEMBERS` | `manage_members` | 踢出成员/变更角色 |
 | `SUBMIT_PROBLEM` | `submit_problem` | 投稿题目 |
-| `VIEW_PENDING_PROBLEMS` | `view_pending_problems` | 查看待审核题目 |
+| `VIEW_PENDING_PROBLEMS` | `view_pending_problems` | 查看所有待审核题目 |
 | `VIEW_APPROVED_PROBLEMS` | `view_approved_problems` | 查看已通过题目 |
 | `VIEW_PUBLIC_PROBLEMS` | `view_public_problems` | 查看公开题目 |
 | `APPROVE_ALL_PROBLEMS` | `approve_all_problems` | 审核/批准题目 |

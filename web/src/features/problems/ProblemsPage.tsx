@@ -84,10 +84,14 @@ export default function ProblemsPage() {
     return problems.filter((p) => p.author_name === user.display_name);
   }, [problems, user]);
 
-  // Counts derived from already-loaded problems list (immediate, no extra API wait)
-  const pendingCount = useMemo(
-    () => problems.filter((p) => p.status === "pending").length,
+  // 按状态拆分的列表（基于已加载的问题列表）
+  const pendingList = useMemo(
+    () => problems.filter((p) => p.status === "pending"),
     [problems],
+  );
+  const ownPendingList = useMemo(
+    () => pendingList.filter((p) => user != null && p.author_id === user.id),
+    [pendingList, user],
   );
   const approvedList = useMemo(
     () => problems.filter((p) => p.status === "approved"),
@@ -101,6 +105,15 @@ export default function ProblemsPage() {
     () => problems.filter((p) => p.status === "returned"),
     [problems],
   );
+  const ownReturnedList = useMemo(
+    () => returnedList.filter((p) => user != null && p.author_id === user.id),
+    [returnedList, user],
+  );
+  // 拥有“浏览所有待审核题目”权限时展示全部；仅拥有投稿权限时只展示自己提交的题目。
+  const visiblePendingList = canViewPending ? pendingList : ownPendingList;
+  const visibleReturnedList = canViewPending ? returnedList : ownReturnedList;
+  const pendingCount = visiblePendingList.length;
+  const returnedCount = visibleReturnedList.length;
   const approvedCount = approvedList.length;
   const publishedCount = publishedList.length;
 
@@ -110,7 +123,7 @@ export default function ProblemsPage() {
   if (user) {
     tabs.push({ id: "mine", label: "我的题目", count: myProblems.length });
   }
-  if (canViewPending) {
+  if (canViewPending || canSubmit) {
     tabs.push({ id: "pending", label: "待审核", count: pendingCount });
   }
   if (canViewApproved) {
@@ -119,8 +132,8 @@ export default function ProblemsPage() {
   if (canViewPublic) {
     tabs.push({ id: "published", label: "已发布", count: publishedCount });
   }
-  if (canSubmit && returnedList.length > 0) {
-    tabs.push({ id: "returned", label: "已退回", count: returnedList.length });
+  if (canSubmit && returnedCount > 0) {
+    tabs.push({ id: "returned", label: "已退回", count: returnedCount });
   }
 
   const loadProblems = () => {
@@ -904,7 +917,7 @@ export default function ProblemsPage() {
   // ====== Tab: Pending ======
 
   const renderPending = () => {
-    const items = problems.filter((p) => p.status === "pending");
+    const items = visiblePendingList;
     if (items.length === 0)
       return (
         <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
@@ -1093,7 +1106,7 @@ export default function ProblemsPage() {
   // ====== Tab: Returned (已退回 — author only) ======
 
   const renderReturned = () => {
-    if (returnedList.length === 0)
+    if (visibleReturnedList.length === 0)
       return (
         <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
           暂无已退回题目
@@ -1101,7 +1114,7 @@ export default function ProblemsPage() {
       );
     return (
       <div className="space-y-4">
-        {returnedList.map((p) => (
+        {visibleReturnedList.map((p) => (
           <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">

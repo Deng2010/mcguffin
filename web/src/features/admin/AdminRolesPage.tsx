@@ -79,7 +79,7 @@ const PERM_LABELS: Record<string, string> = {
   manage_team: "审批入队",
   manage_members: "管理成员",
   submit_problem: "投稿题目",
-  view_pending_problems: "浏览待审核题目",
+  view_pending_problems: "浏览所有待审核题目",
   view_approved_problems: "浏览已通过题目",
   view_public_problems: "浏览公开题目",
   approve_all_problems: "审核所有题目",

@@ -22,7 +22,7 @@
 | `manage_team` | 审核入队申请 |
 | `manage_members` | 踢出成员/变更角色 |
 | `submit_problem` | 投稿题目 |
-| `view_pending_problems` | 浏览待审核题目 |
+| `view_pending_problems` | 浏览所有待审核题目 |
 | `view_approved_problems` | 浏览已通过题目 |
 | `view_public_problems` | 浏览公开题目 |
 | `approve_problem` | 审核题目 |
