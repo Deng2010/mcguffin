@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
 
 interface BackupEntry {
   name: string;
@@ -12,7 +13,7 @@ export default function AdminBackupsPage() {
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [msg, setMsg] = useState("");
+  const toast = useToast();
   const importFileRef = useRef<HTMLInputElement>(null);
   const importConfigRef = useRef<HTMLInputElement>(null);
 
@@ -24,7 +25,7 @@ export default function AdminBackupsPage() {
       );
       if (res.success) setBackups(res.backups);
     } catch (err) {
-      setMsg(`加载备份列表失败: ${err}`);
+      toast.error(`加载备份列表失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -35,7 +36,6 @@ export default function AdminBackupsPage() {
 
   const handleCreate = async () => {
     setCreating(true);
-    setMsg("");
     try {
       const res = await apiFetch<{
         success: boolean;
@@ -43,14 +43,13 @@ export default function AdminBackupsPage() {
         backup?: string;
       }>("/admin/backup", { method: "POST" });
       if (!res.success) {
-        setMsg(`备份失败: ${res.message}`);
+        toast.error(`备份失败: ${res.message}`);
         return;
       }
-      setMsg(`备份已创建: ${res.backup}`);
+      toast.success(`备份已创建: ${res.backup}`);
       load();
-      setTimeout(() => setMsg(""), 5000);
     } catch (err) {
-      setMsg(`备份失败: ${err}`);
+      toast.error(`备份失败: ${err}`);
     } finally {
       setCreating(false);
     }
@@ -63,10 +62,14 @@ export default function AdminBackupsPage() {
         `/admin/backup/restore/${encodeURIComponent(name)}`,
         { method: "POST" },
       );
-      setMsg(res.success ? `✅ ${res.message}` : `恢复失败: ${res.message}`);
-      if (res.success) load();
+      if (res.success) {
+        toast.success(res.message);
+        load();
+      } else {
+        toast.error(`恢复失败: ${res.message}`);
+      }
     } catch (err) {
-      setMsg(`恢复失败: ${err}`);
+      toast.error(`恢复失败: ${err}`);
     }
   };
 
@@ -77,10 +80,14 @@ export default function AdminBackupsPage() {
         `/admin/backup/${encodeURIComponent(name)}`,
         { method: "DELETE" },
       );
-      setMsg(res.success ? `已删除: ${name}` : `删除失败: ${res.message}`);
-      if (res.success) load();
+      if (res.success) {
+        toast.success(`已删除: ${name}`);
+        load();
+      } else {
+        toast.error(`删除失败: ${res.message}`);
+      }
     } catch (err) {
-      setMsg(`删除失败: ${err}`);
+      toast.error(`删除失败: ${err}`);
     }
   };
 
@@ -97,7 +104,7 @@ export default function AdminBackupsPage() {
         `/admin/backup/download/${encodeURIComponent(name)}`,
       );
       if (!res.success) {
-        setMsg(`下载失败: ${res.message}`);
+        toast.error(`下载失败: ${res.message}`);
         return;
       }
       const blob =
@@ -115,9 +122,9 @@ export default function AdminBackupsPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setMsg(`已下载: ${res.filename}`);
+      toast.success(`已下载: ${res.filename}`);
     } catch (err) {
-      setMsg(`下载失败: ${err}`);
+      toast.error(`下载失败: ${err}`);
     }
   };
 
@@ -125,7 +132,7 @@ export default function AdminBackupsPage() {
     try {
       const res = await apiFetch<any>(`/admin/export/${type}`);
       if (!res.success) {
-        setMsg(`导出失败: ${res.message}`);
+        toast.error(`导出失败: ${res.message}`);
         return;
       }
       const blob = new Blob([res.content!], { type: res.mime });
@@ -137,9 +144,9 @@ export default function AdminBackupsPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setMsg(`已导出: ${res.filename}`);
+      toast.success(`已导出: ${res.filename}`);
     } catch (err) {
-      setMsg(`导出失败: ${err}`);
+      toast.error(`导出失败: ${err}`);
     }
   };
 
@@ -147,7 +154,7 @@ export default function AdminBackupsPage() {
     try {
       const res = await apiFetch<any>("/admin/export/db");
       if (!res.success) {
-        setMsg(`导出失败: ${res.message}`);
+        toast.error(`导出失败: ${res.message}`);
         return;
       }
       const blob = new Blob(
@@ -162,9 +169,9 @@ export default function AdminBackupsPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      setMsg(`已导出: ${res.filename}`);
+      toast.success(`已导出: ${res.filename}`);
     } catch (err) {
-      setMsg(`导出失败: ${err}`);
+      toast.error(`导出失败: ${err}`);
     }
   };
 
@@ -191,7 +198,8 @@ export default function AdminBackupsPage() {
           body: JSON.stringify({ content, filename: file.name }),
           headers: { "Content-Type": "application/json" },
         });
-        setMsg(res.success ? `✅ ${res.message}` : `恢复失败: ${res.message}`);
+        if (res.success) toast.success(res.message);
+        else toast.error(`恢复失败: ${res.message}`);
       } else {
         const content = await file.text();
         res = await apiFetch<any>("/admin/import/data", {
@@ -199,11 +207,12 @@ export default function AdminBackupsPage() {
           body: JSON.stringify({ content }),
           headers: { "Content-Type": "application/json" },
         });
-        setMsg(res.success ? `✅ ${res.message}` : `导入失败: ${res.message}`);
+        if (res.success) toast.success(res.message);
+        else toast.error(`导入失败: ${res.message}`);
       }
       if (res.success) load();
     } catch (err) {
-      setMsg(`${isDb ? "恢复" : "导入"}失败: ${err}`);
+      toast.error(`${isDb ? "恢复" : "导入"}失败: ${err}`);
     }
     e.target.value = "";
   };
@@ -219,29 +228,16 @@ export default function AdminBackupsPage() {
         body: JSON.stringify({ content }),
         headers: { "Content-Type": "application/json" },
       });
-      setMsg(res.success ? `✅ ${res.message}` : `导入失败: ${res.message}`);
+      if (res.success) toast.success(res.message);
+      else toast.error(`导入失败: ${res.message}`);
     } catch (err) {
-      setMsg(`导入失败: ${err}`);
+      toast.error(`导入失败: ${err}`);
     }
     e.target.value = "";
   };
 
   return (
     <div>
-      {msg && (
-        <div
-          className={`mb-4 p-3 text-sm border ${
-            msg.startsWith("✅")
-              ? "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-              : msg.includes("失败")
-                ? "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-                : "bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-700"
-          }`}
-        >
-          {msg}
-        </div>
-      )}
-
       <div className="mg-box-shadow p-5 mb-6">
         <div className="flex items-center gap-3">
           <button

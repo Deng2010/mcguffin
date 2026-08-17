@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
 
 interface ConfigData {
   server: { site_url: string; port: number; data_file: string };
@@ -14,7 +15,7 @@ interface ConfigData {
 export default function AdminDiscussionsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
+  const toast = useToast();
   const [fullConfig, setFullConfig] = useState<ConfigData | null>(null);
 
   const [discussionTags, setDiscussionTags] = useState<
@@ -41,14 +42,14 @@ export default function AdminDiscussionsPage() {
         message?: string;
       }>("/admin/config");
       if (!res.success || !res.config) {
-        setMsg(`加载配置失败: ${res.message}`);
+        toast.error(`加载配置失败: ${res.message}`);
         return;
       }
       setFullConfig(res.config);
       setDiscussionTags(res.config.discussion_tags ?? {});
       setDiscussionEmojis(res.config.discussion_emojis ?? {});
     } catch (err) {
-      setMsg(`加载配置失败: ${err}`);
+      toast.error(`加载配置失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -97,7 +98,6 @@ export default function AdminDiscussionsPage() {
   const handleSave = async () => {
     if (!fullConfig) return;
     setSaving(true);
-    setMsg("");
     try {
       const res = await apiFetch<{ success: boolean; message: string }>(
         "/admin/config",
@@ -111,13 +111,12 @@ export default function AdminDiscussionsPage() {
         },
       );
       if (!res.success) {
-        setMsg(`保存失败: ${res.message}`);
+        toast.error(`保存失败: ${res.message}`);
         return;
       }
-      setMsg(res.message);
-      setTimeout(() => setMsg(""), 5000);
+      toast.success(res.message);
     } catch (err) {
-      setMsg(`保存失败: ${err}`);
+      toast.error(`保存失败: ${err}`);
     } finally {
       setSaving(false);
     }
@@ -133,18 +132,6 @@ export default function AdminDiscussionsPage() {
 
   return (
     <div>
-      {msg && (
-        <div
-          className={`mb-4 p-3 text-sm border ${
-            msg.includes("失败")
-              ? "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-              : "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-          }`}
-        >
-          {msg}
-        </div>
-      )}
-
       <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow p-5 mb-6">
         <section className="mb-10">
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">

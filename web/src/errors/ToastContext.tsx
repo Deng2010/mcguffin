@@ -48,12 +48,9 @@ export function toastInfo(message: string) {
 }
 
 const TYPE_STYLES: Record<ToastType, string> = {
-  success:
-    "border bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300",
-  error:
-    "border bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300",
-  info:
-    "border bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300",
+  success: "mg-toast-success",
+  error: "mg-toast-error",
+  info: "mg-toast-info",
 };
 
 const ICONS: Record<ToastType, string> = {
@@ -64,7 +61,9 @@ const ICONS: Record<ToastType, string> = {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
 
   const remove = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -79,7 +78,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (t: Omit<ToastItem, "id">) => {
       const id = nextId++;
       setToasts((prev) => [...prev.slice(-4), { ...t, id }]);
-      const timer = setTimeout(() => remove(id), t.type === "error" ? 8000 : 4000);
+      const timer = setTimeout(
+        () => remove(id),
+        t.type === "error" ? 8000 : 4000,
+      );
       timersRef.current.set(id, timer);
     },
     [remove],
@@ -103,19 +105,29 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)]">
         {toasts.map((toast) => (
-          <ToastCard key={toast.id} toast={toast} onClose={() => remove(toast.id)} />
+          <ToastCard
+            key={toast.id}
+            toast={toast}
+            onClose={() => remove(toast.id)}
+          />
         ))}
       </div>
     </ToastContext.Provider>
   );
 }
 
-function ToastCard({ toast, onClose }: { toast: ToastItem; onClose: () => void }) {
+function ToastCard({
+  toast,
+  onClose,
+}: {
+  toast: ToastItem;
+  onClose: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div
       role="alert"
-      className={`shadow-lg px-4 py-3 text-sm ${TYPE_STYLES[toast.type]}`}
+      className={`shadow-lg px-4 py-3 text-sm border ${TYPE_STYLES[toast.type]}`}
     >
       <div className="flex items-start gap-2">
         <span className="font-bold flex-shrink-0">{ICONS[toast.type]}</span>

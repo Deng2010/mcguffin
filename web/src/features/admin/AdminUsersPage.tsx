@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
 
 interface AdminUser {
   id: string;
@@ -24,8 +25,8 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [groups, setGroups] = useState<MemberGroup[]>([]);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState("");
   const [changingRole, setChangingRole] = useState<string | null>(null);
+  const toast = useToast();
 
   const loadData = async () => {
     setLoading(true);
@@ -37,7 +38,7 @@ export default function AdminUsersPage() {
       setUsers(Array.isArray(uRes) ? uRes : []);
       setGroups(Array.isArray(gRes) ? gRes : []);
     } catch (err) {
-      setMsg(`加载失败: ${err}`);
+      toast.error(`加载失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -58,13 +59,13 @@ export default function AdminUsersPage() {
         },
       );
       if (res.success) {
-        setMsg("角色已更新");
+        toast.success("角色已更新");
         loadData();
       } else {
-        setMsg(res.message);
+        toast.error(res.message);
       }
     } catch (err) {
-      setMsg(`操作失败: ${err}`);
+      toast.error(`操作失败: ${err}`);
     } finally {
       setChangingRole(null);
     }
@@ -81,13 +82,13 @@ export default function AdminUsersPage() {
         },
       );
       if (res.success) {
-        setMsg("用户已删除");
+        toast.success("用户已删除");
         loadData();
       } else {
-        setMsg(res.message);
+        toast.error(res.message);
       }
     } catch (err) {
-      setMsg(`操作失败: ${err}`);
+      toast.error(`操作失败: ${err}`);
     }
   };
 
@@ -101,23 +102,6 @@ export default function AdminUsersPage() {
 
   return (
     <div>
-      {msg && (
-        <div
-          className={`mb-4 p-3 text-sm border ${
-            msg.includes("失败") ||
-            msg.includes("不能") ||
-            msg.includes("不存在") ||
-            msg.includes("无效")
-              ? "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-              : "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-          }`}
-        >
-          {msg}
-          <button onClick={() => setMsg("")} className="ml-3 text-xs underline">
-            关闭
-          </button>
-        </div>
-      )}
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
         共 {users.length}{" "}
         个用户。超级管理员账号不可删除或修改。权限编辑请到「权限」页面。

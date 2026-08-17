@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
 
 export default function AdminInitPage() {
   const navigate = useNavigate();
@@ -12,8 +13,8 @@ export default function AdminInitPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [msg, setMsg] = useState("");
   const [success, setSuccess] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     const checkInit = async () => {
@@ -35,26 +36,24 @@ export default function AdminInitPage() {
   }, [navigate]);
 
   const handleSubmit = async () => {
-    setMsg("");
-
     if (!displayName.trim()) {
-      setMsg("显示名称不能为空");
+      toast.error("显示名称不能为空");
       return;
     }
     if (displayName.trim().length > 30) {
-      setMsg("显示名称不能超过30个字符");
+      toast.error("显示名称不能超过30个字符");
       return;
     }
     if (!password) {
-      setMsg("密码不能为空");
+      toast.error("密码不能为空");
       return;
     }
     if (password.length < 3) {
-      setMsg("密码至少需要3个字符");
+      toast.error("密码至少需要3个字符");
       return;
     }
     if (password !== confirmPassword) {
-      setMsg("两次输入的密码不一致");
+      toast.error("两次输入的密码不一致");
       return;
     }
 
@@ -75,12 +74,12 @@ export default function AdminInitPage() {
         },
       );
       if (!res.success) {
-        setMsg(res.message);
+        toast.error(res.message);
         return;
       }
       setSuccess(true);
     } catch (err) {
-      setMsg(`初始化失败: ${err}`);
+      toast.error(`初始化失败: ${err}`);
     } finally {
       setSubmitting(false);
     }
@@ -111,18 +110,6 @@ export default function AdminInitPage() {
         <p className="text-gray-500 dark:text-gray-400 mb-6">
           设置超级管理员账户
         </p>
-
-        {msg && (
-          <div
-            className={`mb-4 p-3 text-sm border ${
-              success
-                ? "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-                : "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-            }`}
-          >
-            {msg}
-          </div>
-        )}
 
         {success ? (
           <div className="text-center">

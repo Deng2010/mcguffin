@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
 
 interface MemberGroup {
   id: string;
@@ -32,7 +33,7 @@ const PERM_LABELS: Record<string, string> = {
 export default function AdminGroupsPage() {
   const [groups, setGroups] = useState<MemberGroup[]>([]);
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState("");
+  const toast = useToast();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [newName, setNewName] = useState("");
@@ -43,7 +44,7 @@ export default function AdminGroupsPage() {
       const res = await apiFetch<MemberGroup[]>("/admin/groups");
       setGroups(Array.isArray(res) ? res : []);
     } catch (err) {
-      setMsg(`加载失败: ${err}`);
+      toast.error(`加载失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -66,13 +67,14 @@ export default function AdminGroupsPage() {
         body: JSON.stringify({ name, permissions: [] }),
       });
       if (res.success) {
+        toast.success("成员组已创建");
         setNewName("");
         loadGroups();
       } else {
-        setMsg(res.message);
+        toast.error(res.message);
       }
     } catch (err) {
-      setMsg(`创建失败: ${err}`);
+      toast.error(`创建失败: ${err}`);
     }
   };
 
@@ -98,13 +100,14 @@ export default function AdminGroupsPage() {
         },
       );
       if (res.success) {
+        toast.success("成员组已更新");
         setEditingId(null);
         loadGroups();
       } else {
-        setMsg(res.message);
+        toast.error(res.message);
       }
     } catch (err) {
-      setMsg(`保存失败: ${err}`);
+      toast.error(`保存失败: ${err}`);
     }
   };
 
@@ -116,13 +119,14 @@ export default function AdminGroupsPage() {
         { method: "DELETE" },
       );
       if (res.success) {
+        toast.success(`已删除成员组「${name}」`);
         if (editingId === id) setEditingId(null);
         loadGroups();
       } else {
-        setMsg(res.message);
+        toast.error(res.message);
       }
     } catch (err) {
-      setMsg(`删除失败: ${err}`);
+      toast.error(`删除失败: ${err}`);
     }
   };
 
@@ -135,21 +139,6 @@ export default function AdminGroupsPage() {
 
   return (
     <div>
-      {msg && (
-        <div
-          className={`mb-4 p-3 text-sm border ${
-            msg.includes("失败")
-              ? "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-              : "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-          }`}
-        >
-          {msg}
-          <button onClick={() => setMsg("")} className="ml-3 text-xs underline">
-            关闭
-          </button>
-        </div>
-      )}
-
       {/* Create */}
       <div className="flex items-center gap-2 mb-6 p-3 bg-blue-50 dark:bg-blue-900/30 border border-dashed border-blue-300 dark:border-blue-800">
         <input

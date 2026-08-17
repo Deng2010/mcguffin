@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
 import Tabs from "../../components/ui/Tabs";
 import ResourceAclSection from "./sections/ResourceAclSection";
 
@@ -189,7 +190,7 @@ export default function AdminRolesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [msg, setMsg] = useState("");
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<TabId>("basic");
 
   const load = async () => {
@@ -212,7 +213,7 @@ export default function AdminRolesPage() {
       setLocalGroups(g.map((gg) => ({ ...gg })));
       setUsers(u);
     } catch (err) {
-      setMsg(`加载失败: ${err}`);
+      toast.error(`加载失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -258,7 +259,6 @@ export default function AdminRolesPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    setMsg("");
     try {
       // 保存角色权限
       const cur = await apiFetch<{ success: boolean; config?: any }>(
@@ -286,9 +286,9 @@ export default function AdminRolesPage() {
           body: JSON.stringify({ permissions: u.user_permissions }),
         });
       }
-      setMsg("权限已保存");
+      toast.success("权限已保存");
     } catch (err) {
-      setMsg(`保存失败: ${err}`);
+      toast.error(`保存失败: ${err}`);
     } finally {
       setSaving(false);
     }
@@ -302,20 +302,19 @@ export default function AdminRolesPage() {
     )
       return;
     setResetting(true);
-    setMsg("");
     try {
       const res = await apiFetch<{ success: boolean; message: string }>(
         "/admin/permissions/reset",
         { method: "POST" },
       );
       if (!res.success) {
-        setMsg(`恢复失败: ${res.message}`);
+        toast.error(`恢复失败: ${res.message}`);
         return;
       }
-      setMsg(res.message || "已恢复默认设置");
+      toast.success(res.message || "已恢复默认设置");
       await load();
     } catch (err) {
-      setMsg(`恢复失败: ${err}`);
+      toast.error(`恢复失败: ${err}`);
     } finally {
       setResetting(false);
     }
@@ -330,18 +329,6 @@ export default function AdminRolesPage() {
 
   const renderBasicPermissions = () => (
     <div>
-      {msg && (
-        <div
-          className={`mb-4 p-3 text-sm border ${
-            msg.includes("失败")
-              ? "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-              : "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-          }`}
-        >
-          {msg}
-        </div>
-      )}
-
       <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
         展开权限分组，勾选即可设置。角色、成员组、成员的权限取 OR
         关系。超级管理员不受限制。

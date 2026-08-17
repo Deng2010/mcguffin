@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
 import { PluginRegistry } from "../../plugins/registry";
 
 // ── Types ──
@@ -33,11 +34,8 @@ export default function AdminPluginsPage() {
   const [backendPlugins, setBackendPlugins] = useState<PluginManifest[]>([]);
   const [loading, setLoading] = useState(true);
   const [globallyDisabled, setGloballyDisabled] = useState(false);
-  const [msg, setMsg] = useState<{
-    text: string;
-    type: "success" | "error" | "info";
-  } | null>(null);
   const [installing, setInstalling] = useState(false);
+  const toast = useToast();
   const uploadRef = useRef<HTMLInputElement>(null);
 
   // ── Load backend plugins ──
@@ -99,8 +97,9 @@ export default function AdminPluginsPage() {
   // ── Zip upload ──
 
   const showMsg = (text: string, type: "success" | "error" | "info") => {
-    setMsg({ text, type });
-    setTimeout(() => setMsg(null), 5000);
+    if (type === "success") toast.success(text);
+    else if (type === "error") toast.error(text);
+    else toast.info(text);
   };
 
   const handleInstallZip = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -197,11 +196,14 @@ export default function AdminPluginsPage() {
 
   // ── Enable / Disable ──
 
-  const handleToggle = async (pluginId: string, pluginName: string, currentEnabled: boolean) => {
+  const handleToggle = async (
+    pluginId: string,
+    pluginName: string,
+    currentEnabled: boolean,
+  ) => {
     const action = currentEnabled ? "disable" : "enable";
     const actionLabel = currentEnabled ? "禁用" : "启用";
-    if (!confirm(`确定要${actionLabel}插件「${pluginName}」吗？`))
-      return;
+    if (!confirm(`确定要${actionLabel}插件「${pluginName}」吗？`)) return;
     showMsg(`正在${actionLabel} ${pluginName}...`, "info");
     try {
       const res = await apiFetch<{ success: boolean; message?: string }>(
@@ -223,21 +225,6 @@ export default function AdminPluginsPage() {
 
   return (
     <div>
-      {/* Notification */}
-      {msg && (
-        <div
-          className={`mb-4 p-3 text-sm border ${
-            msg.type === "success"
-              ? "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-              : msg.type === "error"
-                ? "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-                : "bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-300"
-          }`}
-        >
-          {msg.text}
-        </div>
-      )}
-
       {/* ── Global Toggle Section ── */}
       <div className="mg-box-shadow p-5 mb-6">
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
@@ -246,7 +233,9 @@ export default function AdminPluginsPage() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-gray-700 dark:text-gray-200 font-medium">
-              {globallyDisabled ? "插件功能当前已全局禁用" : "插件功能当前已全局启用"}
+              {globallyDisabled
+                ? "插件功能当前已全局禁用"
+                : "插件功能当前已全局启用"}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               全局禁用后，所有插件（含路由、页面与数据接口）将对所有用户隐藏并不可用。
@@ -399,7 +388,9 @@ export default function AdminPluginsPage() {
                 <div className="flex items-center gap-2 ml-4 shrink-0">
                   {/* Enable/Disable toggle */}
                   <button
-                    onClick={() => handleToggle(p.id, p.name, p.enabled !== false)}
+                    onClick={() =>
+                      handleToggle(p.id, p.name, p.enabled !== false)
+                    }
                     className={`px-3 py-1.5 text-xs border ${
                       p.enabled === false
                         ? "border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"

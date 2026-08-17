@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
+import { useToast } from "../../errors/ToastContext";
 import Tabs from "../../components/ui/Tabs";
 import type { TabId, ConfigData, DifficultyEntry } from "./config-context";
 import { ConfigCtx } from "./config-context";
@@ -54,7 +55,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  const [msg, setMsg] = useState("");
+  const toast = useToast();
 
   const [siteUrl, setSiteUrl] = useState("");
   const [port, setPort] = useState("");
@@ -90,7 +91,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
         message?: string;
       }>("/admin/config");
       if (!res.success || !res.config) {
-        setMsg(`加载配置失败: ${res.message}`);
+        toast.error(`加载配置失败: ${res.message}`);
         return;
       }
       setSiteUrl(res.config.server.site_url);
@@ -129,7 +130,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       if (res.config.discussion_emojis)
         setSavedEmojis(res.config.discussion_emojis);
     } catch (err) {
-      setMsg(`加载配置失败: ${err}`);
+      toast.error(`加载配置失败: ${err}`);
     } finally {
       setLoading(false);
     }
@@ -183,7 +184,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
     const name = newDiffName.trim();
     if (!name) return;
     if (difficulties.some((d) => d.name === name)) {
-      setMsg(`难度 "${name}" 已存在`);
+      toast.error(`难度 "${name}" 已存在`);
       return;
     }
     setDifficulties((p) => {
@@ -200,11 +201,10 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
 
   const handleSave = async () => {
     if (!adminPassword.trim()) {
-      setMsg("管理员密码不能为空");
+      toast.error("管理员密码不能为空");
       return;
     }
     setSaving(true);
-    setMsg("");
     try {
       const diffObj: Record<string, { label: string; color: string }> = {};
       for (const d of difficulties)
@@ -249,13 +249,12 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
         },
       );
       if (!res.success) {
-        setMsg(`保存失败: ${res.message}`);
+        toast.error(`保存失败: ${res.message}`);
         return;
       }
-      setMsg(res.message);
-      setTimeout(() => setMsg(""), 5000);
+      toast.success(res.message);
     } catch (err) {
-      setMsg(`保存失败: ${err}`);
+      toast.error(`保存失败: ${err}`);
     } finally {
       setSaving(false);
     }
@@ -265,21 +264,20 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
     if (!window.confirm("确定要重启服务吗？服务会短暂中断（约2-3秒）。"))
       return;
     setRestarting(true);
-    setMsg("");
     try {
       const res = await apiFetch<{ success: boolean; message: string }>(
         "/admin/restart",
         { method: "POST" },
       );
       if (!res.success) {
-        setMsg(`重启失败: ${res.message}`);
+        toast.error(`重启失败: ${res.message}`);
         setRestarting(false);
         return;
       }
-      setMsg("服务正在重启，页面将在几秒后重载...");
+      toast.info("服务正在重启，页面将在几秒后重载...");
       setTimeout(() => window.location.reload(), 5000);
     } catch (err) {
-      setMsg(`重启失败: ${err}`);
+      toast.error(`重启失败: ${err}`);
       setRestarting(false);
     }
   };
@@ -288,7 +286,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
     try {
       const res = await apiFetch<any>("/admin/export/config");
       if (!res.success) {
-        setMsg(`导出失败: ${res.message}`);
+        toast.error(`导出失败: ${res.message}`);
         return;
       }
       const blob = new Blob([res.content], { type: res.mime });
@@ -301,7 +299,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err) {
-      setMsg(`导出失败: ${err}`);
+      toast.error(`导出失败: ${err}`);
     }
   };
 
@@ -382,18 +380,6 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
 
   return (
     <ConfigCtx.Provider value={ctx}>
-      {msg && (
-        <div
-          className={`mb-4 p-3 text-sm border ${
-            msg.includes("失败")
-              ? "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"
-              : "bg-green-50 border-green-300 text-green-700 dark:bg-green-900/30 dark:border-green-800 dark:text-green-300"
-          }`}
-        >
-          {msg}
-        </div>
-      )}
-
       <div className="bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 shadow p-5 mb-6">
         {tabContent()}
       </div>
