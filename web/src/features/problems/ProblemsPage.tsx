@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
@@ -385,7 +385,7 @@ export default function ProblemsPage() {
     return undefined;
   };
 
-  const handleSubmitProblem = async (e: React.FormEvent) => {
+  const handleSubmitProblem = async (e: FormEvent) => {
     e.preventDefault();
     const contest = getContestName();
     const contest_id = getContestId();

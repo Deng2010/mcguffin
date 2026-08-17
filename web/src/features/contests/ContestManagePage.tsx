@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
@@ -72,7 +72,7 @@ export default function ContestManagePage() {
     draft: contests.filter((c) => c.status === "draft").length,
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreate = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !startDate || !endDate) {
       setError("请填写比赛名称、开始时间和结束时间");
