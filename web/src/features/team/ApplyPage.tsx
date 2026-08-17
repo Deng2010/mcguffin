@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { SyntheticEvent, useState } from "react";
 import { Link, useNavigate, Navigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
@@ -14,7 +14,7 @@ export default function ApplyPage() {
     return <Navigate to="/team" replace />;
   }
 
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     try {
       const res = await apiFetch<{ success: boolean; message: string }>(

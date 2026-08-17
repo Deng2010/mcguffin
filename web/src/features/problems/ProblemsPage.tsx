@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type FormEvent } from "react";
+import { useState, useEffect, useMemo, SyntheticEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { apiFetch } from "../../services/api";
@@ -19,12 +19,7 @@ interface ContestOption {
 }
 
 type TabId =
-  | "list"
-  | "mine"
-  | "pending"
-  | "approved"
-  | "published"
-  | "returned";
+  "list" | "mine" | "pending" | "approved" | "published" | "returned";
 
 export default function ProblemsPage() {
   const { user, hasPermission, isAuthenticated } = useAuthStore();
@@ -385,7 +380,7 @@ export default function ProblemsPage() {
     return undefined;
   };
 
-  const handleSubmitProblem = async (e: FormEvent) => {
+  const handleSubmitProblem = async (e: SyntheticEvent) => {
     e.preventDefault();
     const contest = getContestName();
     const contest_id = getContestId();
@@ -1264,13 +1259,14 @@ export default function ProblemsPage() {
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm mb-4"
               autoFocus
             />
-            {reasonDialog.action === "reject" && reasonText.trim().length > 0 && (
-              <p
-                className={`text-xs mb-3 ${reasonText.trim().length >= 10 ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
-              >
-                已输入 {reasonText.trim().length} / 10 字
-              </p>
-            )}
+            {reasonDialog.action === "reject" &&
+              reasonText.trim().length > 0 && (
+                <p
+                  className={`text-xs mb-3 ${reasonText.trim().length >= 10 ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
+                >
+                  已输入 {reasonText.trim().length} / 10 字
+                </p>
+              )}
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setReasonDialog(null)}
@@ -1280,9 +1276,7 @@ export default function ProblemsPage() {
               </button>
               <button
                 onClick={handleReviewWithReason}
-                disabled={
-                  reasonDialog.action === "reply" && !reasonText.trim()
-                }
+                disabled={reasonDialog.action === "reply" && !reasonText.trim()}
                 className={`px-4 py-2 text-sm text-white disabled:opacity-50 ${
                   reasonDialog.action === "reply"
                     ? "bg-blue-600 hover:bg-blue-500"

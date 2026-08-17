@@ -87,6 +87,8 @@ pub struct AppState {
     pub site_title: String,
     pub site_version: String,
     pub site_description: Arc<RwLock<String>>,
+    /// 站点时区（如 "UTC+8"），保存后立即生效。
+    pub site_timezone: Arc<RwLock<String>>,
     /// Public-facing site URL (e.g. https://lba-oi.team)
     pub site_url: String,
     /// Path to the SQLite database file
@@ -116,7 +118,8 @@ pub struct AppState {
     pub plugin_data: Arc<RwLock<HashMap<String, HashMap<String, HashMap<String, String>>>>>,
     /// Global plugin enable/disable switch (superadmin). When true, all plugin
     /// features are disabled (data APIs reject, frontend hides plugins).
-    pub plugins_disabled: Arc<RwLock<bool>>,    /// SQLite 连接池（双写模式：SQLite + HashMap）
+    pub plugins_disabled: Arc<RwLock<bool>>,
+    /// SQLite 连接池（双写模式：SQLite + HashMap）
     pub db: SqlitePool,
     /// 自定义备份目录（None 时使用默认路径）
     pub backup_directory: Arc<RwLock<Option<String>>>,

@@ -342,12 +342,9 @@ fn locate_frontend_dist() -> Option<std::path::PathBuf> {
         std::path::PathBuf::from("dist"),
         std::path::PathBuf::from("../dist"),
     ];
-    for dir in candidates {
-        if dir.join("index.html").is_file() {
-            return Some(dir);
-        }
-    }
-    None
+    candidates
+        .into_iter()
+        .find(|dir| dir.join("index.html").is_file())
 }
 
 #[cfg(test)]

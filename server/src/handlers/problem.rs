@@ -146,7 +146,7 @@ pub async fn get_problems(
         } else {
             sql.push_str(" AND (");
             sql.push_str(&status_clauses.join(" OR "));
-            sql.push_str(")");
+            sql.push(')');
         }
     }
 
