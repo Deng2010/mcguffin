@@ -1135,18 +1135,22 @@ export default function ProblemsPage() {
                 className="flex items-center gap-2 ml-4 shrink-0"
                 onClick={(e) => e.stopPropagation()}
               >
-                <button
-                  onClick={() => handleResubmit(p.id)}
-                  className="px-3 py-1.5 text-xs bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
-                >
-                  再次提交
-                </button>
-                <button
-                  onClick={() => handleDelete(p.id, p.title)}
-                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                >
-                  删除
-                </button>
+                {p.author_id === user?.id && (
+                  <>
+                    <button
+                      onClick={() => handleResubmit(p.id)}
+                      className="px-3 py-1.5 text-xs bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                    >
+                      再次提交
+                    </button>
+                    <button
+                      onClick={() => handleDelete(p.id, p.title)}
+                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                    >
+                      删除
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -112,13 +112,6 @@ pub async fn get_problems(
     );
     let mut binds: Vec<String> = Vec::new();
 
-    // "returned" (已退回) problems are visible only to their author. This
-    // restriction applies even to admins using ?all=true, matching the "仅出题人可见"
-    // contract. We bind the current user id (empty string when unauthenticated,
-    // which never matches an author id).
-    sql.push_str(" AND (p.status != 'returned' OR p.author_id = ?)");
-    binds.push(current_uid.clone().unwrap_or_default());
-
     // Filter 1-4: 按细分后的浏览权限判断可见性
     if !skip_all_filters {
         let mut status_clauses: Vec<String> = Vec::new();
@@ -138,6 +131,13 @@ pub async fn get_problems(
                     .to_string(),
             );
             binds.push(uid.clone());
+            binds.push(uid.clone());
+        }
+        // 已退回题目：管理员/超级管理员可查看全部；其他用户仅作者可见。
+        if is_admin_user {
+            status_clauses.push("p.status = 'returned'".to_string());
+        } else if let Some(uid) = &current_uid {
+            status_clauses.push("(p.status = 'returned' AND p.author_id = ?)".to_string());
             binds.push(uid.clone());
         }
 
@@ -270,8 +270,9 @@ pub async fn get_problems(
                     if p.status == "rejected" {
                         return false;
                     }
-                    // "returned" problems are visible only to their author (always)
+                    // 已退回题目：管理员/超级管理员可见全部；其他用户仅作者可见
                     if p.status == "returned"
+                        && !is_admin_user
                         && !current_uid.as_ref().is_some_and(|uid| p.is_author(uid))
                     {
                         return false;
@@ -291,6 +292,7 @@ pub async fn get_problems(
                                     .as_ref()
                                     .is_some_and(|uid| p.visible_to.contains(uid))
                         }
+                        "returned" => true,
                         _ => false,
                     };
                     if !visible {
@@ -484,8 +486,8 @@ pub async fn get_problem_detail(
                 false
             }
         }
-        // "returned" (已退回) is visible only to its author
-        "returned" => is_author,
+        // 已退回题目：管理员/超级管理员可查看全部；其他用户仅作者可见。
+        "returned" => is_author || is_admin_user,
         _ => false,
     };
     if !can_view {
@@ -514,7 +516,7 @@ pub async fn get_problem_detail(
         "published" => true,
         "approved" => true,
         "pending" => is_admin_user || is_author || in_visible_to,
-        "returned" => is_author,
+        "returned" => is_author || is_admin_user,
         _ => false,
     };
 
@@ -1401,6 +1403,13 @@ pub async fn update_problem(
             message: "权限不足".to_string(),
         });
     }
+    // 已退回题目仅作者可操作（管理员/超级管理员也只能查看，不能代操作）
+    if problem.status == "returned" && !problem.is_author(&user_id) {
+        return Json(ReviewResponse {
+            success: false,
+            message: "不能操作他人的已退回题目".to_string(),
+        });
+    }
 
     // Apply changes
     if let Some(val) = payload.title {
@@ -1479,7 +1488,7 @@ pub async fn resubmit_problem(
     headers: HeaderMap,
     Path(problem_id): Path<String>,
 ) -> Json<ReviewResponse> {
-    let (user_id, user) = match resolve_user(&state, &headers).await {
+    let (user_id, _user) = match resolve_user(&state, &headers).await {
         Some(u) => u,
         None => {
             return Json(ReviewResponse {
@@ -1488,8 +1497,6 @@ pub async fn resubmit_problem(
             })
         }
     };
-    let is_admin_user =
-        check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
 
     let mut problem = {
         let problems = state.problems.read().await;
@@ -1504,10 +1511,11 @@ pub async fn resubmit_problem(
         }
     };
 
-    if !problem.is_author(&user_id) && !is_admin_user {
+    // 已退回题目仅作者可再次提交（管理员/超级管理员也只能查看）
+    if !problem.is_author(&user_id) {
         return Json(ReviewResponse {
             success: false,
-            message: "权限不足".to_string(),
+            message: "只能操作自己的已退回题目".to_string(),
         });
     }
     if problem.status != "returned" {
@@ -1566,6 +1574,13 @@ pub async fn delete_problem(
         return Json(ReviewResponse {
             success: false,
             message: "权限不足".to_string(),
+        });
+    }
+    // 已退回题目仅作者可删除（管理员/超级管理员也只能查看）
+    if problem.status == "returned" && !problem.is_author(&user_id) {
+        return Json(ReviewResponse {
+            success: false,
+            message: "不能操作他人的已退回题目".to_string(),
         });
     }
     if !is_admin_user && problem.status != "pending" && problem.status != "returned" {
