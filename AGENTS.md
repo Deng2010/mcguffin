@@ -84,7 +84,7 @@ just clean         # 清理所有构建产物
 mcguffin/
 ├── docs/                     # 文档（部署/管理/使用）
 │   ├── README.md             # 文档索引
-│   ├── guide/                # 部署与开发指南（quick-start/development/configuration/deployment）
+│   ├── guide/                # 部署与开发指南（quick-start/development/configuration/deployment/showcase-components）
 │   ├── admin/                # 管理后台手册（overview/users/contests/backups/plugins）
 │   ├── user/                 # 用户手册（getting-started/problems/community）
 │   └── images/               # 文档图片
@@ -161,7 +161,7 @@ mcguffin/
 | `features/contests/` | ContestDetailPage、ContestManagePage |
 | `features/problems/` | ProblemsPage、ProblemDetailPage |
 | `features/profile/` | ProfilePage |
-| `features/showcase/` | ShowcasePage |
+| `features/showcase/` | ShowcasePage（展板组件系统：`registry.ts` + `ShowcaseBoard` + `components/`，见 `docs/guide/showcase-components.md`） |
 | `features/team/` | TeamPage、ApplyPage |
 | `features/notfound/` | NotFoundPage |
 | `features/admin/` | AdminUsers/Groups/Roles/Config/Backups/Discussions/Errors/Plugins/Init 页 + `sections/`（配置分区）+ `config-context.ts` |
@@ -243,6 +243,11 @@ mcguffin/
 - **API 调用**：统一走 `src/services/*.service.ts`（每个领域一个 service），底层在 `services/api.ts`。不要在组件里直接 `fetch`。
 - **权限控制**：路由级用 `ProtectedRoute`（组件级），条件渲染用 `hasPermission()`。权限类型在 `types.ts`。
 - **插件系统**：前端有插件框架，见下方「插件系统」小节。
+- **展板组件化**：展板页（`features/showcase/`）由组件系统驱动 —— `ShowcaseLayout`
+  布局（组件的 settings / size（宽=栅格列数、高=最小px）/ position（顺序））以
+  opaque JSON 持久化到后端 meta 表 `showcase_layout`（经 `/api/v1/site/info` 公开读取、
+  `PUT /api/v1/admin/showcase/layout` 保存，权限 `edit_showcase`）。新增组件 = 实现组件 +
+  在 `registry.ts` 注册，后端零改动。详见 `docs/guide/showcase-components.md`。
 - **错误边界**：`src/errors/` 提供 `ErrorBoundary` + 错误标准化（`normalize.ts`）+ 上报（`reporter.ts`）+ `ToastContext`。
 
 ### 技术栈速查

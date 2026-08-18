@@ -18,6 +18,10 @@ pub struct SiteInfo {
     pub timezone: String,
     /// 服务器当前时间（Unix 毫秒），用于判定比赛状态。
     pub server_time: i64,
+    /// 展板组件化布局（opaque JSON，schema 由前端定义与校验；
+    /// 后端只负责持久化，便于未来新增组件类型时无需改动后端）。
+    #[serde(default)]
+    pub showcase_layout: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -41,6 +45,7 @@ mod tests {
             showcase_contest_ids: vec![],
             timezone: "UTC+8".to_string(),
             server_time: 0,
+            showcase_layout: None,
         };
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains("\"name\":\"My Site\""));

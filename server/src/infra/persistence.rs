@@ -39,6 +39,9 @@ pub(crate) struct SavedData {
     pub(crate) showcase_problem_ids: Vec<String>,
     #[serde(default)]
     pub(crate) showcase_contest_ids: Vec<String>,
+    /// 展板组件化布局（opaque JSON，schema 由前端定义；`None` = 未配置，前端回退默认布局）。
+    #[serde(default)]
+    pub(crate) showcase_layout: Option<serde_json::Value>,
 
     // ── Unified posts (primary storage) ──
     #[serde(default)]
@@ -717,6 +720,7 @@ impl AppState {
                 *self.notifications.write().await = data.notifications;
                 *self.showcase_problem_ids.write().await = data.showcase_problem_ids;
                 *self.showcase_contest_ids.write().await = data.showcase_contest_ids;
+                *self.showcase_layout.write().await = data.showcase_layout;
                 // member_groups come from config.toml, not SQLite
                 let reloaded_config = crate::infra::config::load_config();
                 *self.member_groups.write().await =
@@ -852,6 +856,7 @@ impl AppState {
             notifications,
             showcase_problem_ids,
             showcase_contest_ids,
+            showcase_layout,
             posts,
         ) = if let Some(data) = saved {
             tracing::info!("Loaded state from JSON: {}", json_path_str);
@@ -937,6 +942,7 @@ impl AppState {
                 data.notifications,
                 data.showcase_problem_ids,
                 data.showcase_contest_ids,
+                data.showcase_layout,
                 p,
             )
         } else {
@@ -953,6 +959,7 @@ impl AppState {
                 HashMap::new(),
                 Vec::new(),
                 Vec::new(),
+                None,
                 HashMap::new(),
             )
         };
@@ -1088,6 +1095,7 @@ impl AppState {
             notifications: Arc::new(RwLock::new(notifications)),
             showcase_problem_ids: Arc::new(RwLock::new(showcase_problem_ids)),
             showcase_contest_ids: Arc::new(RwLock::new(showcase_contest_ids)),
+            showcase_layout: Arc::new(RwLock::new(showcase_layout)),
             difficulty_order: Arc::new(RwLock::new(
                 config.site.difficulty_order.clone().unwrap_or_else(|| {
                     let mut keys: Vec<String> = difficulty_config.levels.keys().cloned().collect();

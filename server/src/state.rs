@@ -102,6 +102,8 @@ pub struct AppState {
     /// Showcase selections
     pub showcase_problem_ids: Arc<RwLock<Vec<String>>>,
     pub showcase_contest_ids: Arc<RwLock<Vec<String>>>,
+    /// Showcase component layout (opaque JSON, schema owned by the frontend)
+    pub showcase_layout: Arc<RwLock<Option<serde_json::Value>>>,
     /// Difficulty display order
     pub difficulty_order: Arc<RwLock<Vec<String>>>,
     /// Discussion tags

@@ -397,6 +397,14 @@ async fn import_meta_fields(pool: &SqlitePool, data: &SavedData) -> Result<(), s
         .execute(pool)
         .await?;
 
+    // showcase_layout（展板组件化布局，opaque JSON）
+    if let Some(layout) = &data.showcase_layout {
+        sqlx::query("INSERT OR REPLACE INTO meta (key, value) VALUES ('showcase_layout', ?)")
+            .bind(serde_json::to_string(layout).unwrap_or_default())
+            .execute(pool)
+            .await?;
+    }
+
     Ok(())
 }
 
@@ -686,6 +694,7 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
         notifications: HashMap::new(),
         showcase_problem_ids: Vec::new(),
         showcase_contest_ids: Vec::new(),
+        showcase_layout: None,
         posts: HashMap::new(),
         member_groups: HashMap::new(),
     };
@@ -712,6 +721,15 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
     {
         let s: String = row.get("value");
         data.showcase_contest_ids = serde_json::from_str(&s).unwrap_or_default();
+    }
+    if let Ok(Some(row)) = sqlx::query("SELECT value FROM meta WHERE key = 'showcase_layout'")
+        .fetch_optional(pool)
+        .await
+    {
+        let s: String = row.get("value");
+        data.showcase_layout = serde_json::from_str(&s)
+            .ok()
+            .filter(|v: &serde_json::Value| v.is_object());
     }
 
     // ── 读取用户 ──
@@ -1224,6 +1242,7 @@ mod tests {
             notifications,
             showcase_problem_ids: vec!["prob-001".to_string()],
             showcase_contest_ids: vec!["contest-001".to_string()],
+            showcase_layout: None,
             posts,
             member_groups: HashMap::new(),
         }
@@ -1502,6 +1521,7 @@ mod tests {
             notifications: HashMap::new(),
             showcase_problem_ids: vec![],
             showcase_contest_ids: vec![],
+            showcase_layout: None,
             posts: HashMap::new(),
             member_groups: HashMap::new(),
         };
@@ -1533,6 +1553,7 @@ mod tests {
             notifications: HashMap::new(),
             showcase_problem_ids: vec![],
             showcase_contest_ids: vec![],
+            showcase_layout: None,
             posts: HashMap::new(),
             member_groups: HashMap::new(),
         };

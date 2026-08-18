@@ -45,3 +45,10 @@ pub struct ShowcaseConfigPayload {
     #[serde(default)]
     pub contest_ids: Vec<String>,
 }
+
+/// 展板组件化布局载荷。布局结构（schema_version / components[].settings / size / position）
+/// 由前端定义并校验，后端仅做持久化 —— 新增组件类型无需改动后端。
+#[derive(Deserialize)]
+pub struct ShowcaseLayoutPayload {
+    pub layout: serde_json::Value,
+}

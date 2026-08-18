@@ -8,11 +8,11 @@ use crate::error::{api_method_not_allowed, api_not_found};
 use crate::handlers::admin::{
     admin_change_user_role, admin_list_users, admin_remove_user, create_backup, create_group,
     delete_backup, delete_group, download_backup, export_config, export_data, export_db,
-    get_acl_resources, get_audit_log, get_config, get_showcase_config, import_config, import_data,
-    init_admin, init_admin_status, list_backups, list_groups, reset_permissions,
-    reset_resource_acl, restart_service, restore_backup, restore_upload_backup, set_problem_acl,
-    set_resource_acl, set_user_groups, set_user_permissions, update_config, update_group,
-    update_showcase_config,
+    get_acl_resources, get_audit_log, get_config, get_showcase_config, get_showcase_layout,
+    import_config, import_data, init_admin, init_admin_status, list_backups, list_groups,
+    reset_permissions, reset_resource_acl, restart_service, restore_backup, restore_upload_backup,
+    set_problem_acl, set_resource_acl, set_user_groups, set_user_permissions, update_config,
+    update_group, update_showcase_config, update_showcase_layout,
 };
 use crate::handlers::auth::{
     get_permissions, login, oauth_authorize, oauth_callback, refresh_token,
@@ -178,6 +178,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/admin/showcase",
             get(get_showcase_config).put(update_showcase_config),
+        )
+        .route(
+            "/admin/showcase/layout",
+            get(get_showcase_layout).put(update_showcase_layout),
         )
         // Admin export
         .route("/admin/export/data", get(export_data))

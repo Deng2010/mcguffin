@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { apiFetch } from "../services/api";
-import { updateSiteDescription } from "../services/site.service";
+import { updateSiteDescription, updateShowcaseLayout } from "../services/site.service";
+import type { ShowcaseLayout } from "../features/showcase/types";
 
 // ============== SiteInfo Type ==============
 
@@ -12,6 +13,8 @@ export interface SiteInfo {
   difficulty_order: string[];
   showcase_problem_ids: string[];
   showcase_contest_ids: string[];
+  /** 展板组件化布局（可能为 null = 未配置，前端回退默认布局） */
+  showcase_layout?: ShowcaseLayout | null;
   timezone: string;
   server_time: number;
 }
@@ -26,6 +29,10 @@ interface SiteState {
   updateDescription: (
     description: string,
   ) => Promise<{ success: boolean; message: string }>;
+  /** 保存展板组件化布局（PUT /admin/showcase/layout） */
+  saveShowcaseLayout: (
+    layout: ShowcaseLayout,
+  ) => Promise<{ success: boolean; message: string }>;
   refresh: () => Promise<void>;
 }
 
@@ -37,6 +44,7 @@ const DEFAULT_SITE_INFO: SiteInfo = {
   difficulty_order: [],
   showcase_problem_ids: [],
   showcase_contest_ids: [],
+  showcase_layout: null,
   timezone: "UTC+8",
   server_time: Date.now(),
 };
@@ -73,6 +81,19 @@ export const useSiteStore = create<SiteState>()((set, get) => ({
       const { siteInfo } = get();
       if (res.success && siteInfo) {
         set({ siteInfo: { ...siteInfo, description: res.description } });
+      }
+      return { success: res.success, message: res.message };
+    } catch (err) {
+      return { success: false, message: `请求失败: ${err}` };
+    }
+  },
+
+  saveShowcaseLayout: async (layout) => {
+    try {
+      const res = await updateShowcaseLayout(layout);
+      const { siteInfo } = get();
+      if (res.success && siteInfo) {
+        set({ siteInfo: { ...siteInfo, showcase_layout: layout } });
       }
       return { success: res.success, message: res.message };
     } catch (err) {

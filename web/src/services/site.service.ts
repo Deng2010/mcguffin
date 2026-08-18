@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import type { ShowcaseLayout } from "../features/showcase/types";
 
 export interface SiteInfo {
   name: string;
@@ -11,6 +12,8 @@ export interface SiteInfo {
     problems: Record<string, any>[];
     contests: Record<string, any>[];
   };
+  /** 展板组件化布局（可能为 null = 未配置，前端回退默认布局） */
+  showcase_layout?: ShowcaseLayout | null;
 }
 
 export interface ShowcasePayload {
@@ -38,5 +41,14 @@ export async function updateShowcase(
   return apiFetch<Record<string, any>>("/admin/showcase", {
     method: "PUT",
     body: JSON.stringify({ problem_ids: problemIds, contest_ids: contestIds }),
+  });
+}
+
+export async function updateShowcaseLayout(
+  layout: ShowcaseLayout,
+): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>("/admin/showcase/layout", {
+    method: "PUT",
+    body: JSON.stringify({ layout }),
   });
 }

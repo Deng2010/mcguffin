@@ -18,7 +18,9 @@ pub use config::{
 };
 pub use export::{export_config, export_data, export_db, import_config, import_data};
 pub use groups::{create_group, delete_group, list_groups, update_group};
-pub use showcase::{get_showcase_config, update_showcase_config};
+pub use showcase::{
+    get_showcase_config, get_showcase_layout, update_showcase_config, update_showcase_layout,
+};
 pub use users::{
     admin_change_user_role, admin_list_users, admin_remove_user, set_user_groups,
     set_user_permissions,
