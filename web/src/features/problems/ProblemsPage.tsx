@@ -1,10 +1,22 @@
 import { useState, useEffect, useMemo, SyntheticEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import {
+  claimProblem,
+  createProblem,
+  deleteProblem,
+  getAdminMembers,
+  getProblems,
+  resubmitProblem,
+  reviewProblem,
+  setProblemContest,
+  setProblemVisibility,
+  unclaimProblem,
+} from "../../services/problem.service";
+import { getContests } from "../../services/contest.service";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
 import MarkdownEditor from "../../components/MarkdownEditor";
-import type { ProblemListItem } from "../../types";
+import type { Difficulty, ProblemListItem } from "../../types";
 import { useToast } from "../../errors/ToastContext";
 import { errorMessage } from "../../errors/normalize";
 
@@ -132,8 +144,7 @@ export default function ProblemsPage() {
   }
 
   const loadProblems = () => {
-    const url = canApprove ? "/problems?all=true" : "/problems";
-    apiFetch<ProblemListItem[]>(url)
+    getProblems(canApprove)
       .then(setProblems)
       .catch(() => setProblems([]))
       .finally(() => setLoading(false));
@@ -141,8 +152,8 @@ export default function ProblemsPage() {
 
   const loadMembersAndContests = () => {
     Promise.all([
-      apiFetch<TeamMemberOption[]>("/problems/admin/members"),
-      apiFetch<ContestOption[]>("/contests"),
+      getAdminMembers() as Promise<TeamMemberOption[]>,
+      getContests() as Promise<ContestOption[]>,
     ])
       .then(([memberList, contestList]) => {
         setMembers(memberList);
@@ -184,8 +195,8 @@ export default function ProblemsPage() {
   // Load contests when submit form opens
   useEffect(() => {
     if (showSubmit) {
-      apiFetch<ContestOption[]>("/contests")
-        .then(setContests)
+      getContests()
+        .then((list) => setContests(list as ContestOption[]))
         .catch(() => {});
     }
   }, [showSubmit]);
@@ -206,10 +217,7 @@ export default function ProblemsPage() {
 
   const handleClaim = async (problemId: string) => {
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/claim/${problemId}`,
-        { method: "POST" },
-      );
+      const res = await claimProblem(problemId);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -222,10 +230,7 @@ export default function ProblemsPage() {
 
   const handleUnclaim = async (problemId: string) => {
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/unclaim/${problemId}`,
-        { method: "POST" },
-      );
+      const res = await unclaimProblem(problemId);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -242,10 +247,10 @@ export default function ProblemsPage() {
     reason?: string,
   ) => {
     try {
-      const body = JSON.stringify(reason ? { reason } : {});
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/review/${problemId}/${action}`,
-        { method: "POST", body },
+      const res = await reviewProblem(
+        problemId,
+        action as "approve" | "reply" | "publish" | "return" | "unpublish",
+        reason,
       );
       if (!res.success) {
         toast.error(res.message);
@@ -265,10 +270,7 @@ export default function ProblemsPage() {
 
   const handleResubmit = async (problemId: string) => {
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/${problemId}/resubmit`,
-        { method: "POST" },
-      );
+      const res = await resubmitProblem(problemId);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -297,10 +299,7 @@ export default function ProblemsPage() {
   const handleSetVisibility = async (problemId: string) => {
     const ids = visibilityMap[problemId] || [];
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/visibility/${problemId}`,
-        { method: "POST", body: JSON.stringify({ user_ids: ids }) },
-      );
+      const res = await setProblemVisibility(problemId, ids);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -312,14 +311,8 @@ export default function ProblemsPage() {
   };
 
   const handleSetContest = async (problemId: string, contestId: string) => {
-    const payload = contestId
-      ? { contest_id: contestId }
-      : { contest_id: null };
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/contest/${problemId}`,
-        { method: "POST", body: JSON.stringify(payload) },
-      );
+      const res = await setProblemContest(problemId, contestId);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -334,10 +327,7 @@ export default function ProblemsPage() {
     if (!window.confirm(`确定要永久删除题目「${title}」吗？此操作不可撤销。`))
       return;
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/${problemId}`,
-        { method: "DELETE" },
-      );
+      const res = await deleteProblem(problemId);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -385,17 +375,14 @@ export default function ProblemsPage() {
     const contest = getContestName();
     const contest_id = getContestId();
     try {
-      await apiFetch("/problems", {
-        method: "POST",
-        body: JSON.stringify({
-          title: formTitle,
-          contest,
-          contest_id,
-          difficulty: formDifficulty,
-          content: formContent,
-          solution: formSolution.trim() ? formSolution : undefined,
-          remark: formRemark.trim() ? formRemark : undefined,
-        }),
+      await createProblem({
+        title: formTitle,
+        contest,
+        contest_id,
+        difficulty: formDifficulty as Difficulty,
+        content: formContent,
+        solution: formSolution.trim() ? formSolution : undefined,
+        remark: formRemark.trim() ? formRemark : undefined,
       });
       setSubmitted(true);
       setFormError("");

@@ -1,5 +1,12 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../../../services/api";
+import {
+  createGroup,
+  deleteGroup,
+  getAdminUsers,
+  getGroups,
+  updateGroup,
+  updateUserGroups,
+} from "../../../services/admin.service";
 import type { MemberGroup, GroupUser } from "../config-context";
 import { PERM_LABELS } from "../config-context";
 
@@ -22,7 +29,7 @@ export default function GroupsSection() {
   const loadGroups = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<MemberGroup[]>("/admin/groups");
+      const res = (await getGroups()) as unknown as MemberGroup[];
       setGroups(Array.isArray(res) ? res : []);
     } catch (err) {
       setMsg(`加载失败: ${err}`);
@@ -37,9 +44,8 @@ export default function GroupsSection() {
 
   const loadUsers = async () => {
     try {
-      const res = await apiFetch<
-        { success?: boolean; users?: GroupUser[] } | GroupUser[]
-      >("/admin/users");
+      const res = (await getAdminUsers()) as unknown as
+        { success?: boolean; users?: GroupUser[] } | GroupUser[];
       const users = Array.isArray(res) ? res : ((res as any).users ?? []);
       setAllUsers(users as GroupUser[]);
     } catch (err) {
@@ -51,14 +57,11 @@ export default function GroupsSection() {
     const name = newName.trim();
     if (!name) return;
     try {
-      const res = await apiFetch<{
+      const res = (await createGroup({ name, permissions: [] })) as unknown as {
         success: boolean;
         message: string;
         id?: string;
-      }>("/admin/groups", {
-        method: "POST",
-        body: JSON.stringify({ name, permissions: [] }),
-      });
+      };
       if (res.success) {
         setNewName("");
         loadGroups();
@@ -76,8 +79,10 @@ export default function GroupsSection() {
     setSavingMembers(false);
     // Load users and pre-select those in this group
     loadUsers().then(() => {
-      apiFetch<{ success?: boolean; users?: any[] } | any[]>(
-        "/admin/users",
+      (
+        getAdminUsers() as unknown as Promise<
+          { success?: boolean; users?: any[] } | any[]
+        >
       ).then((res) => {
         const users = Array.isArray(res) ? res : ((res as any).users ?? []);
         const userIds = new Set<string>();
@@ -107,16 +112,10 @@ export default function GroupsSection() {
     // Save group name
     try {
       const currentGroup = groups.find((g) => g.id === editingId);
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/admin/groups/${editingId}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            name,
-            permissions: currentGroup?.permissions ?? [],
-          }),
-        },
-      );
+      const res = (await updateGroup(editingId, {
+        name,
+        permissions: currentGroup?.permissions ?? [],
+      })) as unknown as { success: boolean; message: string };
       if (!res.success) {
         setMsg(res.message);
         return;
@@ -144,13 +143,7 @@ export default function GroupsSection() {
             (allUsers.find((u) => u.id === user.id) as any)?.group_ids ?? []
           ).filter((gid: string) => gid !== groupId);
       try {
-        const r = await apiFetch<{ success: boolean }>(
-          `/admin/users/${user.id}/groups`,
-          {
-            method: "PUT",
-            body: JSON.stringify({ group_ids: newGroups }),
-          },
-        );
+        const r = await updateUserGroups(user.id, newGroups);
         if (!r.success) {
           hasError = true;
         }
@@ -167,10 +160,7 @@ export default function GroupsSection() {
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`确定要删除成员组「${name}」吗？`)) return;
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/admin/groups/${id}`,
-        { method: "DELETE" },
-      );
+      const res = await deleteGroup(id);
       if (res.success) {
         if (editingId === id) setEditingId(null);
         loadGroups();

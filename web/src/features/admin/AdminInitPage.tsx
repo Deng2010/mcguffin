@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch } from "../../services/api";
+import { getInitStatus, initAdmin } from "../../services/auth.service";
 import { useToast } from "../../errors/ToastContext";
 
 export default function AdminInitPage() {
@@ -19,9 +19,7 @@ export default function AdminInitPage() {
   useEffect(() => {
     const checkInit = async () => {
       try {
-        const res = await apiFetch<{ initialized: boolean }>(
-          "/admin/init-status",
-        );
+        const res = await getInitStatus();
         if (res.initialized) {
           setInitialized(true);
           navigate("/login", { replace: true });
@@ -66,13 +64,7 @@ export default function AdminInitPage() {
       if (avatarUrl.trim()) {
         body.avatar_url = avatarUrl.trim();
       }
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        "/admin/init",
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-        },
-      );
+      const res = await initAdmin(body as any);
       if (!res.success) {
         toast.error(res.message);
         return;

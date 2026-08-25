@@ -19,14 +19,38 @@ export interface CreatePostPayload {
 }
 
 export interface ReplyPayload {
-  content: string;
+  content?: string;
   parent_id?: string | null;
   reply_to?: string | null;
+  mentioned_user_ids?: string[];
+  [key: string]: any;
 }
 
 export interface CommunityPostsResponse {
-  posts: Discussion[];
+  items: PostListItem[];
   total: number;
+  total_all?: number;
+  page: number;
+  total_pages: number;
+  tags?: DiscussionTag[];
+  tag_counts?: Record<string, number>;
+}
+
+export interface PostListItem {
+  id: string;
+  title: string;
+  content_preview: string;
+  author_id: string;
+  author_name: string;
+  author_avatar_url?: string | null;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  pinned: boolean;
+  status: string;
+  team_only: boolean;
+  reply_count: number;
+  detail_url: string;
 }
 
 export async function getCommunityPosts(
@@ -60,7 +84,7 @@ export async function getPost(id: string): Promise<PostDetail> {
 
 export async function updatePost(
   id: string,
-  body: CreatePostPayload,
+  body: Partial<CreatePostPayload>,
 ): Promise<PostDetail> {
   return apiFetch<PostDetail>(`/posts/${id}`, {
     method: "PUT",

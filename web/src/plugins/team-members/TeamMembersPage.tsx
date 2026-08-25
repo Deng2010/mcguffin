@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import {
+  changeMemberRole,
+  getRequests,
+  removeMember,
+  reviewRequest,
+} from "../../services/team.service";
 import { usePluginUserMe, usePluginTeamMembers } from "../sdk";
 import { useToast } from "../../errors/ToastContext";
 import { errorMessage } from "../../errors/normalize";
@@ -53,9 +58,7 @@ export default function TeamMembersPage() {
   // Load join requests (not available via SDK, use direct API)
   useEffect(() => {
     if (!canManage) return;
-    apiFetch<JoinRequest[]>("/team/requests")
-      .then(setRequests)
-      .catch(() => {});
+    (getRequests() as Promise<JoinRequest[]>).then(setRequests).catch(() => {});
   }, [canManage]);
 
   // ── Filtering ──
@@ -68,9 +71,8 @@ export default function TeamMembersPage() {
   });
 
   const counts = {
-    admin: members.filter(
-      (m) => m.role === "admin" || m.role === "superadmin",
-    ).length,
+    admin: members.filter((m) => m.role === "admin" || m.role === "superadmin")
+      .length,
     member: members.filter((m) => m.role === "member").length,
   };
 
@@ -79,11 +81,9 @@ export default function TeamMembersPage() {
   const handleReviewRequest = useCallback(
     async (requestId: string, action: "approve" | "reject") => {
       try {
-        await apiFetch(`/team/review/${requestId}/${action}`, {
-          method: "POST",
-        });
+        await reviewRequest(requestId, action);
         refresh();
-        apiFetch<JoinRequest[]>("/team/requests")
+        (getRequests() as Promise<JoinRequest[]>)
           .then(setRequests)
           .catch(() => {});
       } catch (err) {
@@ -96,10 +96,7 @@ export default function TeamMembersPage() {
   const handleChangeRole = useCallback(
     async (userId: string, newRole: string) => {
       try {
-        const res = await apiFetch<{ success: boolean; message: string }>(
-          `/team/members/role/${userId}`,
-          { method: "POST", body: JSON.stringify({ role: newRole }) },
-        );
+        const res = await changeMemberRole(userId, newRole);
         if (!res.success) {
           toast.error(res.message);
           return;
@@ -116,10 +113,7 @@ export default function TeamMembersPage() {
     async (userId: string, name: string) => {
       if (!window.confirm(`确定要将 ${name} 移出团队吗？`)) return;
       try {
-        const res = await apiFetch<{ success: boolean; message: string }>(
-          `/team/members/remove/${userId}`,
-          { method: "POST" },
-        );
+        const res = await removeMember(userId);
         if (!res.success) {
           toast.error(res.message);
           return;
@@ -135,10 +129,7 @@ export default function TeamMembersPage() {
   const isCurrentUser = (userId: string) => user?.id === userId;
   const isSuperAdmin = user?.role === "superadmin";
 
-  const canManageUser = (member: {
-    user_id: string;
-    role: string;
-  }) => {
+  const canManageUser = (member: { user_id: string; role: string }) => {
     if (!canManage || isCurrentUser(member.user_id)) return false;
     if (member.role === "superadmin") return false;
     if (member.role === "admin" && !isSuperAdmin) return false;
@@ -254,11 +245,11 @@ export default function TeamMembersPage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-gray-300 dark:border-gray-700 mb-6">
-        {([
+        {[
           { id: "all" as TabId, label: "全部", count: members.length },
           { id: "admin" as TabId, label: "管理员", count: counts.admin },
           { id: "member" as TabId, label: "成员", count: counts.member },
-        ]).map((tab) => (
+        ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}

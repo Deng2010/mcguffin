@@ -1,5 +1,13 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../../services/api";
+import {
+  getConfig,
+  getAdminUsers,
+  getGroups,
+  resetPermissions,
+  updateConfig,
+  updateGroup,
+  updateUserPermissions,
+} from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 import Tabs from "../../components/ui/Tabs";
 import ResourceAclSection from "./sections/ResourceAclSection";
@@ -197,9 +205,9 @@ export default function AdminRolesPage() {
     setLoading(true);
     try {
       const [cRes, gRes, uRes] = await Promise.all([
-        apiFetch<{ success: boolean; config?: any }>("/admin/config"),
-        apiFetch<MemberGroup[]>("/admin/groups"),
-        apiFetch<AdminUser[]>("/admin/users"),
+        getConfig() as unknown as Promise<{ success: boolean; config?: any }>,
+        getGroups() as unknown as Promise<MemberGroup[]>,
+        getAdminUsers() as unknown as Promise<AdminUser[]>,
       ]);
       if (cRes.success && cRes.config) {
         const rawPerms = (cRes.config as any).permissions ?? {};
@@ -261,30 +269,21 @@ export default function AdminRolesPage() {
     setSaving(true);
     try {
       // 保存角色权限
-      const cur = await apiFetch<{ success: boolean; config?: any }>(
-        "/admin/config",
-      );
+      const cur = (await getConfig()) as unknown as {
+        success: boolean;
+        config?: any;
+      };
       if (cur.success && cur.config) {
-        await apiFetch("/admin/config", {
-          method: "PUT",
-          body: JSON.stringify({ ...cur.config, permissions }),
-        });
+        await updateConfig({ ...cur.config, permissions });
       }
       // 保存用户组成员权限
       for (const g of localGroups) {
-        await apiFetch(`/admin/groups/${g.id}`, {
-          method: "PUT",
-          body: JSON.stringify({ name: g.name, permissions: g.permissions }),
-        });
+        await updateGroup(g.id, { name: g.name, permissions: g.permissions });
       }
       // 保存用户个人权限
       const originalUsers = users;
       for (const u of originalUsers) {
-        const orig = _groups.length > 0 ? null : null; // dirty check done via state
-        await apiFetch(`/admin/users/${u.id}/permissions`, {
-          method: "PUT",
-          body: JSON.stringify({ permissions: u.user_permissions }),
-        });
+        await updateUserPermissions(u.id, u.user_permissions);
       }
       toast.success("权限已保存");
     } catch (err) {
@@ -303,10 +302,7 @@ export default function AdminRolesPage() {
       return;
     setResetting(true);
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        "/admin/permissions/reset",
-        { method: "POST" },
-      );
+      const res = await resetPermissions();
       if (!res.success) {
         toast.error(`恢复失败: ${res.message}`);
         return;

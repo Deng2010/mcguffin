@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../../services/api";
+import {
+  createGroup,
+  deleteGroup,
+  getGroups,
+  updateGroup,
+} from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 
 interface MemberGroup {
@@ -41,7 +46,7 @@ export default function AdminGroupsPage() {
   const loadGroups = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<MemberGroup[]>("/admin/groups");
+      const res = (await getGroups()) as unknown as MemberGroup[];
       setGroups(Array.isArray(res) ? res : []);
     } catch (err) {
       toast.error(`加载失败: ${err}`);
@@ -58,14 +63,11 @@ export default function AdminGroupsPage() {
     const name = newName.trim();
     if (!name) return;
     try {
-      const res = await apiFetch<{
+      const res = (await createGroup({ name, permissions: [] })) as unknown as {
         success: boolean;
         message: string;
         id?: string;
-      }>("/admin/groups", {
-        method: "POST",
-        body: JSON.stringify({ name, permissions: [] }),
-      });
+      };
       if (res.success) {
         toast.success("成员组已创建");
         setNewName("");
@@ -89,16 +91,10 @@ export default function AdminGroupsPage() {
     if (!name) return;
     try {
       const currentGroup = groups.find((g) => g.id === editingId);
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/admin/groups/${editingId}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            name,
-            permissions: currentGroup?.permissions ?? [],
-          }),
-        },
-      );
+      const res = (await updateGroup(editingId, {
+        name,
+        permissions: currentGroup?.permissions ?? [],
+      })) as unknown as { success: boolean; message: string };
       if (res.success) {
         toast.success("成员组已更新");
         setEditingId(null);
@@ -114,10 +110,7 @@ export default function AdminGroupsPage() {
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`确定要删除成员组「${name}」吗？`)) return;
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/admin/groups/${id}`,
-        { method: "DELETE" },
-      );
+      const res = await deleteGroup(id);
       if (res.success) {
         toast.success(`已删除成员组「${name}」`);
         if (editingId === id) setEditingId(null);

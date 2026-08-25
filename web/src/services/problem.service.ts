@@ -85,6 +85,24 @@ export async function setProblemContest(
   });
 }
 
+export async function resubmitProblem(
+  id: string,
+): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>(`/problems/${id}/resubmit`, {
+    method: "POST",
+  });
+}
+
+export async function submitVerifierComment(
+  id: string,
+  content: string,
+): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>(`/problems/verifier-comment/${id}`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
 export async function submitVerifierSolution(
   id: string,
   solution: string,

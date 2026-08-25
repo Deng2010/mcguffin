@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import {
+  changeMemberRole,
+  getMembers,
+  getRequests,
+  removeMember,
+  reviewRequest,
+} from "../../services/team.service";
 import { useToast } from "../../errors/ToastContext";
 import { errorMessage } from "../../errors/normalize";
 
@@ -40,9 +46,9 @@ export default function TeamPage() {
 
   const loadData = () => {
     Promise.all([
-      apiFetch<TeamMemberAPI[]>("/team/members"),
+      getMembers() as Promise<TeamMemberAPI[]>,
       canManage
-        ? apiFetch<JoinRequestAPI[]>("/team/requests")
+        ? (getRequests() as Promise<JoinRequestAPI[]>)
         : Promise.resolve([]),
     ])
       .then(([m, r]) => {
@@ -75,7 +81,7 @@ export default function TeamPage() {
     action: "approve" | "reject",
   ) => {
     try {
-      await apiFetch(`/team/review/${requestId}/${action}`, { method: "POST" });
+      await reviewRequest(requestId, action);
       loadData();
     } catch (err) {
       toast.error(`操作失败: ${errorMessage(err)}`);
@@ -84,10 +90,7 @@ export default function TeamPage() {
 
   const handleChangeRole = async (member: TeamMemberAPI, newRole: string) => {
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/team/members/role/${member.user_id}`,
-        { method: "POST", body: JSON.stringify({ role: newRole }) },
-      );
+      const res = await changeMemberRole(member.user_id, newRole);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -101,10 +104,7 @@ export default function TeamPage() {
   const handleRemoveMember = async (member: TeamMemberAPI) => {
     if (!window.confirm(`确定要将 ${member.name} 移出团队吗？`)) return;
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/team/members/remove/${member.user_id}`,
-        { method: "POST" },
-      );
+      const res = await removeMember(member.user_id);
       if (!res.success) {
         toast.error(res.message);
         return;

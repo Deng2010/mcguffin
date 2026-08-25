@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../../services/api";
+import { getConfig, updateConfig } from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 
 interface ConfigData {
@@ -36,11 +36,11 @@ export default function AdminDiscussionsPage() {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<{
+      const res = (await getConfig()) as unknown as {
         success: boolean;
         config?: ConfigData;
         message?: string;
-      }>("/admin/config");
+      };
       if (!res.success || !res.config) {
         toast.error(`加载配置失败: ${res.message}`);
         return;
@@ -99,17 +99,11 @@ export default function AdminDiscussionsPage() {
     if (!fullConfig) return;
     setSaving(true);
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        "/admin/config",
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            ...fullConfig,
-            discussion_tags: discussionTags,
-            discussion_emojis: discussionEmojis,
-          }),
-        },
-      );
+      const res = await updateConfig({
+        ...fullConfig,
+        discussion_tags: discussionTags,
+        discussion_emojis: discussionEmojis,
+      });
       if (!res.success) {
         toast.error(`保存失败: ${res.message}`);
         return;

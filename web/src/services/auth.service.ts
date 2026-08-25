@@ -10,8 +10,10 @@ export interface InitStatus {
 }
 
 export interface InitAdminPayload {
-  username: string;
+  display_name: string;
   password: string;
+  avatar_url?: string;
+  [key: string]: any;
 }
 
 export async function fetchPermissions(): Promise<Record<string, string[]>> {

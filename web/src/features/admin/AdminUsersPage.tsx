@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../../services/api";
+import {
+  changeUserRole,
+  getAdminUsers,
+  getGroups,
+  removeUser,
+} from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 
 interface AdminUser {
@@ -32,8 +37,8 @@ export default function AdminUsersPage() {
     setLoading(true);
     try {
       const [uRes, gRes] = await Promise.all([
-        apiFetch<AdminUser[]>("/admin/users"),
-        apiFetch<MemberGroup[]>("/admin/groups"),
+        getAdminUsers() as unknown as Promise<AdminUser[]>,
+        getGroups() as Promise<MemberGroup[]>,
       ]);
       setUsers(Array.isArray(uRes) ? uRes : []);
       setGroups(Array.isArray(gRes) ? gRes : []);
@@ -51,13 +56,7 @@ export default function AdminUsersPage() {
   const handleChangeRole = async (userId: string, role: string) => {
     setChangingRole(userId);
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/admin/users/${userId}/role`,
-        {
-          method: "POST",
-          body: JSON.stringify({ role }),
-        },
-      );
+      const res = await changeUserRole(userId, role as any);
       if (res.success) {
         toast.success("角色已更新");
         loadData();
@@ -75,12 +74,7 @@ export default function AdminUsersPage() {
     if (!confirm(`确定要删除用户「${displayName}」吗？此操作不可撤销。`))
       return;
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/admin/users/${userId}/remove`,
-        {
-          method: "POST",
-        },
-      );
+      const res = await removeUser(userId);
       if (res.success) {
         toast.success("用户已删除");
         loadData();

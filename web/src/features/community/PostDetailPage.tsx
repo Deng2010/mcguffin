@@ -2,7 +2,18 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import NotFoundPage from "../notfound/NotFoundPage";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import {
+  deletePost,
+  deleteReply,
+  getEmojis,
+  getPost,
+  getTags,
+  reactToPost,
+  reactToReply,
+  replyToPost,
+  updatePost,
+} from "../../services/post.service";
+import { getMembers } from "../../services/team.service";
 import MarkdownRenderer from "../../components/MarkdownRenderer";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import ReactionRow from "../../components/ReactionRow";
@@ -70,7 +81,7 @@ export default function PostDetailPage() {
 
   const loadPost = () => {
     if (!id) return;
-    apiFetch<PostDetail>(`/posts/${id}`)
+    getPost(id)
       .then((data) => {
         setPost(data);
         setReplyPage(1);
@@ -81,13 +92,13 @@ export default function PostDetailPage() {
 
   useEffect(() => {
     loadPost();
-    apiFetch<DiscussionEmoji[]>("/posts/emojis")
+    getEmojis()
       .then(setEmojis)
       .catch(() => {});
-    apiFetch<DiscussionTag[]>("/posts/tags")
+    getTags()
       .then(setAllTags)
       .catch(() => {});
-    apiFetch<MentionMember[]>("/team/members")
+    (getMembers() as unknown as Promise<MentionMember[]>)
       .then(setTeamMembers)
       .catch(() => {});
   }, [id]);
@@ -106,10 +117,7 @@ export default function PostDetailPage() {
         body.parent_id = replyTo.id;
         body.reply_to = replyTo.author_name;
       }
-      await apiFetch(`/posts/${id}/reply`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      await replyToPost(id, body);
       setReplyContent("");
       setReplyTo(null);
       loadPost();
@@ -124,7 +132,7 @@ export default function PostDetailPage() {
     if (!post || !id) return;
     if (!confirm("确定删除此帖子？")) return;
     try {
-      const res = await apiFetch<any>(`/posts/${id}`, { method: "DELETE" });
+      const res = await deletePost(id);
       if (res.success) {
         navigate("/community");
       } else {
@@ -139,9 +147,7 @@ export default function PostDetailPage() {
     if (!id) return;
     if (!confirm("确定删除此回复？")) return;
     try {
-      const res = await apiFetch<any>(`/posts/${id}/reply/${replyId}`, {
-        method: "DELETE",
-      });
+      const res = await deleteReply(id, replyId);
       if (res.success) {
         loadPost();
       } else {
@@ -155,10 +161,7 @@ export default function PostDetailPage() {
   const handleReact = async (emoji: string) => {
     if (!id) return;
     try {
-      await apiFetch(`/posts/${id}/react`, {
-        method: "POST",
-        body: JSON.stringify({ emoji }),
-      });
+      await reactToPost(id, emoji);
       loadPost();
     } catch {
       /* ignore */
@@ -168,10 +171,7 @@ export default function PostDetailPage() {
   const handleReactReply = async (replyId: string, emoji: string) => {
     if (!id) return;
     try {
-      await apiFetch(`/posts/${id}/reply/${replyId}/react`, {
-        method: "POST",
-        body: JSON.stringify({ emoji }),
-      });
+      await reactToReply(id, replyId, emoji);
       loadPost();
     } catch {
       /* ignore */
@@ -188,10 +188,7 @@ export default function PostDetailPage() {
     if (!id) return;
     setSavingTags(true);
     try {
-      await apiFetch(`/posts/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ tags: editTagIds }),
-      });
+      await updatePost(id, { tags: editTagIds });
       setEditingTags(false);
       loadPost();
     } catch (err) {
@@ -204,9 +201,10 @@ export default function PostDetailPage() {
   const handleTogglePinned = async () => {
     if (!id || !post) return;
     try {
-      await apiFetch(`/posts/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ pinned: !post.pinned }),
+      await updatePost(id, {
+        title: post.title,
+        content: post.content,
+        pinned: !post.pinned,
       });
       loadPost();
     } catch (err) {
@@ -217,9 +215,10 @@ export default function PostDetailPage() {
   const handleToggleTeamOnly = async () => {
     if (!id || !post) return;
     try {
-      await apiFetch(`/posts/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ team_only: !post.team_only }),
+      await updatePost(id, {
+        title: post.title,
+        content: post.content,
+        team_only: !post.team_only,
       });
       loadPost();
     } catch (err) {
@@ -230,9 +229,10 @@ export default function PostDetailPage() {
   const handleStatusChange = async (status: string) => {
     if (!id) return;
     try {
-      await apiFetch(`/posts/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({ status }),
+      await updatePost(id, {
+        title: post.title,
+        content: post.content,
+        status,
       });
       loadPost();
     } catch (err) {

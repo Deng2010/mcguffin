@@ -2,7 +2,13 @@ import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { useSiteStore } from "../../stores/siteStore";
-import { apiFetch } from "../../services/api";
+import {
+  getContests,
+  getContestProblems,
+  setContestStatus,
+  setProblemOrder,
+  updateContest,
+} from "../../services/contest.service";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import DateTimePicker from "../../components/DateTimePicker";
 import { buildContestTime, splitContestTime } from "../../utils/time";
@@ -64,8 +70,8 @@ export default function ContestDetailPage() {
   const refreshData = async () => {
     if (!id) return;
     const [contestsRes, problemsRes] = await Promise.all([
-      apiFetch<ContestDetail[]>("/contests"),
-      apiFetch<ContestProblem[]>(`/contests/${id}/problems`),
+      getContests() as Promise<ContestDetail[]>,
+      getContestProblems(id) as Promise<ContestProblem[]>,
     ]);
     const found = contestsRes.find((c: ContestDetail) => c.id === id);
     if (found) setContest(found);
@@ -104,7 +110,7 @@ export default function ContestDetailPage() {
     setEditProblemsReady(false);
     setError("");
     setEditing(true);
-    apiFetch<ContestProblem[]>(`/contests/${id}/problems`)
+    (getContestProblems(id) as Promise<ContestProblem[]>)
       .then(setEditProblems)
       .catch(() => setEditProblems([]))
       .finally(() => setEditProblemsReady(true));
@@ -139,26 +145,20 @@ export default function ContestDetailPage() {
     setSaving(true);
     setError("");
     try {
-      const r1 = await apiFetch<{ success: boolean }>(`/contests/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          name: editName,
-          start_time: startTime,
-          end_time: endTime,
-          description: editDescription,
-          link: editLink || undefined,
-        }),
-      });
+      const r1 = (await updateContest(id, {
+        name: editName,
+        start_time: startTime,
+        end_time: endTime,
+        description: editDescription,
+        link: editLink || undefined,
+      })) as unknown as { success: boolean };
       if (!r1.success) {
         setError("保存比赛信息失败");
         return;
       }
-      const r2 = await apiFetch<{ success: boolean }>(
-        `/contests/${id}/problem-order`,
-        {
-          method: "POST",
-          body: JSON.stringify({ problem_ids: editProblems.map((p) => p.id) }),
-        },
+      const r2 = await setProblemOrder(
+        id,
+        editProblems.map((p) => p.id),
       );
       if (!r2.success) {
         setError("保存题目顺序失败");
@@ -181,13 +181,7 @@ export default function ContestDetailPage() {
       if (!url) return;
       if (!confirm("确定要公开此比赛吗？")) return;
       try {
-        const r = await apiFetch<{ success: boolean }>(
-          `/contests/${id}/status`,
-          {
-            method: "POST",
-            body: JSON.stringify({ status: newStatus, link: url }),
-          },
-        );
+        const r = await setContestStatus(id, newStatus, url);
         if (!r.success) {
           toast.error("操作失败");
           return;
@@ -199,13 +193,7 @@ export default function ContestDetailPage() {
     } else {
       if (!confirm("确定要取消公开此比赛吗？")) return;
       try {
-        const r = await apiFetch<{ success: boolean }>(
-          `/contests/${id}/status`,
-          {
-            method: "POST",
-            body: JSON.stringify({ status: newStatus }),
-          },
-        );
+        const r = await setContestStatus(id, newStatus);
         if (!r.success) {
           toast.error("操作失败");
           return;

@@ -4,9 +4,14 @@ import { apiFetch } from "./api";
 export interface ConfigValue {
   server?: Record<string, any>;
   site?: Record<string, any>;
+  admin?: Record<string, any>;
   oauth?: Record<string, any>;
+  backup?: Record<string, any>;
   difficulty?: Record<string, any>;
   permissions?: Record<string, string[]>;
+  discussion_tags?: Record<string, any>;
+  discussion_emojis?: Record<string, any>;
+  [key: string]: any;
 }
 
 export interface Group {
@@ -138,16 +143,21 @@ export async function deleteBackup(name: string): Promise<Record<string, any>> {
   );
 }
 
-export async function downloadBackup(name: string): Promise<Blob> {
-  return apiFetch<Blob>(`/admin/backup/download/${encodeURIComponent(name)}`);
+export async function downloadBackup(
+  name: string,
+): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>(
+    `/admin/backup/download/${encodeURIComponent(name)}`,
+  );
 }
 
 export async function restoreFromUpload(
-  formData: FormData,
+  content: string,
+  filename: string,
 ): Promise<Record<string, any>> {
   return apiFetch<Record<string, any>>("/admin/backup/restore-upload", {
     method: "POST",
-    body: formData,
+    body: JSON.stringify({ content, filename }),
   });
 }
 
@@ -157,8 +167,8 @@ export async function exportData(type: string): Promise<Record<string, any>> {
   );
 }
 
-export async function exportDatabase(): Promise<Blob> {
-  return apiFetch<Blob>("/admin/export/db");
+export async function exportDatabase(): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>("/admin/export/db");
 }
 
 export async function importData(
@@ -176,6 +186,34 @@ export async function importConfig(
   return apiFetch<Record<string, any>>("/admin/import/config", {
     method: "POST",
     body: JSON.stringify({ content }),
+  });
+}
+
+export async function resetPermissions(): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>("/admin/permissions/reset", {
+    method: "POST",
+  });
+}
+
+export async function getAclResources(): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>("/admin/acl/resources");
+}
+
+export async function resetAcl(): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>("/admin/acl/reset", {
+    method: "POST",
+  });
+}
+
+export async function updateResourceAcl(
+  type: string,
+  id: string,
+  visibleTo: string[],
+  editableBy: string[],
+): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>(`/admin/acl/${type}/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ visible_to: visibleTo, editable_by: editableBy }),
   });
 }
 

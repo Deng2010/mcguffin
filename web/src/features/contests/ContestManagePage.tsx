@@ -1,7 +1,11 @@
 import { useState, useEffect, SyntheticEvent } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import {
+  createContest,
+  deleteContest,
+  getContests,
+} from "../../services/contest.service";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import DateTimePicker from "../../components/DateTimePicker";
 import { buildContestTime } from "../../utils/time";
@@ -44,7 +48,7 @@ export default function ContestManagePage() {
   const [searchText, setSearchText] = useState("");
 
   const loadContests = () => {
-    apiFetch<ContestItem[]>("/contests")
+    (getContests() as Promise<ContestItem[]>)
       .then(setContests)
       .catch(() => setContests([]))
       .finally(() => setLoading(false));
@@ -81,19 +85,13 @@ export default function ContestManagePage() {
     const startTime = buildContestTime(startDate, startHour, startMinute);
     const endTime = buildContestTime(endDate, endHour, endMinute);
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        "/contests",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            name,
-            start_time: startTime,
-            end_time: endTime,
-            description,
-            link: link || undefined,
-          }),
-        },
-      );
+      const res = (await createContest({
+        name,
+        start_time: startTime,
+        end_time: endTime,
+        description,
+        link: link || undefined,
+      })) as unknown as { success: boolean; message: string };
       if (!res.success) {
         setError(res.message);
         return;
@@ -123,10 +121,7 @@ export default function ContestManagePage() {
     )
       return;
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/contests/${contestId}`,
-        { method: "DELETE" },
-      );
+      const res = await deleteContest(contestId);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -322,9 +317,6 @@ export default function ContestManagePage() {
                       {c.description}
                     </div>
                   )}
-                  <div className="text-xs text-gray-400 mt-1 dark:text-gray-500">
-                    创建于 {c.created_at}
-                  </div>
                 </div>
                 <div className="flex gap-2 shrink-0 ml-4">
                   <Link

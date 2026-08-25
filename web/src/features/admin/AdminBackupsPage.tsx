@@ -1,5 +1,16 @@
 import { useState, useEffect, useRef } from "react";
-import { apiFetch } from "../../services/api";
+import {
+  createBackup,
+  deleteBackup,
+  downloadBackup,
+  exportData,
+  exportDatabase,
+  getBackups,
+  importConfig,
+  importData,
+  restoreBackup,
+  restoreFromUpload,
+} from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 
 interface BackupEntry {
@@ -20,9 +31,10 @@ export default function AdminBackupsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<{ success: boolean; backups: BackupEntry[] }>(
-        "/admin/backups",
-      );
+      const res = (await getBackups()) as unknown as {
+        success: boolean;
+        backups: BackupEntry[];
+      };
       if (res.success) setBackups(res.backups);
     } catch (err) {
       toast.error(`加载备份列表失败: ${err}`);
@@ -37,11 +49,7 @@ export default function AdminBackupsPage() {
   const handleCreate = async () => {
     setCreating(true);
     try {
-      const res = await apiFetch<{
-        success: boolean;
-        message: string;
-        backup?: string;
-      }>("/admin/backup", { method: "POST" });
+      const res = await createBackup();
       if (!res.success) {
         toast.error(`备份失败: ${res.message}`);
         return;
@@ -58,10 +66,7 @@ export default function AdminBackupsPage() {
   const handleRestore = async (name: string) => {
     if (!confirm(`确定要从备份「${name}」恢复吗？`)) return;
     try {
-      const res = await apiFetch<any>(
-        `/admin/backup/restore/${encodeURIComponent(name)}`,
-        { method: "POST" },
-      );
+      const res = await restoreBackup(name);
       if (res.success) {
         toast.success(res.message);
         load();
@@ -76,10 +81,7 @@ export default function AdminBackupsPage() {
   const handleDelete = async (name: string) => {
     if (!confirm(`确定要删除备份「${name}」吗？`)) return;
     try {
-      const res = await apiFetch<any>(
-        `/admin/backup/${encodeURIComponent(name)}`,
-        { method: "DELETE" },
-      );
+      const res = await deleteBackup(name);
       if (res.success) {
         toast.success(`已删除: ${name}`);
         load();
@@ -100,9 +102,7 @@ export default function AdminBackupsPage() {
 
   const handleDownload = async (name: string) => {
     try {
-      const res = await apiFetch<any>(
-        `/admin/backup/download/${encodeURIComponent(name)}`,
-      );
+      const res = await downloadBackup(name);
       if (!res.success) {
         toast.error(`下载失败: ${res.message}`);
         return;
@@ -130,7 +130,7 @@ export default function AdminBackupsPage() {
 
   const doExport = async (type: string) => {
     try {
-      const res = await apiFetch<any>(`/admin/export/${type}`);
+      const res = await exportData(type);
       if (!res.success) {
         toast.error(`导出失败: ${res.message}`);
         return;
@@ -152,7 +152,7 @@ export default function AdminBackupsPage() {
 
   const exportDb = async () => {
     try {
-      const res = await apiFetch<any>("/admin/export/db");
+      const res = await exportDatabase();
       if (!res.success) {
         toast.error(`导出失败: ${res.message}`);
         return;
@@ -193,20 +193,12 @@ export default function AdminBackupsPage() {
           binary += String.fromCharCode(bytes[i]);
         }
         const content = btoa(binary);
-        res = await apiFetch<any>("/admin/backup/restore-upload", {
-          method: "POST",
-          body: JSON.stringify({ content, filename: file.name }),
-          headers: { "Content-Type": "application/json" },
-        });
+        res = await restoreFromUpload(content, file.name);
         if (res.success) toast.success(res.message);
         else toast.error(`恢复失败: ${res.message}`);
       } else {
         const content = await file.text();
-        res = await apiFetch<any>("/admin/import/data", {
-          method: "POST",
-          body: JSON.stringify({ content }),
-          headers: { "Content-Type": "application/json" },
-        });
+        res = await importData(content);
         if (res.success) toast.success(res.message);
         else toast.error(`导入失败: ${res.message}`);
       }
@@ -223,11 +215,7 @@ export default function AdminBackupsPage() {
     const content = await file.text();
     if (!confirm(`确定要从「${file.name}」导入配置吗？`)) return;
     try {
-      const res = await apiFetch<any>("/admin/import/config", {
-        method: "POST",
-        body: JSON.stringify({ content }),
-        headers: { "Content-Type": "application/json" },
-      });
+      const res = await importConfig(content);
       if (res.success) toast.success(res.message);
       else toast.error(`导入失败: ${res.message}`);
     } catch (err) {

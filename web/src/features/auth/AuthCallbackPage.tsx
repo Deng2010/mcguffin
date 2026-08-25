@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { setToken, apiFetch } from "../../services/api";
+import { setToken } from "../../services/api";
+import { getMe } from "../../services/user.service";
 import type { User } from "../../types";
 
 export default function AuthCallbackPage() {
@@ -14,7 +15,7 @@ export default function AuthCallbackPage() {
 
     if (token) {
       setToken(token);
-      apiFetch<User>("/user/me")
+      getMe()
         .then(() => navigate("/", { replace: true }))
         .catch(() => navigate("/login", { replace: true }));
     } else if (error) {

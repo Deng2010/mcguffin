@@ -20,7 +20,7 @@ export async function reviewRequest(
 
 export async function changeMemberRole(
   userId: string,
-  role: "admin" | "member",
+  role: string,
 ): Promise<Record<string, any>> {
   return apiFetch<Record<string, any>>(`/team/members/role/${userId}`, {
     method: "POST",

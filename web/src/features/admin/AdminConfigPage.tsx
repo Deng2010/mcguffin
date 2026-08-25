@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import {
+  exportConfig as exportConfigApi,
+  getConfig,
+  restartServer,
+  updateConfig,
+} from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 import Tabs from "../../components/ui/Tabs";
 import type { TabId, ConfigData, DifficultyEntry } from "./config-context";
@@ -85,11 +90,11 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<{
+      const res = (await getConfig()) as unknown as {
         success: boolean;
         config?: ConfigData;
         message?: string;
-      }>("/admin/config");
+      };
       if (!res.success || !res.config) {
         toast.error(`加载配置失败: ${res.message}`);
         return;
@@ -217,37 +222,31 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
         difficultyOrder.length > 0
           ? difficultyOrder
           : difficulties.filter((d) => d.name.trim()).map((d) => d.name.trim());
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        "/admin/config",
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            server: {
-              site_url: siteUrl,
-              port: parseInt(port) || 3000,
-            },
-            admin: { password: adminPassword, display_name: displayName },
-            site: {
-              name: siteName,
-              title: siteTitle || undefined,
-              difficulty_order: order,
-              timezone: siteTimezone || "UTC+8",
-            },
-            oauth: {
-              cp_client_id: cpClientId,
-              cp_client_secret: cpClientSecret,
-            },
-            backup: {
-              interval_minutes: backupInterval,
-              retention_count: backupRetention,
-              backup_directory: backupDirectory || null,
-            },
-            difficulty: diffObj,
-            discussion_tags: savedTags,
-            discussion_emojis: savedEmojis,
-          }),
+      const res = await updateConfig({
+        server: {
+          site_url: siteUrl,
+          port: parseInt(port) || 3000,
         },
-      );
+        admin: { password: adminPassword, display_name: displayName },
+        site: {
+          name: siteName,
+          title: siteTitle || undefined,
+          difficulty_order: order,
+          timezone: siteTimezone || "UTC+8",
+        },
+        oauth: {
+          cp_client_id: cpClientId,
+          cp_client_secret: cpClientSecret,
+        },
+        backup: {
+          interval_minutes: backupInterval,
+          retention_count: backupRetention,
+          backup_directory: backupDirectory || null,
+        },
+        difficulty: diffObj,
+        discussion_tags: savedTags,
+        discussion_emojis: savedEmojis,
+      });
       if (!res.success) {
         toast.error(`保存失败: ${res.message}`);
         return;
@@ -265,10 +264,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
       return;
     setRestarting(true);
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        "/admin/restart",
-        { method: "POST" },
-      );
+      const res = await restartServer();
       if (!res.success) {
         toast.error(`重启失败: ${res.message}`);
         setRestarting(false);
@@ -284,7 +280,7 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
 
   const exportConfig = async () => {
     try {
-      const res = await apiFetch<any>("/admin/export/config");
+      const res = await exportConfigApi();
       if (!res.success) {
         toast.error(`导出失败: ${res.message}`);
         return;

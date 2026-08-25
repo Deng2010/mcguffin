@@ -2,7 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import NotFoundPage from "../notfound/NotFoundPage";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import { getContests } from "../../services/contest.service";
+import {
+  getProblemDetail,
+  submitVerifierComment,
+  submitVerifierSolution,
+  updateProblem,
+} from "../../services/problem.service";
+import { getMembers } from "../../services/team.service";
 import MarkdownRenderer from "../../components/MarkdownRenderer";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
@@ -48,7 +55,7 @@ export default function ProblemDetailPage() {
   const nameManuallyEdited = useRef(false);
 
   useEffect(() => {
-    apiFetch<ProblemDetail>(`/problems/detail/${id}`)
+    (getProblemDetail(id) as unknown as Promise<ProblemDetail>)
       .then((p) => {
         setProblem(p);
         if (p.verifier_solution) setVerifierSolution(p.verifier_solution);
@@ -60,8 +67,8 @@ export default function ProblemDetailPage() {
       })
       .catch(() => setError("无法加载题目"))
       .finally(() => setLoading(false));
-    apiFetch<Contest[]>("/contests")
-      .then(setContests)
+    getContests()
+      .then((list) => setContests(list as Contest[]))
       .catch(() => {});
   }, [id]);
 
@@ -84,7 +91,7 @@ export default function ProblemDetailPage() {
     setEditing(true);
     // Load all team members for author selector
     if (isAdmin && teamMembers.length === 0) {
-      apiFetch<{ user_id: string; name: string }[]>("/team/members")
+      (getMembers() as unknown as Promise<{ user_id: string; name: string }[]>)
         .then(setTeamMembers)
         .catch(() => {});
     }
@@ -130,9 +137,7 @@ export default function ProblemDetailPage() {
       if (editRemark !== (problem.remark || "")) {
         body.remark = editRemark || null;
       }
-      if (
-        Object.keys(body).length === 0
-      ) {
+      if (Object.keys(body).length === 0) {
         setEditMsg("没有修改");
         setSaving(false);
         return;
@@ -140,10 +145,7 @@ export default function ProblemDetailPage() {
 
       // Save problem fields
       if (Object.keys(body).length > 0) {
-        const res = await apiFetch<{ success: boolean; message: string }>(
-          `/problems/${problem.id}`,
-          { method: "PUT", body: JSON.stringify(body) },
-        );
+        const res = await updateProblem(problem.id, body as any);
         if (!res.success) {
           setEditMsg(res.message);
           setSaving(false);
@@ -152,7 +154,7 @@ export default function ProblemDetailPage() {
       }
 
       // Reload problem details
-      const updated = await apiFetch<ProblemDetail>(`/problems/detail/${id}`);
+      const updated = (await getProblemDetail(id!)) as unknown as ProblemDetail;
       setProblem(updated);
       setEditing(false);
       setEditMsg("已保存");
@@ -166,13 +168,7 @@ export default function ProblemDetailPage() {
 
   const handleSaveVerifierSolution = async () => {
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/verifier-solution/${id}`,
-        {
-          method: "POST",
-          body: JSON.stringify({ solution: verifierSolution }),
-        },
-      );
+      const res = await submitVerifierSolution(id!, verifierSolution);
       if (!res.success) {
         toast.error(res.message);
         return;
@@ -188,20 +184,14 @@ export default function ProblemDetailPage() {
     if (!commentText.trim()) return;
     setCommentSaving(true);
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/problems/verifier-comment/${id}`,
-        {
-          method: "POST",
-          body: JSON.stringify({ content: commentText.trim() }),
-        },
-      );
+      const res = await submitVerifierComment(id!, commentText.trim());
       if (!res.success) {
         toast.error(res.message);
         return;
       }
       setCommentText("");
       // Reload detail to reflect the new comment
-      const updated = await apiFetch<ProblemDetail>(`/problems/detail/${id}`);
+      const updated = (await getProblemDetail(id!)) as unknown as ProblemDetail;
       setProblem(updated);
     } catch (err) {
       toast.error(`评论失败: ${errorMessage(err)}`);
@@ -525,7 +515,8 @@ export default function ProblemDetailPage() {
 
       {/* All verifiers' solutions (read-only) */}
       {(problem.verifiers || []).map((v) => {
-        const mine = problem.can_submit_verifier_solution && v.user_id === user?.id;
+        const mine =
+          problem.can_submit_verifier_solution && v.user_id === user?.id;
         return (
           <div
             key={v.user_id}
@@ -605,11 +596,12 @@ export default function ProblemDetailPage() {
       })}
 
       {/* Claimed by info (multi-verifier, no solutions yet) */}
-      {(problem.verifiers || []).length > 0 && !problem.can_submit_verifier_solution && (
-        <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-          此题目已被 {(problem.verifiers || []).length} 位成员认领验题
-        </div>
-      )}
+      {(problem.verifiers || []).length > 0 &&
+        !problem.can_submit_verifier_solution && (
+          <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+            此题目已被 {(problem.verifiers || []).length} 位成员认领验题
+          </div>
+        )}
     </div>
   );
 }

@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { apiFetch } from "../../services/api";
+import {
+  getAdminPlugins,
+  installPluginZip,
+  setPluginEnabled,
+  setPluginsGloballyEnabled,
+  uninstallPlugin,
+} from "../../services/plugin.service";
 import { useToast } from "../../errors/ToastContext";
 import { PluginRegistry } from "../../plugins/registry";
 
@@ -43,7 +49,7 @@ export default function AdminPluginsPage() {
   const loadBackendPlugins = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<PluginsListResponse>("/admin/plugins");
+      const res = await getAdminPlugins();
       setBackendPlugins(res.plugins);
       setGloballyDisabled(res.plugins_disabled === true);
     } catch {
@@ -116,19 +122,7 @@ export default function AdminPluginsPage() {
 
     try {
       const buffer = await file.arrayBuffer();
-      const res = await fetch("/api/admin/plugins/install-zip", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
-          "Content-Type": "application/octet-stream",
-        },
-        body: buffer,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showMsg(`安装失败: ${data.message}`, "error");
-        return;
-      }
+      const data = await installPluginZip(buffer);
       showMsg(
         `✅ 插件「${data.plugin.name} v${data.plugin.version}」安装成功`,
         "success",
@@ -149,10 +143,7 @@ export default function AdminPluginsPage() {
       return;
     showMsg(`正在卸载 ${pluginName}...`, "info");
     try {
-      const res = await apiFetch<{ success: boolean; message?: string }>(
-        `/admin/plugins/${encodeURIComponent(pluginId)}`,
-        { method: "DELETE" },
-      );
+      const res = await uninstallPlugin(pluginId);
       if (!res.success) {
         showMsg(`卸载失败: ${res.message}`, "error");
         return;
@@ -172,14 +163,7 @@ export default function AdminPluginsPage() {
     if (!confirm(`确定要全局${actionLabel}所有插件功能吗？`)) return;
     showMsg(`正在全局${actionLabel}插件...`, "info");
     try {
-      const res = await apiFetch<{
-        success: boolean;
-        plugins_disabled?: boolean;
-        message?: string;
-      }>("/admin/plugins/global", {
-        method: "POST",
-        body: JSON.stringify({ enabled: !next }),
-      });
+      const res = await setPluginsGloballyEnabled(!next);
       if (!res.success) {
         showMsg(`全局${actionLabel}失败: ${res.message}`, "error");
         return;
@@ -206,10 +190,7 @@ export default function AdminPluginsPage() {
     if (!confirm(`确定要${actionLabel}插件「${pluginName}」吗？`)) return;
     showMsg(`正在${actionLabel} ${pluginName}...`, "info");
     try {
-      const res = await apiFetch<{ success: boolean; message?: string }>(
-        `/admin/plugins/${encodeURIComponent(pluginId)}/${action}`,
-        { method: "POST" },
-      );
+      const res = await setPluginEnabled(pluginId, !currentEnabled);
       if (!res.success) {
         showMsg(`${actionLabel}失败: ${res.message}`, "error");
         return;

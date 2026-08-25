@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { useSiteStore } from "../../stores/siteStore";
-import { apiFetch } from "../../services/api";
+import { getInitStatus } from "../../services/auth.service";
 
 export default function LoginPage() {
   const { login, accountLogin } = useAuthStore();
@@ -21,9 +21,7 @@ export default function LoginPage() {
   useEffect(() => {
     const checkInit = async () => {
       try {
-        const res = await apiFetch<{ initialized: boolean }>(
-          "/admin/init-status",
-        );
+        const res = await getInitStatus();
         if (!res.initialized) {
           setNotInitialized(true);
         }

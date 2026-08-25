@@ -1,7 +1,7 @@
 import { SyntheticEvent, useState } from "react";
 import { Link, useNavigate, Navigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import { applyToJoin } from "../../services/team.service";
 
 export default function ApplyPage() {
   const { user, hasPermission } = useAuthStore();
@@ -17,13 +17,7 @@ export default function ApplyPage() {
   const handleSubmit = async (e: SyntheticEvent) => {
     e.preventDefault();
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        "/team/apply",
-        {
-          method: "POST",
-          body: JSON.stringify({ reason }),
-        },
-      );
+      const res = await applyToJoin(reason);
       if (res.success) {
         setSubmitted(true);
       } else {

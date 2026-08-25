@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import { createPost, getCommunityPosts } from "../../services/post.service";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import { formatTime } from "../../utils/time";
 import type { DiscussionTag } from "../../types";
@@ -75,16 +75,8 @@ export default function CommunityPage() {
 
   const loadPosts = (p?: number) => {
     const currentPage = p ?? page;
-    const tagParam = activeTab !== "all" ? `&tag=${activeTab}` : "";
-    apiFetch<{
-      items: PostListItem[];
-      total: number;
-      total_all?: number;
-      page: number;
-      total_pages: number;
-      tags: DiscussionTag[];
-      tag_counts: Record<string, number>;
-    }>(`/community/posts?page=${currentPage}&limit=${limit}${tagParam}`)
+    const tagParam = activeTab !== "all" ? activeTab : undefined;
+    getCommunityPosts(currentPage, limit, tagParam)
       .then((res) => {
         setPosts(res.items);
         setTotal(res.total);
@@ -106,15 +98,10 @@ export default function CommunityPage() {
     setActiveTab(tab);
     setPage(1);
     setLoading(true);
-    const tagParam = tab !== "all" ? `&tag=${tab}` : "";
-    apiFetch<{
-      items: PostListItem[];
-      total: number;
-      total_all?: number;
-      tag_counts: Record<string, number>;
-    }>(`/community/posts?page=1&limit=${limit}${tagParam}`)
+    const tagParam = tab !== "all" ? tab : undefined;
+    getCommunityPosts(1, limit, tagParam)
       .then((res) => {
-        setPosts(res.items);
+        setPosts(res.items as PostListItem[]);
         setTotal(res.total);
         setPage(1);
         setTotalPages(Math.max(1, Math.ceil(res.total / limit)));
@@ -128,15 +115,8 @@ export default function CommunityPage() {
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages) return;
     setLoading(true);
-    const tagParam = activeTab !== "all" ? `&tag=${activeTab}` : "";
-    apiFetch<{
-      items: PostListItem[];
-      total: number;
-      total_all?: number;
-      page: number;
-      total_pages: number;
-      tag_counts: Record<string, number>;
-    }>(`/community/posts?page=${p}&limit=${limit}${tagParam}`)
+    const tagParam = activeTab !== "all" ? activeTab : undefined;
+    getCommunityPosts(p, limit, tagParam)
       .then((res) => {
         setPosts(res.items);
         setPage(res.page);
@@ -171,15 +151,12 @@ export default function CommunityPage() {
     if (!createTitle.trim()) return;
     setSubmitting(true);
     try {
-      await apiFetch("/posts", {
-        method: "POST",
-        body: JSON.stringify({
-          title: createTitle.trim(),
-          content: createContent,
-          tags: createTags,
-          pinned: createPinned,
-          team_only: createTeamOnly,
-        }),
+      await createPost({
+        title: createTitle.trim(),
+        content: createContent,
+        tags: createTags,
+        pinned: createPinned,
+        team_only: createTeamOnly,
       });
       resetCreateForm();
       loadPosts();

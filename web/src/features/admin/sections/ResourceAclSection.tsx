@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../../../services/api";
+import {
+  getAclResources,
+  resetAcl,
+  updateResourceAcl,
+} from "../../../services/admin.service";
 
 interface AclResource {
   id: string;
@@ -70,7 +74,7 @@ export default function ResourceAclSection() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<AclData>("/admin/acl/resources");
+      const res = (await getAclResources()) as unknown as AclData;
       setData(res);
     } catch (err) {
       setMsg(`加载失败: ${err}`);
@@ -89,10 +93,7 @@ export default function ResourceAclSection() {
     setResetting(true);
     setMsg("");
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        "/admin/acl/reset",
-        { method: "POST" },
-      );
+      const res = await resetAcl();
       if (!res.success) {
         setMsg(res.message || "恢复失败");
         return;
@@ -179,15 +180,11 @@ export default function ResourceAclSection() {
     if (!edit) return;
     setSavingId(key);
     try {
-      const res = await apiFetch<{ success: boolean; message: string }>(
-        `/admin/acl/${type}/${id}`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            visible_to: edit.visible_to,
-            editable_by: edit.editable_by,
-          }),
-        },
+      const res = await updateResourceAcl(
+        type,
+        id,
+        edit.visible_to,
+        edit.editable_by,
       );
       if (res.success) {
         setMsg("保存成功");

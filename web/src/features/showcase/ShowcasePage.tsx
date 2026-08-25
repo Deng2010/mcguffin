@@ -3,12 +3,11 @@ import { useAuthStore } from "../../stores/authStore";
 import { useSiteStore } from "../../stores/siteStore";
 import { useDifficulties } from "../../hooks/useDifficulties";
 import { useToast } from "../../errors/ToastContext";
-import { apiFetch } from "../../services/api";
+import { getContests } from "../../services/contest.service";
+import { getProblems } from "../../services/problem.service";
+import { getAnnouncements } from "../../services/post.service";
 import type { Announcement } from "../../types";
-import {
-  createDefaultLayout,
-  normalizeShowcaseLayout,
-} from "./registry";
+import { createDefaultLayout, normalizeShowcaseLayout } from "./registry";
 import ShowcaseBoard from "./ShowcaseBoard";
 import ShowcaseSettingsPanel from "./ShowcaseSettingsPanel";
 import type {
@@ -59,9 +58,15 @@ export default function ShowcasePage() {
 
   useEffect(() => {
     Promise.all([
-      apiFetch<ShowcaseContest[]>("/contests").catch(() => [] as ShowcaseContest[]),
-      apiFetch<ShowcaseProblem[]>("/problems").catch(() => [] as ShowcaseProblem[]),
-      apiFetch<Announcement[]>("/announcements").catch(() => [] as Announcement[]),
+      (getContests() as Promise<ShowcaseContest[]>).catch(
+        () => [] as ShowcaseContest[],
+      ),
+      (getProblems() as Promise<ShowcaseProblem[]>).catch(
+        () => [] as ShowcaseProblem[],
+      ),
+      (getAnnouncements() as unknown as Promise<Announcement[]>).catch(
+        () => [] as Announcement[],
+      ),
     ])
       .then(([c, p, a]) => {
         setAllContests(c);

@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
-import { apiFetch } from "../../services/api";
+import {
+  checkNameAvailable,
+  getPublicProfile,
+  updateProfile,
+} from "../../services/user.service";
 
 interface PublicProfile {
   exists: boolean;
@@ -48,9 +52,7 @@ export default function ProfilePage() {
     setCheckingName(true);
     checkTimer.current = setTimeout(async () => {
       try {
-        const res = await apiFetch<{ available: boolean }>(
-          `/user/check-name?name=${encodeURIComponent(displayName.trim())}`,
-        );
+        const res = await checkNameAvailable(displayName.trim());
         setNameTaken(!res.available);
       } catch {
         // Silently fail — backend will catch it on save
@@ -70,7 +72,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (routeUsername && !isSelf) {
       setLoadingProfile(true);
-      apiFetch<PublicProfile>(`/user/profile/${routeUsername}`)
+      (getPublicProfile(routeUsername) as unknown as Promise<PublicProfile>)
         .then(setPublicProfile)
         .catch(() => setPublicProfile(null))
         .finally(() => setLoadingProfile(false));
@@ -243,14 +245,10 @@ export default function ProfilePage() {
         return;
       }
 
-      const res = await apiFetch<{
+      const res = (await updateProfile(body)) as unknown as {
         success: boolean;
         message: string;
-        user?: any;
-      }>("/user/profile", {
-        method: "PUT",
-        body: JSON.stringify(body),
-      });
+      };
       if (!res.success) {
         setMsg(res.message);
         setSaving(false);
