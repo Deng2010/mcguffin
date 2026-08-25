@@ -50,7 +50,9 @@ async function readCandies(userId: string): Promise<number> {
 function safeJsonArray(raw: string): string[] {
   try {
     const v = JSON.parse(raw);
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+    return Array.isArray(v)
+      ? v.filter((x): x is string => typeof x === "string")
+      : [];
   } catch {
     return [];
   }
@@ -87,7 +89,12 @@ export default function CandyPage() {
         setCandies: (id, n) =>
           setPluginData(PLUGIN_ID, NS_CANDIES, id, String(n)),
         setChampions: (list) =>
-          setPluginData(PLUGIN_ID, NS_WEEK, KEY_CHAMPIONS, JSON.stringify(list)),
+          setPluginData(
+            PLUGIN_ID,
+            NS_WEEK,
+            KEY_CHAMPIONS,
+            JSON.stringify(list),
+          ),
         setLastSettled: (week) =>
           setPluginData(PLUGIN_ID, NS_WEEK, KEY_LAST_SETTLED, week),
       };
@@ -152,7 +159,11 @@ export default function CandyPage() {
       try {
         // 1. 占一次今日额度（后端无原子计数器端点，用 KV 读-改-写；
         //    页面内 busy 锁串行化单页面点击，多 Tab/多设备并发为内部工具可接受边界）
-        const usedRaw = await getPluginData(PLUGIN_ID, NS_ATTEMPTS, attemptsKey);
+        const usedRaw = await getPluginData(
+          PLUGIN_ID,
+          NS_ATTEMPTS,
+          attemptsKey,
+        );
         const used = (usedRaw ? parseInt(usedRaw, 10) || 0 : 0) + 1;
         if (used > DAILY_LIMIT) {
           setAttemptsToday(DAILY_LIMIT);
@@ -171,7 +182,12 @@ export default function CandyPage() {
 
         if (ok) {
           const next = cur + 1;
-          await setPluginData(PLUGIN_ID, NS_CANDIES, member.user_id, String(next));
+          await setPluginData(
+            PLUGIN_ID,
+            NS_CANDIES,
+            member.user_id,
+            String(next),
+          );
           setCandies((prev) => new Map(prev).set(member.user_id, next));
           setFeed({
             kind: "success",
@@ -187,14 +203,19 @@ export default function CandyPage() {
         }
       } catch (e) {
         // 3. 异常时回滚额度，避免白扣次数（KV 读-改-写回滚）
-        const curRaw = await getPluginData(PLUGIN_ID, NS_ATTEMPTS, attemptsKey).catch(
-          () => "",
-        );
+        const curRaw = await getPluginData(
+          PLUGIN_ID,
+          NS_ATTEMPTS,
+          attemptsKey,
+        ).catch(() => "");
         const cur = curRaw ? parseInt(curRaw, 10) || 0 : 0;
         if (cur > 0) {
-          await setPluginData(PLUGIN_ID, NS_ATTEMPTS, attemptsKey, String(cur - 1)).catch(
-            () => {},
-          );
+          await setPluginData(
+            PLUGIN_ID,
+            NS_ATTEMPTS,
+            attemptsKey,
+            String(cur - 1),
+          ).catch(() => {});
           setAttemptsToday(Math.max(0, cur - 1));
         }
         setFeed({ kind: "error", text: `操作失败：${String(e)}` });
@@ -208,13 +229,11 @@ export default function CandyPage() {
   // ── 派生数据 ──
 
   const remaining = Math.max(0, DAILY_LIMIT - attemptsToday);
-  const ranked = members
-    .filter((m) => m.user_id !== me?.id)
-    .sort(
-      (a, b) =>
-        (candies.get(b.user_id) ?? 0) - (candies.get(a.user_id) ?? 0) ||
-        a.display_name.localeCompare(b.display_name, "zh"),
-    );
+  const ranked = members.sort(
+    (a, b) =>
+      (candies.get(b.user_id) ?? 0) - (candies.get(a.user_id) ?? 0) ||
+      a.display_name.localeCompare(b.display_name, "zh"),
+  );
   const nameOf = (userId: string) =>
     members.find((m) => m.user_id === userId)?.display_name ?? userId;
   const isJoined = me?.team_status === "joined";
@@ -329,14 +348,17 @@ export default function CandyPage() {
       <div className="space-y-2">
         {ranked.length === 0 ? (
           <div className="text-center py-12 text-gray-400 dark:text-gray-500">
-            {members.length === 0 ? "暂无团队成员" : "团队里只有你自己，去找更多队友吧"}
+            {members.length === 0
+              ? "暂无团队成员"
+              : "团队里只有你自己，去找更多队友吧"}
           </div>
         ) : (
           ranked.map((m) => {
             const c = candies.get(m.user_id) ?? 0;
             const p = successProbability(c);
             const isChamp = champions.includes(m.user_id);
-            const disabled = busy || !isJoined || remaining <= 0;
+            const disabled =
+              busy || !isJoined || remaining <= 0 || m.user_id == me.id;
             return (
               <div
                 key={m.user_id}
