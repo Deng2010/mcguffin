@@ -4,7 +4,7 @@ import { normalizeError } from "../errors/normalize";
 import { reportError } from "../errors/reporter";
 import { toastError } from "../errors/ToastContext";
 
-const TOKEN_KEY = "***";
+const TOKEN_KEY = "mcguffin_token";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -45,9 +45,12 @@ export class ApiError extends Error {
 }
 
 /** 解析统一错误响应体（success/code/message/hint/request_id）。 */
-export function parseErrorBody(
-  text: string,
-): { message?: string; code?: string; hint?: string; requestId?: string } {
+export function parseErrorBody(text: string): {
+  message?: string;
+  code?: string;
+  hint?: string;
+  requestId?: string;
+} {
   try {
     const j = JSON.parse(text);
     return {
@@ -105,7 +108,13 @@ export async function apiFetch<T>(
     const normalized = normalizeError(err, { source: "api" });
     reportError(err, { source: "api" });
     toastError(normalized.hint || normalized.message);
-    throw new ApiError(0, "", normalized.message, normalized.code, normalized.hint);
+    throw new ApiError(
+      0,
+      "",
+      normalized.message,
+      normalized.code,
+      normalized.hint,
+    );
   }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
