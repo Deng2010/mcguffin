@@ -56,19 +56,16 @@ features = ["v4"]
 [[bin]]
 path = "src/bin/mcguffin.rs"
 name = "mcguffin"
-edition = "2021"
 required-features = []
 
 [[bin]]
 path = "src/main.rs"
 name = "mcguffin-server"
-edition = "2021"
 required-features = []
 
 [[test]]
 path = "tests/api.rs"
 name = "api"
-edition = "2021"
 required-features = []
 
 [dev-dependencies]
@@ -82,6 +79,5 @@ serde_json = "1"
 [lib]
 path = "src/lib.rs"
 name = "mcguffin_server_lib"
-edition = "2021"
 required-features = []
 crate-type = ["lib"]

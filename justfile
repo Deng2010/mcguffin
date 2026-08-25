@@ -53,8 +53,7 @@ dev:
     @echo "  前端: http://localhost:5173"
     @echo "  后端: http://localhost:3000"
     @echo ""
-    cd server && cargo run &
-    cd web && bun run dev
+    sh -c 'trap "kill 0" INT TERM EXIT; cd server && cargo run --bin mcguffin-server & cd web && bun run dev'
 
 # 仅启动后端开发服务器
 dev-backend:
