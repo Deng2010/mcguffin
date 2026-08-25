@@ -7,7 +7,7 @@ import {
 } from "../../services/problem.service";
 import { getContests } from "../../services/contest.service";
 import { useDifficulties } from "../../hooks/useDifficulties";
-import type { ProblemListItem } from "../../types";
+import type { ContestOption, ProblemListItem } from "../../types";
 import {
   useProblemFilters,
   useProblemLists,
@@ -24,11 +24,6 @@ import ProblemCard, { cardClass } from "./components/ProblemCard";
 
 interface TeamMemberOption {
   user_id: string;
-  name: string;
-}
-
-interface ContestOption {
-  id: string;
   name: string;
 }
 

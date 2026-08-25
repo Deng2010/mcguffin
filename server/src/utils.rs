@@ -229,6 +229,45 @@ pub async fn require_permission_json(
     }
 }
 
+/// Resolve user, falling back to a caller-supplied error value when the
+/// session is invalid. Lets handlers with custom response types (e.g.
+/// `ClaimResponse`) reuse the unified auth path without changing their
+/// external JSON shape.
+pub async fn resolve_user_custom<T>(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    unauthorized: impl FnOnce() -> T,
+) -> Result<(String, User), T> {
+    resolve_user(state, headers).await.ok_or_else(unauthorized)
+}
+
+/// Like [`require_permission`] but on failure returns caller-supplied values
+/// instead of a fixed HTTP error, preserving custom response shapes.
+pub async fn require_permission_custom<T>(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+    permission: &str,
+    unauthorized: impl FnOnce() -> T,
+    forbidden: impl FnOnce() -> T,
+) -> Result<(String, User), T> {
+    let (uid, user) = resolve_user_custom(state, headers, unauthorized).await?;
+    if !check_permission(state, &user, permission).await {
+        state
+            .log_audit(AuditEntry {
+                timestamp: Utc::now(),
+                user_id: uid.clone(),
+                user_name: user.display_name.clone(),
+                action: permission.to_string(),
+                resource: String::new(),
+                result: "deny".to_string(),
+                reason: "权限检查未通过".to_string(),
+            })
+            .await;
+        return Err(forbidden());
+    }
+    Ok((uid, user))
+}
+
 // ============== Convenience Macros ==============
 
 // ============== Axum Extractor ==============

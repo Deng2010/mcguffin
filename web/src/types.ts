@@ -186,11 +186,7 @@ export interface JoinRequest {
 // ============== Problem Types ==============
 
 export type Difficulty = "Easy" | "Medium" | "Hard";
-export type ProblemStatus =
-  | "pending"
-  | "approved"
-  | "published"
-  | "returned";
+export type ProblemStatus = "pending" | "approved" | "published" | "returned";
 
 export interface Problem {
   id: string;
@@ -266,6 +262,7 @@ export interface ProblemDetail {
   verifiers?: VerifierEntry[];
   is_verifier?: boolean;
   is_author?: boolean;
+  link?: string | null;
 }
 
 export interface AdminPendingProblem {
@@ -293,6 +290,42 @@ export interface SubmitProblemPayload {
   difficulty: Difficulty;
   content: string;
   solution?: string;
+}
+
+// ============== Admin Types ==============
+
+/** 权限组成员组（后端 MemberGroup） */
+export interface MemberGroup {
+  id: string;
+  name: string;
+  permissions: string[];
+}
+
+/** 管理后台用户列表项（含权限组与个人额外权限） */
+export interface AdminUser {
+  id: string;
+  username: string;
+  display_name: string;
+  email: string | null;
+  role: string;
+  team_status: string;
+  is_team_member: boolean;
+  group_ids: string[];
+  user_permissions: string[];
+  created_at: string;
+}
+
+/** 难度等级条目（site/difficulties 配置） */
+export interface DifficultyEntry {
+  name: string;
+  label: string;
+  color: string;
+}
+
+/** 赛事下拉选项 */
+export interface ContestOption {
+  id: string;
+  name: string;
 }
 
 // ============== Notification Types ==============

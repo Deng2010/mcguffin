@@ -1,4 +1,5 @@
 import type { JoinRequest, TeamMember } from "../types";
+import type { ActionResult } from "./admin.service";
 import { apiFetch } from "./api";
 
 export async function getMembers(): Promise<TeamMember[]> {
@@ -12,8 +13,8 @@ export async function getRequests(): Promise<JoinRequest[]> {
 export async function reviewRequest(
   requestId: string,
   action: "approve" | "reject",
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/team/review/${requestId}/${action}`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/team/review/${requestId}/${action}`, {
     method: "POST",
   });
 }
@@ -21,25 +22,21 @@ export async function reviewRequest(
 export async function changeMemberRole(
   userId: string,
   role: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/team/members/role/${userId}`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/team/members/role/${userId}`, {
     method: "POST",
     body: JSON.stringify({ role }),
   });
 }
 
-export async function removeMember(
-  userId: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/team/members/remove/${userId}`, {
+export async function removeMember(userId: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/team/members/remove/${userId}`, {
     method: "POST",
   });
 }
 
-export async function applyToJoin(
-  reason: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/team/apply", {
+export async function applyToJoin(reason: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/team/apply", {
     method: "POST",
     body: JSON.stringify({ reason }),
   });

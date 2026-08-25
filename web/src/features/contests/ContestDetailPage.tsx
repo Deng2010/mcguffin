@@ -145,13 +145,13 @@ export default function ContestDetailPage() {
     setSaving(true);
     setError("");
     try {
-      const r1 = (await updateContest(id, {
+      const r1 = await updateContest(id, {
         name: editName,
         start_time: startTime,
         end_time: endTime,
         description: editDescription,
         link: editLink || undefined,
-      })) as unknown as { success: boolean };
+      });
       if (!r1.success) {
         setError("保存比赛信息失败");
         return;

@@ -1,19 +1,18 @@
 import { Link } from "react-router-dom";
 import MarkdownEditor from "../../../components/MarkdownEditor";
-import type { Difficulty } from "../../../types";
+import type {
+  ContestOption,
+  Difficulty,
+  DifficultyEntry,
+} from "../../../types";
 
 export type ContestMode = "none" | "select" | "custom";
-
-interface ContestOption {
-  id: string;
-  name: string;
-}
 
 interface SubmitProblemFormProps {
   canSubmit: boolean;
   teamStatus?: string;
   contests: ContestOption[];
-  difficulties: { name: string; label: string; color: string }[];
+  difficulties: DifficultyEntry[];
   // form state
   formTitle: string;
   contestMode: ContestMode;
@@ -173,9 +172,7 @@ export default function SubmitProblemForm({
                 disabled={submitted}
                 className="accent-gray-800 dark:accent-gray-400"
               />
-              <span className="text-gray-600 dark:text-gray-300">
-                自行输入
-              </span>
+              <span className="text-gray-600 dark:text-gray-300">自行输入</span>
             </label>
             {contestMode === "custom" && (
               <input

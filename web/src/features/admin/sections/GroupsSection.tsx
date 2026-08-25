@@ -29,7 +29,7 @@ export default function GroupsSection() {
   const loadGroups = async () => {
     setLoading(true);
     try {
-      const res = (await getGroups()) as unknown as MemberGroup[];
+      const res = await getGroups();
       setGroups(Array.isArray(res) ? res : []);
     } catch (err) {
       setMsg(`加载失败: ${err}`);
@@ -44,10 +44,8 @@ export default function GroupsSection() {
 
   const loadUsers = async () => {
     try {
-      const res = (await getAdminUsers()) as unknown as
-        { success?: boolean; users?: GroupUser[] } | GroupUser[];
-      const users = Array.isArray(res) ? res : ((res as any).users ?? []);
-      setAllUsers(users as GroupUser[]);
+      const res = await getAdminUsers();
+      setAllUsers(res);
     } catch (err) {
       setMsg(`加载用户失败: ${err}`);
     }
@@ -57,11 +55,7 @@ export default function GroupsSection() {
     const name = newName.trim();
     if (!name) return;
     try {
-      const res = (await createGroup({ name, permissions: [] })) as unknown as {
-        success: boolean;
-        message: string;
-        id?: string;
-      };
+      const res = await createGroup({ name, permissions: [] });
       if (res.success) {
         setNewName("");
         loadGroups();
@@ -79,12 +73,8 @@ export default function GroupsSection() {
     setSavingMembers(false);
     // Load users and pre-select those in this group
     loadUsers().then(() => {
-      (
-        getAdminUsers() as unknown as Promise<
-          { success?: boolean; users?: any[] } | any[]
-        >
-      ).then((res) => {
-        const users = Array.isArray(res) ? res : ((res as any).users ?? []);
+      getAdminUsers().then((res) => {
+        const users = Array.isArray(res) ? res : [];
         const userIds = new Set<string>();
         for (const u of users) {
           if (u.group_ids?.includes(g.id)) userIds.add(u.id);
@@ -112,10 +102,10 @@ export default function GroupsSection() {
     // Save group name
     try {
       const currentGroup = groups.find((g) => g.id === editingId);
-      const res = (await updateGroup(editingId, {
+      const res = await updateGroup(editingId, {
         name,
         permissions: currentGroup?.permissions ?? [],
-      })) as unknown as { success: boolean; message: string };
+      });
       if (!res.success) {
         setMsg(res.message);
         return;
@@ -134,14 +124,8 @@ export default function GroupsSection() {
       const nowInGroup = selectedUserIds.has(user.id);
       if (wasInGroup === nowInGroup) continue; // no change
       const newGroups = nowInGroup
-        ? [
-            ...((allUsers.find((u) => u.id === user.id) as any)?.group_ids ??
-              []),
-            groupId,
-          ]
-        : (
-            (allUsers.find((u) => u.id === user.id) as any)?.group_ids ?? []
-          ).filter((gid: string) => gid !== groupId);
+        ? [...(user.group_ids ?? []), groupId]
+        : (user.group_ids ?? []).filter((gid: string) => gid !== groupId);
       try {
         const r = await updateUserGroups(user.id, newGroups);
         if (!r.success) {

@@ -1,4 +1,4 @@
-import { DiffBadge } from "../../../hooks/useDifficulties";
+import { DiffBadge, type DifficultyInfo } from "../../../hooks/useDifficulties";
 import type { ProblemListItem } from "../../../types";
 
 export function statusBadge(s: string) {
@@ -38,7 +38,7 @@ export function ProblemMeta({
   difficultyMap,
 }: {
   p: ProblemListItem;
-  difficultyMap: Map<string, any>;
+  difficultyMap: Map<string, DifficultyInfo>;
 }) {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -49,7 +49,7 @@ export function ProblemMeta({
         <DiffBadge difficulty={p.difficulty} map={difficultyMap} />
       </span>
       {p.status && <span>状态：{statusBadge(p.status)}</span>}
-      {"has_verifier_solution" in p && (p as any).has_verifier_solution && (
+      {p.has_verifier_solution && (
         <span className="text-purple-600 dark:text-purple-400 font-medium">
           已有验题人题解
         </span>
@@ -66,7 +66,7 @@ interface ProblemCardProps {
   p: ProblemListItem;
   isGuest: boolean;
   isAuthor: boolean;
-  difficultyMap: Map<string, any>;
+  difficultyMap: Map<string, DifficultyInfo>;
   onGoDetail: (problemId: string) => void;
   extraActions?: React.ReactNode;
 }

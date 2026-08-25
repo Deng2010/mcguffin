@@ -1,8 +1,4 @@
-interface DifficultyEntry {
-  name: string;
-  label: string;
-  color: string;
-}
+import type { DifficultyEntry } from "../../../types";
 
 interface FilterBarProps {
   searchText: string;

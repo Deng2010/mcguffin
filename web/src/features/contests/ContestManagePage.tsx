@@ -85,13 +85,13 @@ export default function ContestManagePage() {
     const startTime = buildContestTime(startDate, startHour, startMinute);
     const endTime = buildContestTime(endDate, endHour, endMinute);
     try {
-      const res = (await createContest({
+      const res = await createContest({
         name,
         start_time: startTime,
         end_time: endTime,
         description,
         link: link || undefined,
-      })) as unknown as { success: boolean; message: string };
+      });
       if (!res.success) {
         setError(res.message);
         return;

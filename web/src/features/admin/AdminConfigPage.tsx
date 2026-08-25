@@ -6,6 +6,7 @@ import {
   restartServer,
   updateConfig,
 } from "../../services/admin.service";
+import type { ActionResult } from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 import Tabs from "../../components/ui/Tabs";
 import type { TabId, ConfigData, DifficultyEntry } from "./config-context";
@@ -90,10 +91,8 @@ function ConfigWrapper({ tab }: { tab: TabId }) {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const res = (await getConfig()) as unknown as {
-        success: boolean;
+      const res = (await getConfig()) as unknown as ActionResult & {
         config?: ConfigData;
-        message?: string;
       };
       if (!res.success || !res.config) {
         toast.error(`加载配置失败: ${res.message}`);

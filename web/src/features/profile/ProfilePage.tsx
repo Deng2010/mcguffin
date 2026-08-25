@@ -5,20 +5,8 @@ import {
   checkNameAvailable,
   getPublicProfile,
   updateProfile,
+  type PublicProfile,
 } from "../../services/user.service";
-
-interface PublicProfile {
-  exists: boolean;
-  username: string;
-  display_name: string;
-  avatar_url: string | null;
-  bio: string;
-  role: string;
-  is_team_member: boolean;
-  team_role: string | null;
-  created_at: string;
-  message?: string;
-}
 
 export default function ProfilePage() {
   const { user, refreshUser } = useAuthStore();
@@ -72,7 +60,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (routeUsername && !isSelf) {
       setLoadingProfile(true);
-      (getPublicProfile(routeUsername) as unknown as Promise<PublicProfile>)
+      getPublicProfile(routeUsername)
         .then(setPublicProfile)
         .catch(() => setPublicProfile(null))
         .finally(() => setLoadingProfile(false));

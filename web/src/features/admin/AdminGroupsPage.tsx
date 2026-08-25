@@ -6,12 +6,7 @@ import {
   updateGroup,
 } from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
-
-interface MemberGroup {
-  id: string;
-  name: string;
-  permissions: string[];
-}
+import type { MemberGroup } from "../../types";
 
 const PERM_LABELS: Record<string, string> = {
   view_showcase: "浏览展示",
@@ -46,7 +41,7 @@ export default function AdminGroupsPage() {
   const loadGroups = async () => {
     setLoading(true);
     try {
-      const res = (await getGroups()) as unknown as MemberGroup[];
+      const res = await getGroups();
       setGroups(Array.isArray(res) ? res : []);
     } catch (err) {
       toast.error(`加载失败: ${err}`);
@@ -63,11 +58,7 @@ export default function AdminGroupsPage() {
     const name = newName.trim();
     if (!name) return;
     try {
-      const res = (await createGroup({ name, permissions: [] })) as unknown as {
-        success: boolean;
-        message: string;
-        id?: string;
-      };
+      const res = await createGroup({ name, permissions: [] });
       if (res.success) {
         toast.success("成员组已创建");
         setNewName("");
@@ -91,10 +82,10 @@ export default function AdminGroupsPage() {
     if (!name) return;
     try {
       const currentGroup = groups.find((g) => g.id === editingId);
-      const res = (await updateGroup(editingId, {
+      const res = await updateGroup(editingId, {
         name,
         permissions: currentGroup?.permissions ?? [],
-      })) as unknown as { success: boolean; message: string };
+      });
       if (res.success) {
         toast.success("成员组已更新");
         setEditingId(null);

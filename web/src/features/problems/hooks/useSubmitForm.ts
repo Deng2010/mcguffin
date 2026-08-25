@@ -1,12 +1,7 @@
 import { useState } from "react";
 import { createProblem } from "../../../services/problem.service";
-import type { Difficulty } from "../../../types";
+import type { ContestOption, Difficulty } from "../../../types";
 import type { ContestMode } from "../components/SubmitProblemForm";
-
-interface ContestOption {
-  id: string;
-  name: string;
-}
 
 interface UseSubmitFormOptions {
   contests: ContestOption[];

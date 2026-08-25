@@ -1,4 +1,7 @@
 import { createContext } from "react";
+import type { DifficultyEntry, MemberGroup } from "../../types";
+
+export type { DifficultyEntry, MemberGroup };
 
 export interface ConfigData {
   server: { site_url: string; port: number };
@@ -18,12 +21,6 @@ export interface ConfigData {
   difficulty: Record<string, { label: string; color: string }>;
   discussion_tags?: Record<string, { color: string; description: string }>;
   discussion_emojis?: Record<string, { char: string }>;
-}
-
-export interface DifficultyEntry {
-  name: string;
-  label: string;
-  color: string;
 }
 
 export type TabId =
@@ -112,14 +109,9 @@ export const PERM_LABELS: Record<string, string> = {
   manage_posts: "管理所有帖子",
 };
 
-export interface MemberGroup {
-  id: string;
-  name: string;
-  permissions: string[];
-}
-
 export interface GroupUser {
   id: string;
   display_name: string;
   username: string;
+  group_ids?: string[];
 }

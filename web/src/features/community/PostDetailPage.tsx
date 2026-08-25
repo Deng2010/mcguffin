@@ -98,8 +98,18 @@ export default function PostDetailPage() {
     getTags()
       .then(setAllTags)
       .catch(() => {});
-    (getMembers() as unknown as Promise<MentionMember[]>)
-      .then(setTeamMembers)
+    getMembers()
+      .then((members) =>
+        setTeamMembers(
+          members.map((m) => ({
+            user_id: m.user_id,
+            name: m.name,
+            avatar_url: "",
+            username: "",
+            role: m.role,
+          })),
+        ),
+      )
       .catch(() => {});
   }, [id]);
 

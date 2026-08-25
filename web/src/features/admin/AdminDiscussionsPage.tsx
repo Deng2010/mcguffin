@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
-import { getConfig, updateConfig } from "../../services/admin.service";
+import {
+  getConfig,
+  updateConfig,
+  type ActionResult,
+} from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 
 interface ConfigData {
@@ -36,10 +40,8 @@ export default function AdminDiscussionsPage() {
   const loadConfig = async () => {
     setLoading(true);
     try {
-      const res = (await getConfig()) as unknown as {
-        success: boolean;
+      const res = (await getConfig()) as unknown as ActionResult & {
         config?: ConfigData;
-        message?: string;
       };
       if (!res.success || !res.config) {
         toast.error(`加载配置失败: ${res.message}`);

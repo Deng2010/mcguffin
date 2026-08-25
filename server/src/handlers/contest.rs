@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::error::{json_error, ErrorCode};
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{check_permission, get_token_from_headers, AuthUser};
+use crate::utils::{check_permission, resolve_user, AuthUser};
 
 #[derive(sqlx::FromRow)]
 #[allow(dead_code)]
@@ -52,15 +52,6 @@ struct ProblemRow {
     link: Option<String>,
     remark: Option<String>,
     editable_by: String,
-}
-
-/// Resolve user from token; returns (user_id, user)
-async fn resolve_user(state: &AppState, headers: &HeaderMap) -> Option<(String, User)> {
-    let token = get_token_from_headers(headers)?;
-    let entry = state.sessions.read().await.get(&token)?.clone();
-    let user_id = entry.user_id;
-    let user = state.users.read().await.get(&user_id)?.clone();
-    Some((user_id, user))
 }
 
 pub(crate) fn to_list_item(c: &Contest) -> ContestListItem {
@@ -364,22 +355,9 @@ pub async fn set_problem_order(
 /// Returns problems belonging to this contest, ordered by problem_order if set.
 pub async fn get_contest_problems(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     Path(contest_id): Path<String>,
 ) -> Json<Vec<serde_json::Value>> {
-    let current_user = resolve_user(&state, &headers).await;
-    // Check admin status for later filtering
-    let _is_admin_user = if let Some((_user_id, user)) = &current_user {
-        check_permission(&state, user, crate::types::perms::MANAGE_ALL_CONTESTS).await
-    } else {
-        false
-    };
-    let _is_member_user = if let Some((_, user)) = &current_user {
-        user.team_status == "joined"
-    } else {
-        false
-    };
-
     // ── Try SQLite first ──
     let sql_result: Result<Vec<ProblemRow>, _> = sqlx::query_as::<_, ProblemRow>(
         "SELECT id, title, author_id, author_name, contest, contest_id, difficulty, \

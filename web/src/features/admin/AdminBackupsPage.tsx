@@ -12,6 +12,7 @@ import {
   restoreFromUpload,
 } from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
+import type { ActionResult } from "../../services/admin.service";
 
 interface BackupEntry {
   name: string;
@@ -31,8 +32,7 @@ export default function AdminBackupsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = (await getBackups()) as unknown as {
-        success: boolean;
+      const res = (await getBackups()) as unknown as ActionResult & {
         backups: BackupEntry[];
       };
       if (res.success) setBackups(res.backups);

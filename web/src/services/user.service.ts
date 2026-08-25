@@ -20,10 +20,23 @@ export async function checkNameAvailable(
   );
 }
 
+export interface PublicProfile {
+  exists: boolean;
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string;
+  role: string;
+  is_team_member: boolean;
+  team_role: string | null;
+  created_at: string;
+  message?: string;
+}
+
 export async function getPublicProfile(
   username: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(
+): Promise<PublicProfile> {
+  return apiFetch<PublicProfile>(
     `/user/profile/${encodeURIComponent(username)}`,
   );
 }

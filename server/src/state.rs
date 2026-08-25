@@ -69,6 +69,9 @@ fn default_config_path() -> PathBuf {
     }
 }
 
+/// Plugin KV data storage (plugin_id → namespace → key → value)
+pub type PluginDataStore = HashMap<String, HashMap<String, HashMap<String, String>>>;
+
 #[derive(Clone)]
 pub struct AppState {
     pub users: Arc<RwLock<HashMap<String, User>>>,
@@ -117,7 +120,7 @@ pub struct AppState {
     /// Registered plugin manifests (plugin_id → PluginManifest)
     pub plugins: Arc<RwLock<HashMap<String, crate::domain::plugin::PluginManifest>>>,
     /// Plugin KV data storage (plugin_id → namespace → key → value)
-    pub plugin_data: Arc<RwLock<HashMap<String, HashMap<String, HashMap<String, String>>>>>,
+    pub plugin_data: Arc<RwLock<PluginDataStore>>,
     /// Global plugin enable/disable switch (superadmin). When true, all plugin
     /// features are disabled (data APIs reject, frontend hides plugins).
     pub plugins_disabled: Arc<RwLock<bool>>,

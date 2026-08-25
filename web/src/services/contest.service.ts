@@ -1,4 +1,5 @@
 import { apiFetch } from "./api";
+import type { ActionResult } from "./admin.service";
 
 export interface ContestPayload {
   name: string;
@@ -24,15 +25,17 @@ export async function getContests(): Promise<Contest[]> {
   return apiFetch<Contest[]>("/contests");
 }
 
-export async function createContest(body: ContestPayload): Promise<Contest> {
-  return apiFetch<Contest>("/contests", {
+export async function createContest(
+  body: ContestPayload,
+): Promise<Contest & ActionResult> {
+  return apiFetch<Contest & ActionResult>("/contests", {
     method: "POST",
     body: JSON.stringify(body),
   });
 }
 
-export async function deleteContest(id: string): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/contests/${id}`, { method: "DELETE" });
+export async function deleteContest(id: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/contests/${id}`, { method: "DELETE" });
 }
 
 export async function getContestProblems(
@@ -44,8 +47,8 @@ export async function getContestProblems(
 export async function updateContest(
   id: string,
   body: ContestPayload,
-): Promise<Contest> {
-  return apiFetch<Contest>(`/contests/${id}`, {
+): Promise<Contest & ActionResult> {
+  return apiFetch<Contest & ActionResult>(`/contests/${id}`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
@@ -54,8 +57,8 @@ export async function updateContest(
 export async function setProblemOrder(
   id: string,
   problemIds: string[],
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/contests/${id}/problem-order`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/contests/${id}/problem-order`, {
     method: "POST",
     body: JSON.stringify({ problem_ids: problemIds }),
   });
@@ -65,8 +68,8 @@ export async function setContestStatus(
   id: string,
   status: string,
   link?: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/contests/${id}/status`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/contests/${id}/status`, {
     method: "POST",
     body: JSON.stringify({ status, link }),
   });

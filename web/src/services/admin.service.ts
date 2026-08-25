@@ -1,4 +1,4 @@
-import type { User } from "../types";
+import type { AdminUser, MemberGroup } from "../types";
 import { apiFetch } from "./api";
 
 export interface ConfigValue {
@@ -31,39 +31,48 @@ export async function getConfig(): Promise<ConfigValue> {
   return apiFetch<ConfigValue>("/admin/config");
 }
 
-export async function updateConfig(
-  body: ConfigValue,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/config", {
+/** 操作结果（success/message 风格响应） */
+export interface ActionResult {
+  success: boolean;
+  message?: string;
+  [key: string]: any;
+}
+
+export async function updateConfig(body: ConfigValue): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/config", {
     method: "PUT",
     body: JSON.stringify(body),
   });
 }
 
-export async function restartServer(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/restart", { method: "POST" });
+export async function restartServer(): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/restart", { method: "POST" });
 }
 
-export async function exportConfig(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/export/config");
+export async function exportConfig(): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/export/config");
 }
 
-export async function getAdminUsers(): Promise<User[]> {
-  return apiFetch<User[]>("/admin/users");
+export async function getAdminUsers(): Promise<AdminUser[]> {
+  return apiFetch<AdminUser[]>("/admin/users");
+}
+
+export async function getGroups(): Promise<MemberGroup[]> {
+  return apiFetch<MemberGroup[]>("/admin/groups");
 }
 
 export async function changeUserRole(
   userId: string,
   role: "admin" | "member" | "guest",
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/users/${userId}/role`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/users/${userId}/role`, {
     method: "POST",
     body: JSON.stringify({ role }),
   });
 }
 
-export async function removeUser(userId: string): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/users/${userId}/remove`, {
+export async function removeUser(userId: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/users/${userId}/remove`, {
     method: "POST",
   });
 }
@@ -71,8 +80,8 @@ export async function removeUser(userId: string): Promise<Record<string, any>> {
 export async function updateUserPermissions(
   userId: string,
   permissions: string[],
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/users/${userId}/permissions`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/users/${userId}/permissions`, {
     method: "PUT",
     body: JSON.stringify({ permissions }),
   });
@@ -81,19 +90,17 @@ export async function updateUserPermissions(
 export async function updateUserGroups(
   userId: string,
   groupIds: string[],
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/users/${userId}/groups`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/users/${userId}/groups`, {
     method: "PUT",
     body: JSON.stringify({ group_ids: groupIds }),
   });
 }
 
-export async function getGroups(): Promise<Group[]> {
-  return apiFetch<Group[]>("/admin/groups");
-}
-
-export async function createGroup(body: Omit<Group, "id">): Promise<Group> {
-  return apiFetch<Group>("/admin/groups", {
+export async function createGroup(
+  body: Omit<Group, "id">,
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/groups", {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -102,15 +109,15 @@ export async function createGroup(body: Omit<Group, "id">): Promise<Group> {
 export async function updateGroup(
   id: string,
   body: Omit<Group, "id">,
-): Promise<Group> {
-  return apiFetch<Group>(`/admin/groups/${id}`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/groups/${id}`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
 }
 
-export async function deleteGroup(id: string): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/groups/${id}`, {
+export async function deleteGroup(id: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/groups/${id}`, {
     method: "DELETE",
   });
 }
@@ -119,14 +126,12 @@ export async function getBackups(): Promise<BackupItem[]> {
   return apiFetch<BackupItem[]>("/admin/backups");
 }
 
-export async function createBackup(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/backup", { method: "POST" });
+export async function createBackup(): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/backup", { method: "POST" });
 }
 
-export async function restoreBackup(
-  name: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(
+export async function restoreBackup(name: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(
     `/admin/backup/restore/${encodeURIComponent(name)}`,
     {
       method: "POST",
@@ -134,19 +139,14 @@ export async function restoreBackup(
   );
 }
 
-export async function deleteBackup(name: string): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(
-    `/admin/backup/${encodeURIComponent(name)}`,
-    {
-      method: "DELETE",
-    },
-  );
+export async function deleteBackup(name: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/backup/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
 }
 
-export async function downloadBackup(
-  name: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(
+export async function downloadBackup(name: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(
     `/admin/backup/download/${encodeURIComponent(name)}`,
   );
 }
@@ -154,53 +154,47 @@ export async function downloadBackup(
 export async function restoreFromUpload(
   content: string,
   filename: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/backup/restore-upload", {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/backup/restore-upload", {
     method: "POST",
     body: JSON.stringify({ content, filename }),
   });
 }
 
-export async function exportData(type: string): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(
-    `/admin/export/${encodeURIComponent(type)}`,
-  );
+export async function exportData(type: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/export/${encodeURIComponent(type)}`);
 }
 
-export async function exportDatabase(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/export/db");
+export async function exportDatabase(): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/export/db");
 }
 
-export async function importData(
-  content: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/import/data", {
+export async function importData(content: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/import/data", {
     method: "POST",
     body: JSON.stringify({ content }),
   });
 }
 
-export async function importConfig(
-  content: string,
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/import/config", {
+export async function importConfig(content: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/import/config", {
     method: "POST",
     body: JSON.stringify({ content }),
   });
 }
 
-export async function resetPermissions(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/permissions/reset", {
+export async function resetPermissions(): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/permissions/reset", {
     method: "POST",
   });
 }
 
-export async function getAclResources(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/acl/resources");
+export async function getAclResources(): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/acl/resources");
 }
 
-export async function resetAcl(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/admin/acl/reset", {
+export async function resetAcl(): Promise<ActionResult> {
+  return apiFetch<ActionResult>("/admin/acl/reset", {
     method: "POST",
   });
 }
@@ -210,8 +204,8 @@ export async function updateResourceAcl(
   id: string,
   visibleTo: string[],
   editableBy: string[],
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/acl/${type}/${id}`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/acl/${type}/${id}`, {
     method: "PUT",
     body: JSON.stringify({ visible_to: visibleTo, editable_by: editableBy }),
   });
@@ -221,8 +215,8 @@ export async function updateContestAcl(
   id: string,
   visibleTo: string[],
   editableBy: string[],
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/acl/contest/${id}`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/acl/contest/${id}`, {
     method: "PUT",
     body: JSON.stringify({ visible_to: visibleTo, editable_by: editableBy }),
   });
@@ -231,8 +225,8 @@ export async function updateContestAcl(
 export async function updateProblemAcl(
   id: string,
   editableBy: string[],
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/acl/problem/${id}`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/acl/problem/${id}`, {
     method: "PUT",
     body: JSON.stringify({ editable_by: editableBy }),
   });
@@ -242,8 +236,8 @@ export async function updatePostAcl(
   id: string,
   visibleTo: string[],
   editableBy: string[],
-): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>(`/admin/acl/post/${id}`, {
+): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/admin/acl/post/${id}`, {
     method: "PUT",
     body: JSON.stringify({ visible_to: visibleTo, editable_by: editableBy }),
   });

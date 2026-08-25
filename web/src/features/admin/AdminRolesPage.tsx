@@ -10,26 +10,8 @@ import {
 } from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
 import Tabs from "../../components/ui/Tabs";
+import type { AdminUser, MemberGroup } from "../../types";
 import ResourceAclSection from "./sections/ResourceAclSection";
-
-interface MemberGroup {
-  id: string;
-  name: string;
-  permissions: string[];
-}
-
-interface AdminUser {
-  id: string;
-  username: string;
-  display_name: string;
-  email: string | null;
-  role: string;
-  team_status: string;
-  is_team_member: boolean;
-  group_ids: string[];
-  user_permissions: string[];
-  created_at: string;
-}
 
 const DEFAULT_PERMISSIONS: Record<string, string[]> = {
   admin: [
@@ -205,12 +187,12 @@ export default function AdminRolesPage() {
     setLoading(true);
     try {
       const [cRes, gRes, uRes] = await Promise.all([
-        getConfig() as unknown as Promise<{ success: boolean; config?: any }>,
-        getGroups() as unknown as Promise<MemberGroup[]>,
-        getAdminUsers() as unknown as Promise<AdminUser[]>,
+        getConfig(),
+        getGroups(),
+        getAdminUsers(),
       ]);
       if (cRes.success && cRes.config) {
-        const rawPerms = (cRes.config as any).permissions ?? {};
+        const rawPerms = cRes.config.permissions ?? {};
         setPermissions(
           Object.keys(rawPerms).length > 0 ? rawPerms : DEFAULT_PERMISSIONS,
         );
@@ -269,10 +251,7 @@ export default function AdminRolesPage() {
     setSaving(true);
     try {
       // 保存角色权限
-      const cur = (await getConfig()) as unknown as {
-        success: boolean;
-        config?: any;
-      };
+      const cur = await getConfig();
       if (cur.success && cur.config) {
         await updateConfig({ ...cur.config, permissions });
       }

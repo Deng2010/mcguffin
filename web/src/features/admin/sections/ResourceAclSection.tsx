@@ -21,7 +21,7 @@ interface AclUser {
   role: string;
 }
 
-interface AclData {
+export interface AclData {
   problems: AclResource[];
   contests: AclResource[];
   posts: AclResource[];

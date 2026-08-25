@@ -6,25 +6,7 @@ import {
   removeUser,
 } from "../../services/admin.service";
 import { useToast } from "../../errors/ToastContext";
-
-interface AdminUser {
-  id: string;
-  username: string;
-  display_name: string;
-  email: string | null;
-  role: string;
-  team_status: string;
-  is_team_member: boolean;
-  group_ids: string[];
-  user_permissions: string[];
-  created_at: string;
-}
-
-interface MemberGroup {
-  id: string;
-  name: string;
-  permissions: string[];
-}
+import type { AdminUser, MemberGroup } from "../../types";
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -36,10 +18,7 @@ export default function AdminUsersPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [uRes, gRes] = await Promise.all([
-        getAdminUsers() as unknown as Promise<AdminUser[]>,
-        getGroups() as Promise<MemberGroup[]>,
-      ]);
+      const [uRes, gRes] = await Promise.all([getAdminUsers(), getGroups()]);
       setUsers(Array.isArray(uRes) ? uRes : []);
       setGroups(Array.isArray(gRes) ? gRes : []);
     } catch (err) {

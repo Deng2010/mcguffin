@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import NotFoundPage from "../notfound/NotFoundPage";
 import { useAuthStore } from "../../stores/authStore";
 import { getContests } from "../../services/contest.service";
+import type { ContestOption } from "../../types";
 import {
   getProblemDetail,
   submitVerifierComment,
@@ -13,14 +14,9 @@ import { getMembers } from "../../services/team.service";
 import MarkdownRenderer from "../../components/MarkdownRenderer";
 import MarkdownEditor from "../../components/MarkdownEditor";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
-import type { ProblemDetail } from "../../types";
+import type { ProblemDetail, SubmitProblemPayload } from "../../types";
 import { useToast } from "../../errors/ToastContext";
 import { errorMessage } from "../../errors/normalize";
-
-interface Contest {
-  id: string;
-  name: string;
-}
 
 export default function ProblemDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -46,7 +42,7 @@ export default function ProblemDetailPage() {
   const [editAuthorId, setEditAuthorId] = useState("");
   const [editAuthorName, setEditAuthorName] = useState("");
   const [editRemark, setEditRemark] = useState("");
-  const [contests, setContests] = useState<Contest[]>([]);
+  const [contests, setContests] = useState<ContestOption[]>([]);
   const [teamMembers, setTeamMembers] = useState<
     { user_id: string; name: string }[]
   >([]);
@@ -55,7 +51,7 @@ export default function ProblemDetailPage() {
   const nameManuallyEdited = useRef(false);
 
   useEffect(() => {
-    (getProblemDetail(id) as unknown as Promise<ProblemDetail>)
+    getProblemDetail(id!)
       .then((p) => {
         setProblem(p);
         if (p.verifier_solution) setVerifierSolution(p.verifier_solution);
@@ -68,7 +64,7 @@ export default function ProblemDetailPage() {
       .catch(() => setError("无法加载题目"))
       .finally(() => setLoading(false));
     getContests()
-      .then((list) => setContests(list as Contest[]))
+      .then((list) => setContests(list))
       .catch(() => {});
   }, [id]);
 
@@ -83,15 +79,15 @@ export default function ProblemDetailPage() {
     setEditSolution(problem.solution || "");
     setEditRemark(problem.remark || "");
     setEditContestId(problem.contest_id || "");
-    setEditLink((problem as any).link || "");
-    setEditAuthorId((problem as any).author_id || "");
+    setEditLink(problem.link || "");
+    setEditAuthorId(problem.author_id || "");
     setEditAuthorName(problem.author_name);
     setEditMsg("");
     nameManuallyEdited.current = false;
     setEditing(true);
     // Load all team members for author selector
     if (isAdmin && teamMembers.length === 0) {
-      (getMembers() as unknown as Promise<{ user_id: string; name: string }[]>)
+      getMembers()
         .then(setTeamMembers)
         .catch(() => {});
     }
@@ -114,14 +110,14 @@ export default function ProblemDetailPage() {
         body.contest_id = editContestId || null;
       }
       // Link change (admin only)
-      if (isAdmin && editLink !== ((problem as any).link || "")) {
+      if (isAdmin && editLink !== (problem.link || "")) {
         body.link = editLink || null;
       }
       // Author name change (admin only)
       // Always send author_name when author_id changes, to prevent the backend
       // from auto-overwriting the display name with the new user's display_name
       const authorIdChanged =
-        isAdmin && editAuthorId !== ((problem as any).author_id || "");
+        isAdmin && editAuthorId !== (problem.author_id || "");
       if (isAdmin && editAuthorName !== problem.author_name) {
         body.author_name = editAuthorName;
       }
@@ -145,7 +141,7 @@ export default function ProblemDetailPage() {
 
       // Save problem fields
       if (Object.keys(body).length > 0) {
-        const res = await updateProblem(problem.id, body as any);
+        const res = await updateProblem(problem.id, body);
         if (!res.success) {
           setEditMsg(res.message);
           setSaving(false);
@@ -154,7 +150,7 @@ export default function ProblemDetailPage() {
       }
 
       // Reload problem details
-      const updated = (await getProblemDetail(id!)) as unknown as ProblemDetail;
+      const updated = await getProblemDetail(id!);
       setProblem(updated);
       setEditing(false);
       setEditMsg("已保存");
@@ -191,7 +187,7 @@ export default function ProblemDetailPage() {
       }
       setCommentText("");
       // Reload detail to reflect the new comment
-      const updated = (await getProblemDetail(id!)) as unknown as ProblemDetail;
+      const updated = await getProblemDetail(id!);
       setProblem(updated);
     } catch (err) {
       toast.error(`评论失败: ${errorMessage(err)}`);
@@ -234,9 +230,9 @@ export default function ProblemDetailPage() {
                     map={difficultyMap}
                   />
                 </span>
-                {(problem as any).link && (
+                {problem.link && (
                   <a
-                    href={(problem as any).link}
+                    href={problem.link}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"

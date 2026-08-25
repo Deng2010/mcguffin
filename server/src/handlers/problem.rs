@@ -12,7 +12,9 @@ use crate::error::{json_error, ErrorCode};
 use crate::handlers::notification::create_notification;
 use crate::state::AppState;
 use crate::types::*;
-use crate::utils::{check_permission, resolve_user, AuthUser};
+use crate::utils::{
+    check_permission, require_permission_custom, resolve_user, resolve_user_custom, AuthUser,
+};
 
 // ── ProblemRow for SQLite deserialization ──
 #[derive(sqlx::FromRow)]
@@ -581,22 +583,22 @@ pub async fn submit_problem(
     headers: HeaderMap,
     Json(payload): Json<SubmitProblemPayload>,
 ) -> Json<SubmitResponse> {
-    let user = match resolve_user(&state, &headers).await {
-        Some((_, u)) if u.team_status == "joined" => u,
-        Some(_) => {
+    let user = match resolve_user_custom(&state, &headers, || SubmitResponse {
+        success: false,
+        message: "未登录".to_string(),
+        problem_id: None,
+    })
+    .await
+    {
+        Ok((_, u)) if u.team_status == "joined" => u,
+        Ok(_) => {
             return Json(SubmitResponse {
                 success: false,
                 message: "只有团队成员才能投稿".to_string(),
                 problem_id: None,
             })
         }
-        None => {
-            return Json(SubmitResponse {
-                success: false,
-                message: "未登录".to_string(),
-                problem_id: None,
-            })
-        }
+        Err(resp) => return Json(resp),
     };
 
     // Auto-fill contest name from contest_id if provided and contest is empty
@@ -664,21 +666,24 @@ pub async fn review_problem(
         })
         .unwrap_or_default();
 
-    let (_user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ReviewResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
-    };
-    if !check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await {
-        return Json(ReviewResponse {
+    let (_, _user) = match require_permission_custom(
+        &state,
+        &headers,
+        crate::types::perms::APPROVE_ALL_PROBLEMS,
+        || ReviewResponse {
+            success: false,
+            message: "未登录".to_string(),
+        },
+        || ReviewResponse {
             success: false,
             message: "权限不足".to_string(),
-        });
-    }
+        },
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
+    };
 
     // For 'reply', notify the author with the admin's suggestion. The problem
     // stays in "pending" so the author can revise and resubmit (instead of the
@@ -940,14 +945,14 @@ pub async fn claim_problem(
     headers: HeaderMap,
     Path(problem_id): Path<String>,
 ) -> Json<ClaimResponse> {
-    let (user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
+    let (user_id, user) = match resolve_user_custom(&state, &headers, || ClaimResponse {
+        success: false,
+        message: "未登录".to_string(),
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
     if user.team_status != "joined" {
         return Json(ClaimResponse {
@@ -1012,14 +1017,14 @@ pub async fn unclaim_problem(
     headers: HeaderMap,
     Path(problem_id): Path<String>,
 ) -> Json<ClaimResponse> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
+    let (user_id, _) = match resolve_user_custom(&state, &headers, || ClaimResponse {
+        success: false,
+        message: "未登录".to_string(),
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
 
     let mut problem = {
@@ -1070,14 +1075,14 @@ pub async fn submit_verifier_solution(
     Path(problem_id): Path<String>,
     Json(payload): Json<VerifierSolutionPayload>,
 ) -> Json<ClaimResponse> {
-    let (user_id, _) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
+    let (user_id, _) = match resolve_user_custom(&state, &headers, || ClaimResponse {
+        success: false,
+        message: "未登录".to_string(),
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
 
     let mut problem = {
@@ -1147,14 +1152,14 @@ pub async fn submit_verifier_comment(
         });
     }
 
-    let (user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
+    let (user_id, user) = match resolve_user_custom(&state, &headers, || ClaimResponse {
+        success: false,
+        message: "未登录".to_string(),
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
 
     let mut problem = {
@@ -1206,21 +1211,24 @@ pub async fn set_problem_visibility(
     Path(problem_id): Path<String>,
     Json(payload): Json<VisibilityPayload>,
 ) -> Json<ClaimResponse> {
-    let (_user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ClaimResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
-    };
-    if !check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await {
-        return Json(ClaimResponse {
+    let (_, _user) = match require_permission_custom(
+        &state,
+        &headers,
+        crate::types::perms::APPROVE_ALL_PROBLEMS,
+        || ClaimResponse {
+            success: false,
+            message: "未登录".to_string(),
+        },
+        || ClaimResponse {
             success: false,
             message: "权限不足".to_string(),
-        });
-    }
+        },
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
+    };
 
     // Validate the problem exists and is pending
     {
@@ -1280,9 +1288,9 @@ pub async fn get_pending_problems_admin(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<Vec<serde_json::Value>> {
-    let (_user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(vec![]),
+    let (_user_id, user) = match resolve_user_custom(&state, &headers, Vec::new).await {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
     if !check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await {
         return Json(vec![]);
@@ -1330,9 +1338,9 @@ pub async fn get_team_members_for_visibility(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Json<Vec<serde_json::Value>> {
-    let (_user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => return Json(vec![]),
+    let (_user_id, user) = match resolve_user_custom(&state, &headers, Vec::new).await {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
     // Admin only — for visibility settings
     if !check_permission(&state, &user, crate::types::perms::MANAGE_TEAM).await {
@@ -1370,14 +1378,14 @@ pub async fn update_problem(
     Path(problem_id): Path<String>,
     Json(payload): Json<EditProblemPayload>,
 ) -> Json<ReviewResponse> {
-    let (user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ReviewResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
+    let (user_id, user) = match resolve_user_custom(&state, &headers, || ReviewResponse {
+        success: false,
+        message: "未登录".to_string(),
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
     let is_admin_user =
         check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
@@ -1488,14 +1496,14 @@ pub async fn resubmit_problem(
     headers: HeaderMap,
     Path(problem_id): Path<String>,
 ) -> Json<ReviewResponse> {
-    let (user_id, _user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ReviewResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
+    let (user_id, _user) = match resolve_user_custom(&state, &headers, || ReviewResponse {
+        success: false,
+        message: "未登录".to_string(),
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
 
     let mut problem = {
@@ -1544,14 +1552,14 @@ pub async fn delete_problem(
     headers: HeaderMap,
     Path(problem_id): Path<String>,
 ) -> Json<ReviewResponse> {
-    let (user_id, user) = match resolve_user(&state, &headers).await {
-        Some(u) => u,
-        None => {
-            return Json(ReviewResponse {
-                success: false,
-                message: "未登录".to_string(),
-            })
-        }
+    let (user_id, user) = match resolve_user_custom(&state, &headers, || ReviewResponse {
+        success: false,
+        message: "未登录".to_string(),
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
     };
     let is_admin_user =
         check_permission(&state, &user, crate::types::perms::APPROVE_ALL_PROBLEMS).await;
