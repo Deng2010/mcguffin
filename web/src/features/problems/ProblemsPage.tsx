@@ -1,24 +1,26 @@
-import { useState, useEffect, useMemo, SyntheticEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import {
-  claimProblem,
-  createProblem,
-  deleteProblem,
   getAdminMembers,
-  getProblems,
-  resubmitProblem,
-  reviewProblem,
-  setProblemContest,
   setProblemVisibility,
-  unclaimProblem,
 } from "../../services/problem.service";
 import { getContests } from "../../services/contest.service";
-import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
-import MarkdownEditor from "../../components/MarkdownEditor";
-import type { Difficulty, ProblemListItem } from "../../types";
-import { useToast } from "../../errors/ToastContext";
-import { errorMessage } from "../../errors/normalize";
+import { useDifficulties } from "../../hooks/useDifficulties";
+import type { ProblemListItem } from "../../types";
+import {
+  useProblemFilters,
+  useProblemLists,
+  useProblems,
+} from "./hooks/useProblems";
+import { useSubmitForm } from "./hooks/useSubmitForm";
+import { useProblemActions } from "./hooks/useProblemActions";
+import FilterBar from "./components/FilterBar";
+import SubmitProblemForm, {
+  type ContestMode,
+} from "./components/SubmitProblemForm";
+import ReasonDialog from "./components/ReasonDialog";
+import ProblemCard, { cardClass } from "./components/ProblemCard";
 
 interface TeamMemberOption {
   user_id: string;
@@ -35,7 +37,6 @@ type TabId =
 
 export default function ProblemsPage() {
   const { user, hasPermission, isAuthenticated } = useAuthStore();
-  const toast = useToast();
   const { difficultyMap, difficulties } = useDifficulties();
   const navigate = useNavigate();
   const isGuest = !isAuthenticated || user?.role === "guest";
@@ -45,90 +46,50 @@ export default function ProblemsPage() {
   const canViewApproved = hasPermission("view_approved_problems");
   const canViewPublic = hasPermission("view_public_problems");
 
-  // All problems tab
-  const [problems, setProblems] = useState<ProblemListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Review tabs
+  // ====== Data ======
+  const { problems, loading, loadProblems } = useProblems(canApprove);
   const [members, setMembers] = useState<TeamMemberOption[]>([]);
   const [contests, setContests] = useState<ContestOption[]>([]);
   const [visibilityMap, setVisibilityMap] = useState<Record<string, string[]>>(
     {},
   );
+  const [activeTab, setActiveTab] = useState<TabId>("list");
 
-  // Submit form state
-  const [showSubmit, setShowSubmit] = useState(false);
-  const [formTitle, setFormTitle] = useState("");
-  const [contestMode, setContestMode] = useState<"none" | "select" | "custom">(
-    "none",
-  );
-  const [selectedContestId, setSelectedContestId] = useState("");
-  const [customContest, setCustomContest] = useState("");
-  const [formDifficulty, setFormDifficulty] = useState<string>("Medium");
-  const [formContent, setFormContent] = useState("");
-  const [formSolution, setFormSolution] = useState("");
-  const [formRemark, setFormRemark] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [formError, setFormError] = useState("");
-
-  // Search & filter state
+  // ====== Search & filter state ======
   const [searchText, setSearchText] = useState("");
   const [filterDifficulty, setFilterDifficulty] = useState("");
   const [filterAuthor, setFilterAuthor] = useState("");
 
-  const [activeTab, setActiveTab] = useState<TabId>("list");
+  // ====== Derived lists ======
+  const lists = useProblemLists(problems, user?.id, user?.display_name);
+  const filteredProblems = useProblemFilters(
+    problems,
+    searchText,
+    filterDifficulty,
+    filterAuthor,
+  );
 
-  // Reason dialog for return/reply
-  const [reasonDialog, setReasonDialog] = useState<{
-    open: boolean;
-    problemId: string;
-    action: string;
-  } | null>(null);
-  const [reasonText, setReasonText] = useState("");
-
-  const myProblems = useMemo(() => {
-    if (!user) return [];
-    return problems.filter((p) => p.author_name === user.display_name);
-  }, [problems, user]);
-
-  // 按状态拆分的列表（基于已加载的问题列表）
-  const pendingList = useMemo(
-    () => problems.filter((p) => p.status === "pending"),
-    [problems],
-  );
-  const ownPendingList = useMemo(
-    () => pendingList.filter((p) => user != null && p.author_id === user.id),
-    [pendingList, user],
-  );
-  const approvedList = useMemo(
-    () => problems.filter((p) => p.status === "approved"),
-    [problems],
-  );
-  const publishedList = useMemo(
-    () => problems.filter((p) => p.status === "published"),
-    [problems],
-  );
-  const returnedList = useMemo(
-    () => problems.filter((p) => p.status === "returned"),
-    [problems],
-  );
-  const ownReturnedList = useMemo(
-    () => returnedList.filter((p) => user != null && p.author_id === user.id),
-    [returnedList, user],
-  );
   // 拥有“浏览所有待审核题目”权限时展示全部；仅拥有投稿权限时只展示自己提交的题目。
-  const visiblePendingList = canViewPending ? pendingList : ownPendingList;
-  const visibleReturnedList = canViewPending ? returnedList : ownReturnedList;
+  const visiblePendingList = canViewPending
+    ? lists.pendingList
+    : ((lists as any).ownPendingList ?? lists.pendingList);
+  const visibleReturnedList = canViewPending
+    ? lists.returnedList
+    : lists.ownReturnedList;
   const pendingCount = visiblePendingList.length;
   const returnedCount = visibleReturnedList.length;
-  const approvedCount = approvedList.length;
-  const publishedCount = publishedList.length;
+  const approvedCount = lists.approvedList.length;
+  const publishedCount = lists.publishedList.length;
 
   const tabs: { id: TabId; label: string; count?: number }[] = [
     { id: "list", label: "全部题目", count: problems.length },
   ];
   if (user) {
-    tabs.push({ id: "mine", label: "我的题目", count: myProblems.length });
+    tabs.push({
+      id: "mine",
+      label: "我的题目",
+      count: lists.myProblems.length,
+    });
   }
   if (canViewPending || canSubmit) {
     tabs.push({ id: "pending", label: "待审核", count: pendingCount });
@@ -143,33 +104,18 @@ export default function ProblemsPage() {
     tabs.push({ id: "returned", label: "已退回", count: returnedCount });
   }
 
-  const loadProblems = () => {
-    getProblems(canApprove)
-      .then(setProblems)
-      .catch(() => setProblems([]))
-      .finally(() => setLoading(false));
-  };
-
-  const loadMembersAndContests = () => {
-    Promise.all([
-      getAdminMembers() as Promise<TeamMemberOption[]>,
-      getContests() as Promise<ContestOption[]>,
-    ])
-      .then(([memberList, contestList]) => {
-        setMembers(memberList);
-        setContests(contestList);
-      })
-      .catch(() => {});
-  };
-
-  useEffect(() => {
-    loadProblems();
-  }, [canApprove, canViewPending, canViewApproved, canViewPublic]);
-
   // Lazy load members/contests when admin opens the pending tab
   useEffect(() => {
     if (activeTab === "pending" && canApprove && members.length === 0) {
-      loadMembersAndContests();
+      Promise.all([
+        getAdminMembers() as Promise<TeamMemberOption[]>,
+        getContests() as Promise<ContestOption[]>,
+      ])
+        .then(([memberList, contestList]) => {
+          setMembers(memberList);
+          setContests(contestList);
+        })
+        .catch(() => {});
     }
   }, [activeTab, canApprove, members.length]);
 
@@ -193,6 +139,7 @@ export default function ProblemsPage() {
   }, [problems, canApprove]);
 
   // Load contests when submit form opens
+  const [showSubmit, setShowSubmit] = useState(false);
   useEffect(() => {
     if (showSubmit) {
       getContests()
@@ -201,142 +148,13 @@ export default function ProblemsPage() {
     }
   }, [showSubmit]);
 
-  // Client-side filtering
-  const filteredProblems = useMemo(() => {
-    const q = searchText.toLowerCase().trim();
-    const a = filterAuthor.toLowerCase().trim();
-    return problems.filter((p) => {
-      if (q && !p.title.toLowerCase().includes(q)) return false;
-      if (filterDifficulty && p.difficulty !== filterDifficulty) return false;
-      if (a && !p.author_name.toLowerCase().includes(a)) return false;
-      return true;
-    });
-  }, [problems, searchText, filterDifficulty, filterAuthor]);
-
   // ====== Actions ======
+  const actions = useProblemActions(loadProblems);
 
-  const handleClaim = async (problemId: string) => {
-    try {
-      const res = await claimProblem(problemId);
-      if (!res.success) {
-        toast.error(res.message);
-        return;
-      }
-      loadProblems();
-    } catch (err) {
-      toast.error(`认领失败: ${errorMessage(err)}`);
-    }
-  };
-
-  const handleUnclaim = async (problemId: string) => {
-    try {
-      const res = await unclaimProblem(problemId);
-      if (!res.success) {
-        toast.error(res.message);
-        return;
-      }
-      loadProblems();
-    } catch (err) {
-      toast.error(`取消认领失败: ${errorMessage(err)}`);
-    }
-  };
-
-  const handleReview = async (
-    problemId: string,
-    action: string,
-    reason?: string,
-  ) => {
-    try {
-      const res = await reviewProblem(
-        problemId,
-        action as "approve" | "reply" | "publish" | "return" | "unpublish",
-        reason,
-      );
-      if (!res.success) {
-        toast.error(res.message);
-        return;
-      }
-      loadProblems();
-    } catch (err) {
-      toast.error(`操作失败: ${errorMessage(err)}`);
-    }
-  };
-
-  // Open reason dialog for return/reject/reply
-  const openReasonDialog = (problemId: string, action: string) => {
-    setReasonDialog({ open: true, problemId, action });
-    setReasonText("");
-  };
-
-  const handleResubmit = async (problemId: string) => {
-    try {
-      const res = await resubmitProblem(problemId);
-      if (!res.success) {
-        toast.error(res.message);
-        return;
-      }
-      toast.success("已重新提交");
-      loadProblems();
-    } catch (err) {
-      toast.error(`再次提交失败: ${errorMessage(err)}`);
-    }
-  };
-
-  // Submit with reason
-  const handleReviewWithReason = async () => {
-    if (!reasonDialog) return;
-    const { problemId, action } = reasonDialog;
-    const trimmed = reasonText.trim();
-    if (action === "reject" && trimmed.length < 10) {
-      toast.error("退回理由不能少于 10 个字");
-      return;
-    }
-    await handleReview(problemId, action, trimmed || undefined);
-    setReasonDialog(null);
-    setReasonText("");
-  };
-
-  const handleSetVisibility = async (problemId: string) => {
-    const ids = visibilityMap[problemId] || [];
-    try {
-      const res = await setProblemVisibility(problemId, ids);
-      if (!res.success) {
-        toast.error(res.message);
-        return;
-      }
-      toast.success("可见性已更新");
-    } catch (err) {
-      toast.error(`设置失败: ${errorMessage(err)}`);
-    }
-  };
-
-  const handleSetContest = async (problemId: string, contestId: string) => {
-    try {
-      const res = await setProblemContest(problemId, contestId);
-      if (!res.success) {
-        toast.error(res.message);
-        return;
-      }
-      loadProblems();
-    } catch (err) {
-      toast.error(`设置失败: ${errorMessage(err)}`);
-    }
-  };
-
-  const handleDelete = async (problemId: string, title: string) => {
-    if (!window.confirm(`确定要永久删除题目「${title}」吗？此操作不可撤销。`))
-      return;
-    try {
-      const res = await deleteProblem(problemId);
-      if (!res.success) {
-        toast.error(res.message);
-        return;
-      }
-      loadProblems();
-    } catch (err) {
-      toast.error(`删除失败: ${errorMessage(err)}`);
-    }
-  };
+  const submitForm = useSubmitForm({
+    contests,
+    onSubmitted: loadProblems,
+  });
 
   const toggleMember = (problemId: string, userId: string) => {
     setVisibilityMap((prev) => {
@@ -354,117 +172,8 @@ export default function ProblemsPage() {
     setFilterAuthor("");
   };
 
-  // ====== Submit form ======
-
-  const getContestName = (): string => {
-    if (contestMode === "select" && selectedContestId) {
-      const found = contests.find((c) => c.id === selectedContestId);
-      return found?.name || "";
-    }
-    if (contestMode === "custom") return customContest;
-    return "";
-  };
-
-  const getContestId = (): string | undefined => {
-    if (contestMode === "select" && selectedContestId) return selectedContestId;
-    return undefined;
-  };
-
-  const handleSubmitProblem = async (e: SyntheticEvent) => {
-    e.preventDefault();
-    const contest = getContestName();
-    const contest_id = getContestId();
-    try {
-      await createProblem({
-        title: formTitle,
-        contest,
-        contest_id,
-        difficulty: formDifficulty as Difficulty,
-        content: formContent,
-        solution: formSolution.trim() ? formSolution : undefined,
-        remark: formRemark.trim() ? formRemark : undefined,
-      });
-      setSubmitted(true);
-      setFormError("");
-      setTimeout(() => {
-        setSubmitted(false);
-        setShowSubmit(false);
-        setFormTitle("");
-        setFormContent("");
-        setFormSolution("");
-        setFormRemark("");
-        setContestMode("none");
-        setSelectedContestId("");
-        setCustomContest("");
-        setFormDifficulty("Medium");
-        loadProblems();
-      }, 2000);
-    } catch (err) {
-      setFormError(`${err}`);
-    }
-  };
-
-  // ====== Shared helpers ======
-
-  const statusBadge = (s: string) => {
-    switch (s) {
-      case "pending":
-        return (
-          <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">
-            待审核
-          </span>
-        );
-      case "approved":
-        return (
-          <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-            已通过
-          </span>
-        );
-      case "published":
-        return (
-          <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300">
-            已发布
-          </span>
-        );
-      case "returned":
-        return (
-          <span className="px-2 py-0.5 text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
-            已退回
-          </span>
-        );
-      default:
-        return s;
-    }
-  };
-
-  // Shared meta info row for all card types
-  const renderMeta = (p: ProblemListItem) => (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500 dark:text-gray-400 mt-1">
-      <span>作者：{p.author_name}</span>
-      <span>赛事：{p.contest || "无"}</span>
-      <span>
-        难度：
-        <DiffBadge difficulty={p.difficulty} map={difficultyMap} />
-      </span>
-      {p.status && <span>状态：{statusBadge(p.status)}</span>}
-      {"has_verifier_solution" in p && (p as any).has_verifier_solution && (
-        <span className="text-purple-600 dark:text-purple-400 font-medium">
-          已有验题人题解
-        </span>
-      )}
-    </div>
-  );
-
-  // Card wrapper — clickable to navigate to problem detail
-  const cardClass =
-    "mg-box-shadow p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors";
-  const guestCardClass = "mg-box-shadow p-4";
-  const goDetail = (problemId: string) => (e: React.MouseEvent) => {
-    navigate(`/problems/${problemId}`);
-  };
-
-  // Check if current user is the author of this problem (by display_name)
-  const isAuthor = (p: { author_name: string }) =>
+  const goDetail = (problemId: string) => navigate(`/problems/${problemId}`);
+  const isAuthorOf = (p: { author_name: string }) =>
     user?.display_name === p.author_name;
 
   // Visibility editor (for pending tab — admin only)
@@ -492,7 +201,7 @@ export default function ProblemsPage() {
           ))}
         </div>
         <button
-          onClick={() => handleSetVisibility(problemId)}
+          onClick={() => actions.handleSetVisibility(problemId, visibilityMap)}
           className="text-xs px-3 py-1 border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
         >
           保存可见性
@@ -501,349 +210,19 @@ export default function ProblemsPage() {
     );
   };
 
-  // ====== Search & Filter Bar ======
-
-  const renderFilterBar = () => {
-    const hasActiveFilters = searchText || filterDifficulty || filterAuthor;
-    return (
-      <div className="mg-box-shadow p-4 mb-4 space-y-3">
-        {/* Search row */}
-        <div className="flex items-center gap-2">
-          <svg
-            className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
-          <input
-            type="text"
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            placeholder="搜索题目名称..."
-            className="flex-1 px-3 py-1.5 border border-gray-300 bg-white text-sm focus:outline-none focus:border-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-          />
-        </div>
-
-        {/* Filter row */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Difficulty */}
-          <div className="flex items-center gap-1.5">
-            <label className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-              难度
-            </label>
-            <select
-              value={filterDifficulty}
-              onChange={(e) => setFilterDifficulty(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 bg-white text-sm focus:outline-none focus:border-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-            >
-              <option value="">全部</option>
-              {difficulties.map((d) => (
-                <option key={d.name} value={d.name}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Author */}
-          <div className="flex items-center gap-1.5">
-            <label className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-              作者
-            </label>
-            <input
-              type="text"
-              value={filterAuthor}
-              onChange={(e) => setFilterAuthor(e.target.value)}
-              placeholder="作者名..."
-              className="w-28 px-2 py-1.5 border border-gray-300 bg-white text-sm focus:outline-none focus:border-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-            />
-          </div>
-
-          {/* Reset */}
-          {hasActiveFilters && (
-            <button
-              onClick={resetFilters}
-              className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-gray-200 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800 dark:border-gray-700"
-            >
-              清除筛选
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // ====== Submit Form ======
-
-  const renderSubmitForm = () => {
-    if (!canSubmit) {
-      return (
-        <div className="text-center py-12">
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-4">
-            投稿题目
-          </h2>
-          <p className="text-gray-600 dark:text-gray-300 mb-6">
-            只有团队成员才能投稿题目
-          </p>
-          {user?.team_status === "pending" ? (
-            <div className="bg-yellow-50 border border-yellow-300 p-4 max-w-md mx-auto dark:bg-yellow-900/30 dark:border-yellow-800">
-              <p className="text-yellow-700 dark:text-yellow-300">
-                您的入队申请正在审核中...
-              </p>
-            </div>
-          ) : (
-            <Link
-              to="/apply"
-              className="inline-block px-6 py-3 bg-gray-800 text-white font-medium hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
-            >
-              申请加入团队
-            </Link>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <form onSubmit={handleSubmitProblem} className="max-w-3xl">
-        {formError && (
-          <div className="mb-4 p-3 bg-red-50 border border-red-300 text-red-700 text-sm dark:bg-red-900/30 dark:border-red-800 dark:text-red-300">
-            {formError}
-          </div>
-        )}
-        {submitted && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-300 text-green-700 text-sm dark:bg-green-900/30 dark:border-green-800 dark:text-green-300">
-            提交成功！题目已进入审核流程。
-          </div>
-        )}
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-            题目标题
-          </label>
-          <input
-            type="text"
-            value={formTitle}
-            onChange={(e) => setFormTitle(e.target.value)}
-            required
-            className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-            placeholder="请输入题目标题"
-            disabled={submitted}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-              比赛/赛事
-            </label>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  name="contestMode"
-                  checked={contestMode === "none"}
-                  onChange={() => setContestMode("none")}
-                  disabled={submitted}
-                  className="accent-gray-800 dark:accent-gray-400"
-                />
-                <span className="text-gray-600 dark:text-gray-300">无</span>
-              </label>
-              {contests.length > 0 && (
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="contestMode"
-                    checked={contestMode === "select"}
-                    onChange={() => setContestMode("select")}
-                    disabled={submitted}
-                    className="accent-gray-800 dark:accent-gray-400"
-                  />
-                  <span className="text-gray-600 dark:text-gray-300">
-                    从已有比赛选择
-                  </span>
-                </label>
-              )}
-              {contestMode === "select" && (
-                <select
-                  value={selectedContestId}
-                  onChange={(e) => setSelectedContestId(e.target.value)}
-                  disabled={submitted}
-                  className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm ml-6 dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-                >
-                  <option value="">-- 选择比赛 --</option>
-                  {contests.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input
-                  type="radio"
-                  name="contestMode"
-                  checked={contestMode === "custom"}
-                  onChange={() => setContestMode("custom")}
-                  disabled={submitted}
-                  className="accent-gray-800 dark:accent-gray-400"
-                />
-                <span className="text-gray-600 dark:text-gray-300">
-                  自行输入
-                </span>
-              </label>
-              {contestMode === "custom" && (
-                <input
-                  type="text"
-                  value={customContest}
-                  onChange={(e) => setCustomContest(e.target.value)}
-                  disabled={submitted}
-                  className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm ml-6 dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-                  placeholder="如：LeetCode周赛"
-                />
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-              难度
-            </label>
-            <select
-              value={formDifficulty}
-              onChange={(e) => setFormDifficulty(e.target.value)}
-              disabled={submitted}
-              className="w-full px-4 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-            >
-              {difficulties.map((d) => (
-                <option key={d.name} value={d.name}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <MarkdownEditor
-            value={formContent}
-            onChange={setFormContent}
-            label="题目内容 (Markdown)"
-            placeholder="# 题目描述&#10;&#10;请在这里编写题目..."
-            disabled={submitted}
-            required
-            rows={30}
-          />
-        </div>
-
-        <div className="mb-6">
-          <MarkdownEditor
-            value={formSolution}
-            onChange={setFormSolution}
-            label="题解 (Markdown)"
-            optionalNote="可选"
-            placeholder="# 题解&#10;&#10;请在这里编写题解（可选）..."
-            disabled={submitted}
-            rows={30}
-          />
-        </div>
-
-        <div className="mb-6">
-          <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-200">
-            备注（仅审核阶段可见）
-          </label>
-          <textarea
-            value={formRemark}
-            onChange={(e) => setFormRemark(e.target.value)}
-            rows={3}
-            disabled={submitted}
-            className="w-full px-3 py-2 border border-gray-300 bg-white focus:outline-none focus:border-gray-500 text-sm dark:border-gray-700 dark:bg-gray-800 dark:focus:border-gray-400"
-            placeholder="给审核员的备注，审核通过后自动隐藏..."
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={submitted}
-          className="px-6 py-3 bg-gray-800 text-white font-medium border border-gray-900 hover:bg-gray-700 disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:hover:bg-gray-600"
-        >
-          {submitted ? "提交成功!" : "提交题目"}
-        </button>
-      </form>
-    );
-  };
-
-  // ====== Problem Card (shared by all tabs) ======
-
-  const renderProblemCard = (
-    p: ProblemListItem,
-    extraActions?: React.ReactNode,
-  ) => {
-    return (
-      <div
-        key={p.id}
-        className={isGuest ? guestCardClass : cardClass}
-        onClick={isGuest ? undefined : goDetail(p.id)}
-      >
-        <div className="flex items-start justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">
-                {p.title}
-              </span>
-              {statusBadge(p.status)}
-              {isAuthor(p) && (
-                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 font-medium dark:bg-blue-900/30 dark:text-blue-300">
-                  我的题目
-                </span>
-              )}
-              {(p.verifiers || []).length > 0 && (
-                <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 font-medium dark:bg-purple-900/30 dark:text-purple-300">
-                  已有 {(p.verifiers || []).length} 人验题
-                </span>
-              )}
-              {(p.verifiers || []).some((v) => v.has_solution) && (
-                <span className="text-xs px-2 py-0.5 bg-purple-50 text-purple-500 font-medium dark:bg-purple-900/20 dark:text-purple-400">
-                  有验题题解
-                </span>
-              )}
-            </div>
-            {renderMeta(p)}
-          </div>
-          <div
-            className="flex items-center gap-2 ml-4 shrink-0"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {p.link && (
-              <a
-                href={p.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 text-xs border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                title="外部链接"
-              >
-                打开 ↗
-              </a>
-            )}
-            {isGuest && !p.link && (
-              <span className="text-xs text-gray-400 dark:text-gray-500 italic">
-                仅团队成员可查看
-              </span>
-            )}
-            {!isGuest && extraActions}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const renderCard = (p: ProblemListItem, extraActions?: React.ReactNode) => (
+    <ProblemCard
+      key={p.id}
+      p={p}
+      isGuest={isGuest}
+      isAuthor={isAuthorOf(p)}
+      difficultyMap={difficultyMap as any}
+      onGoDetail={goDetail}
+      extraActions={extraActions}
+    />
+  );
 
   // ====== Tab: All Problems ======
-
   const renderProblemList = () => {
     if (loading)
       return (
@@ -853,7 +232,16 @@ export default function ProblemsPage() {
       );
     return (
       <>
-        {renderFilterBar()}
+        <FilterBar
+          searchText={searchText}
+          filterDifficulty={filterDifficulty}
+          filterAuthor={filterAuthor}
+          difficulties={difficulties as any}
+          onSearchTextChange={setSearchText}
+          onFilterDifficultyChange={setFilterDifficulty}
+          onFilterAuthorChange={setFilterAuthor}
+          onReset={resetFilters}
+        />
         {filteredProblems.length === 0 ? (
           <div className="text-center py-12 text-gray-400 dark:text-gray-500">
             {searchText || filterDifficulty || filterAuthor
@@ -862,7 +250,7 @@ export default function ProblemsPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredProblems.map((p) => renderProblemCard(p))}
+            {filteredProblems.map((p) => renderCard(p))}
           </div>
         )}
       </>
@@ -870,9 +258,8 @@ export default function ProblemsPage() {
   };
 
   // ====== Tab: My Problems ======
-
   const renderMyProblems = () => {
-    if (myProblems.length === 0)
+    if (lists.myProblems.length === 0)
       return (
         <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
           暂无题目
@@ -880,9 +267,18 @@ export default function ProblemsPage() {
       );
     return (
       <>
-        {renderFilterBar()}
+        <FilterBar
+          searchText={searchText}
+          filterDifficulty={filterDifficulty}
+          filterAuthor={filterAuthor}
+          difficulties={difficulties as any}
+          onSearchTextChange={setSearchText}
+          onFilterDifficultyChange={setFilterDifficulty}
+          onFilterAuthorChange={setFilterAuthor}
+          onReset={resetFilters}
+        />
         <div className="space-y-4">
-          {myProblems
+          {lists.myProblems
             .filter((p) => {
               const q = searchText.toLowerCase().trim();
               if (q && !p.title.toLowerCase().includes(q)) return false;
@@ -890,14 +286,13 @@ export default function ProblemsPage() {
                 return false;
               return true;
             })
-            .map((p) => renderProblemCard(p))}
+            .map((p) => renderCard(p))}
         </div>
       </>
     );
   };
 
   // ====== Tab: Pending ======
-
   const renderPending = () => {
     const items = visiblePendingList;
     if (items.length === 0)
@@ -909,45 +304,17 @@ export default function ProblemsPage() {
     return (
       <div className="space-y-4">
         {items.map((p) => (
-          <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">
-                    {p.title}
-                  </span>
-                  {statusBadge(p.status)}
+          <div key={p.id}>
+            <div className={cardClass} onClick={() => goDetail(p.id)}>
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">
+                      {p.title}
+                    </span>
+                    {renderVisibilityEditor(p.id)}
+                  </div>
                 </div>
-                {renderMeta(p)}
-              </div>
-              <div
-                className="flex items-center gap-2 ml-4 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {canApprove && (
-                  <>
-                    <button
-                      onClick={() => handleReview(p.id, "approve")}
-                      className="px-3 py-1.5 text-xs bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
-                    >
-                      通过
-                    </button>
-                    <button
-                      onClick={() => openReasonDialog(p.id, "reply")}
-                      className="px-3 py-1.5 text-xs border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                    >
-                      回复
-                    </button>
-                  </>
-                )}
-                {canApprove && (
-                  <button
-                    onClick={() => openReasonDialog(p.id, "reject")}
-                    className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                  >
-                    退回
-                  </button>
-                )}
               </div>
             </div>
           </div>
@@ -957,9 +324,8 @@ export default function ProblemsPage() {
   };
 
   // ====== Tab: Approved ======
-
   const renderApproved = () => {
-    if (approvedList.length === 0)
+    if (lists.approvedList.length === 0)
       return (
         <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
           暂无待发布题目
@@ -967,77 +333,63 @@ export default function ProblemsPage() {
       );
     return (
       <div className="space-y-4">
-        {approvedList.map((p) => (
-          <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">
-                    {p.title}
-                  </span>
-                  {statusBadge(p.status)}
-                </div>
-                {renderMeta(p)}
-              </div>
-              <div
-                className="flex items-center gap-2 ml-4 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {!isGuest &&
-                  canSubmit &&
-                  user?.id !== p.author_id &&
-                  !(p.verifiers || []).some((v) => v.user_id === user?.id) && (
-                    <button
-                      onClick={() => handleClaim(p.id)}
-                      className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                    >
-                      认领验题
-                    </button>
-                  )}
-                {!isGuest &&
-                  canSubmit &&
-                  (p.verifiers || []).some((v) => v.user_id === user?.id) && (
-                    <button
-                      onClick={() => handleUnclaim(p.id)}
-                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                    >
-                      取消认领
-                    </button>
-                  )}
-                {canApprove && (
-                  <>
-                    <button
-                      onClick={() => handleReview(p.id, "publish")}
-                      className="px-3 py-1.5 text-xs bg-green-700 text-white hover:bg-green-600"
-                    >
-                      发布
-                    </button>
-                    <button
-                      onClick={() => openReasonDialog(p.id, "return")}
-                      className="px-3 py-1.5 text-xs border border-yellow-500 text-yellow-700 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-300 dark:hover:bg-yellow-900/20"
-                    >
-                      退回
-                    </button>
-                    <button
-                      onClick={() => handleDelete(p.id, p.title)}
-                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                    >
-                      删除
-                    </button>
-                  </>
+        {lists.approvedList.map((p) =>
+          renderCard(
+            p,
+            <>
+              {!isGuest &&
+                canSubmit &&
+                user?.id !== p.author_id &&
+                !(p.verifiers || []).some((v) => v.user_id === user?.id) && (
+                  <button
+                    onClick={() => actions.handleClaim(p.id)}
+                    className="px-3 py-1.5 text-xs bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                  >
+                    认领验题
+                  </button>
                 )}
-              </div>
-            </div>
-          </div>
-        ))}
+              {!isGuest &&
+                canSubmit &&
+                (p.verifiers || []).some((v) => v.user_id === user?.id) && (
+                  <button
+                    onClick={() => actions.handleUnclaim(p.id)}
+                    className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                  >
+                    取消认领
+                  </button>
+                )}
+              {canApprove && (
+                <>
+                  <button
+                    onClick={() => actions.handleReview(p.id, "publish")}
+                    className="px-3 py-1.5 text-xs bg-green-700 text-white hover:bg-green-600"
+                  >
+                    发布
+                  </button>
+                  <button
+                    onClick={() => actions.openReasonDialog(p.id, "return")}
+                    className="px-3 py-1.5 text-xs border border-yellow-500 text-yellow-700 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-300 dark:hover:bg-yellow-900/20"
+                  >
+                    退回
+                  </button>
+                  <button
+                    onClick={() => actions.handleDelete(p.id, p.title)}
+                    className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                  >
+                    删除
+                  </button>
+                </>
+              )}
+            </>,
+          ),
+        )}
       </div>
     );
   };
 
   // ====== Tab: Published ======
-
   const renderPublished = () => {
-    if (publishedList.length === 0)
+    if (lists.publishedList.length === 0)
       return (
         <div className="text-gray-400 text-sm py-8 text-center dark:text-gray-500">
           暂无已发布题目
@@ -1045,48 +397,32 @@ export default function ProblemsPage() {
       );
     return (
       <div className="space-y-4">
-        {publishedList.map((p) => (
-          <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">
-                    {p.title}
-                  </span>
-                  {statusBadge(p.status)}
-                </div>
-                {renderMeta(p)}
-              </div>
-              <div
-                className="flex items-center gap-2 ml-4 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {canApprove && (
-                  <>
-                    <button
-                      onClick={() => handleReview(p.id, "unpublish")}
-                      className="px-3 py-1.5 text-xs bg-orange-600 text-white hover:bg-orange-500"
-                    >
-                      取消发布
-                    </button>
-                    <button
-                      onClick={() => handleDelete(p.id, p.title)}
-                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                    >
-                      删除
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
+        {lists.publishedList.map((p) =>
+          renderCard(
+            p,
+            canApprove ? (
+              <>
+                <button
+                  onClick={() => actions.handleReview(p.id, "unpublish")}
+                  className="px-3 py-1.5 text-xs bg-orange-600 text-white hover:bg-orange-500"
+                >
+                  取消发布
+                </button>
+                <button
+                  onClick={() => actions.handleDelete(p.id, p.title)}
+                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                  删除
+                </button>
+              </>
+            ) : undefined,
+          ),
+        )}
       </div>
     );
   };
 
   // ====== Tab: Returned (已退回 — author only) ======
-
   const renderReturned = () => {
     if (visibleReturnedList.length === 0)
       return (
@@ -1096,47 +432,27 @@ export default function ProblemsPage() {
       );
     return (
       <div className="space-y-4">
-        {visibleReturnedList.map((p) => (
-          <div key={p.id} className={cardClass} onClick={goDetail(p.id)}>
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">
-                    {p.title}
-                  </span>
-                  {statusBadge(p.status)}
-                  {p.remark && (
-                    <span className="text-xs text-red-500 dark:text-red-400">
-                      退回理由：{p.remark}
-                    </span>
-                  )}
-                </div>
-                {renderMeta(p)}
-              </div>
-              <div
-                className="flex items-center gap-2 ml-4 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {p.author_id === user?.id && (
-                  <>
-                    <button
-                      onClick={() => handleResubmit(p.id)}
-                      className="px-3 py-1.5 text-xs bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
-                    >
-                      再次提交
-                    </button>
-                    <button
-                      onClick={() => handleDelete(p.id, p.title)}
-                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                    >
-                      删除
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
+        {visibleReturnedList.map((p) =>
+          renderCard(
+            p,
+            p.author_id === user?.id ? (
+              <>
+                <button
+                  onClick={() => actions.handleResubmit(p.id)}
+                  className="px-3 py-1.5 text-xs bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                >
+                  再次提交
+                </button>
+                <button
+                  onClick={() => actions.handleDelete(p.id, p.title)}
+                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                  删除
+                </button>
+              </>
+            ) : undefined,
+          ),
+        )}
       </div>
     );
   };
@@ -1172,7 +488,31 @@ export default function ProblemsPage() {
       </div>
 
       {showSubmit ? (
-        renderSubmitForm()
+        <SubmitProblemForm
+          canSubmit={canSubmit}
+          teamStatus={user?.team_status}
+          contests={contests}
+          difficulties={difficulties as any}
+          formTitle={submitForm.formTitle}
+          contestMode={submitForm.contestMode}
+          selectedContestId={submitForm.selectedContestId}
+          customContest={submitForm.customContest}
+          formDifficulty={submitForm.formDifficulty}
+          formContent={submitForm.formContent}
+          formSolution={submitForm.formSolution}
+          formRemark={submitForm.formRemark}
+          submitted={submitForm.submitted}
+          formError={submitForm.formError}
+          setFormTitle={submitForm.setFormTitle}
+          setContestMode={submitForm.setContestMode}
+          setSelectedContestId={submitForm.setSelectedContestId}
+          setCustomContest={submitForm.setCustomContest}
+          setFormDifficulty={submitForm.setFormDifficulty}
+          setFormContent={submitForm.setFormContent}
+          setFormSolution={submitForm.setFormSolution}
+          setFormRemark={submitForm.setFormRemark}
+          onSubmit={submitForm.handleSubmitProblem}
+        />
       ) : (
         <>
           {/* Tabs */}
@@ -1214,69 +554,14 @@ export default function ProblemsPage() {
       )}
 
       {/* Reason dialog for return/reject/reply */}
-      {reasonDialog && reasonDialog.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div
-            className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 shadow-lg p-6 w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-              {reasonDialog.action === "reply"
-                ? "回复建议"
-                : reasonDialog.action === "reject"
-                  ? "退回理由"
-                  : "退回理由"}
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-              {reasonDialog.action === "reply"
-                ? "请输入对题目的建议，系统将通知出题人："
-                : reasonDialog.action === "reject"
-                  ? "请输入退回理由（不少于 10 个字），系统将通知出题人："
-                  : "请输入退回理由（可选），系统将通知出题人："}
-            </p>
-            <textarea
-              value={reasonText}
-              onChange={(e) => setReasonText(e.target.value)}
-              rows={4}
-              placeholder={
-                reasonDialog.action === "reply"
-                  ? "如：请补充数据范围说明..."
-                  : "如：本题描述不够清晰，请补充题解后再提交..."
-              }
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:border-gray-500 text-sm mb-4"
-              autoFocus
-            />
-            {reasonDialog.action === "reject" &&
-              reasonText.trim().length > 0 && (
-                <p
-                  className={`text-xs mb-3 ${reasonText.trim().length >= 10 ? "text-green-600 dark:text-green-400" : "text-red-500 dark:text-red-400"}`}
-                >
-                  已输入 {reasonText.trim().length} / 10 字
-                </p>
-              )}
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setReasonDialog(null)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleReviewWithReason}
-                disabled={reasonDialog.action === "reply" && !reasonText.trim()}
-                className={`px-4 py-2 text-sm text-white disabled:opacity-50 ${
-                  reasonDialog.action === "reply"
-                    ? "bg-blue-600 hover:bg-blue-500"
-                    : reasonDialog.action === "reject"
-                      ? "bg-red-600 hover:bg-red-500"
-                      : "bg-yellow-600 hover:bg-yellow-500"
-                }`}
-              >
-                确认{reasonDialog.action === "reply" ? "回复" : "退回"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {actions.reasonDialog && actions.reasonDialog.open && (
+        <ReasonDialog
+          dialog={actions.reasonDialog}
+          reasonText={actions.reasonText}
+          onReasonTextChange={actions.setReasonText}
+          onCancel={() => actions.setReasonDialog(null)}
+          onConfirm={actions.handleReviewWithReason}
+        />
       )}
     </div>
   );
