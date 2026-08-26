@@ -10,6 +10,7 @@ import {
 } from "../../services/team.service";
 import { useToast } from "../../errors/ToastContext";
 import { errorMessage } from "../../errors/normalize";
+import { isJoined } from "../../utils/user";
 
 interface TeamMemberAPI {
   id: string;
@@ -139,7 +140,7 @@ export default function TeamPage() {
         成员
       </h1>
 
-      {user?.team_status !== "joined" && (
+      {!isJoined(user) && (
         <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800">
           <p className="text-blue-700 dark:text-blue-300">
             您还不是团队成员，

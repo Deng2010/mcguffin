@@ -2,6 +2,7 @@ import { SyntheticEvent, useState } from "react";
 import { Link, useNavigate, Navigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
 import { applyToJoin } from "../../services/team.service";
+import { isJoined } from "../../utils/user";
 
 export default function ApplyPage() {
   const { user, hasPermission } = useAuthStore();
@@ -10,7 +11,7 @@ export default function ApplyPage() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
-  if (hasPermission("view_team") && user?.team_status === "joined") {
+  if (hasPermission("view_team") && isJoined(user)) {
     return <Navigate to="/team" replace />;
   }
 

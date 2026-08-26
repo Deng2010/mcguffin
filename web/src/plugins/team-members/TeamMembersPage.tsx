@@ -10,6 +10,7 @@ import {
 import { usePluginUserMe, usePluginTeamMembers } from "../sdk";
 import { useToast } from "../../errors/ToastContext";
 import { errorMessage } from "../../errors/normalize";
+import { isJoined } from "../../utils/user";
 
 // ── Types ──
 
@@ -192,7 +193,7 @@ export default function TeamMembersPage() {
       )}
 
       {/* Non-member hint */}
-      {user && user.team_status !== "joined" && (
+      {user && !isJoined(user) && (
         <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800">
           <p className="text-blue-700 dark:text-blue-300">
             您还不是团队成员，请联系管理员申请加入。

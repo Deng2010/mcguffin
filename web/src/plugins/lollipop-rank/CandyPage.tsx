@@ -27,6 +27,7 @@ import {
   type CandyReader,
   type CandyWriter,
 } from "./logic";
+import { isJoined } from "../../utils/user";
 
 const PLUGIN_ID = "lollipop-rank";
 
@@ -236,7 +237,7 @@ export default function CandyPage() {
   );
   const nameOf = (userId: string) =>
     members.find((m) => m.user_id === userId)?.display_name ?? userId;
-  const isJoined = me?.team_status === "joined";
+  const isJoinedTeam = isJoined(me);
 
   // ── 加载 / 错误 ──
 
@@ -336,7 +337,7 @@ export default function CandyPage() {
       )}
 
       {/* 非成员提示 */}
-      {me && !isJoined && (
+      {me && !isJoinedTeam && (
         <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800">
           <p className="text-blue-700 dark:text-blue-300">
             仅团队成员可以参与点糖，请联系管理员申请加入团队。
@@ -358,7 +359,7 @@ export default function CandyPage() {
             const p = successProbability(c);
             const isChamp = champions.includes(m.user_id);
             const disabled =
-              busy || !isJoined || remaining <= 0 || m.user_id == me.id;
+              busy || !isJoinedTeam || remaining <= 0 || m.user_id == me.id;
             return (
               <div
                 key={m.user_id}
@@ -403,7 +404,7 @@ export default function CandyPage() {
                     disabled={disabled}
                     onClick={() => handleCandy(m)}
                     title={
-                      !isJoined
+                      !isJoinedTeam
                         ? "仅团队成员可点糖"
                         : remaining <= 0
                           ? "今日次数已用完"

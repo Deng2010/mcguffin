@@ -12,6 +12,7 @@ import {
 import MarkdownEditor from "../../components/MarkdownEditor";
 import DateTimePicker from "../../components/DateTimePicker";
 import { buildContestTime, splitContestTime } from "../../utils/time";
+import { isJoined } from "../../utils/user";
 import { useDifficulties, DiffBadge } from "../../hooks/useDifficulties";
 import { useToast } from "../../errors/ToastContext";
 
@@ -44,6 +45,7 @@ export default function ContestDetailPage() {
   const { siteInfo } = useSiteStore();
   const { difficultyMap } = useDifficulties();
   const isAdmin = hasPermission("approve_all_problems");
+  const isTeamMember = isJoined(user);
   const canEdit =
     user && (isAdmin || user.role === "member" || user.role === "superadmin");
 
@@ -316,12 +318,18 @@ export default function ContestDetailPage() {
                   <span className="w-6 text-center font-mono text-sm text-gray-500 dark:text-gray-400">
                     {idx + 1}
                   </span>
-                  <Link
-                    to={`/problems/${p.id}`}
-                    className="flex-1 text-sm text-gray-800 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
-                  >
-                    {p.title}
-                  </Link>
+                  {isTeamMember || isAdmin ? (
+                    <Link
+                      to={`/problems/${p.id}`}
+                      className="flex-1 text-sm text-gray-800 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400"
+                    >
+                      {p.title}
+                    </Link>
+                  ) : (
+                    <span className="flex-1 text-sm text-gray-800 dark:text-gray-100">
+                      {p.title}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-500 dark:text-gray-400">
                     {p.author_name}
                   </span>

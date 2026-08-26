@@ -7,6 +7,7 @@ import { useNotifications } from "../NotificationContext";
 import NotificationDropdown from "./NotificationDropdown";
 import FontSizeToggle from "./ui/FontSizeToggle";
 import { PluginRegistry } from "../plugins/registry";
+import { isJoined } from "../utils/user";
 import type { PluginRouteDef } from "../plugins/types";
 
 export default function Navbar() {
@@ -61,7 +62,7 @@ export default function Navbar() {
   const showManageContests = true;
   const showSuggestions = hasPermission("view_all_posts");
   const canUseCommunity = showSuggestions || true; // discussions is public
-  const showApply = isAuthenticated && user?.team_status !== "joined";
+  const showApply = isAuthenticated && !isJoined(user);
   const showAdminConfig = user?.role === "superadmin";
 
   return (
