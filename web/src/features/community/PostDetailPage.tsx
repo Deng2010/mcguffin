@@ -98,20 +98,23 @@ export default function PostDetailPage() {
     getTags()
       .then(setAllTags)
       .catch(() => {});
-    getMembers()
-      .then((members) =>
-        setTeamMembers(
-          members.map((m) => ({
-            user_id: m.user_id,
-            name: m.name,
-            avatar_url: "",
-            username: "",
-            role: m.role,
-          })),
-        ),
-      )
-      .catch(() => {});
-  }, [id]);
+    // 仅登录用户拉取团队成员（@提及候选），避免游客触发 401
+    if (isAuthenticated) {
+      getMembers()
+        .then((members) =>
+          setTeamMembers(
+            members.map((m) => ({
+              user_id: m.user_id,
+              name: m.name,
+              avatar_url: "",
+              username: "",
+              role: m.role,
+            })),
+          ),
+        )
+        .catch(() => {});
+    }
+  }, [id, isAuthenticated]);
 
   const handleReply = async () => {
     if (!replyContent.trim() || !id) return;

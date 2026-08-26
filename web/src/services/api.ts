@@ -69,14 +69,17 @@ export function parseErrorBody(text: string): {
 let sessionExpiredNotified = false;
 
 function handleSessionExpired() {
+  const hadToken = getToken() !== null;
   clearToken();
   if (!sessionExpiredNotified) {
     sessionExpiredNotified = true;
-    toastError("登录已过期，请重新登录");
+    toastError(hadToken ? "登录已过期，请重新登录" : "未登录");
     setTimeout(() => {
       sessionExpiredNotified = false;
     }, 5000);
   }
+  // 未登录游客不再强制跳转登录页，保持可浏览公开内容
+  if (!hadToken) return;
   try {
     if (!window.location.hash.includes("/login")) {
       window.location.hash = "#/login";
