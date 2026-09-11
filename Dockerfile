@@ -46,5 +46,10 @@ RUN chmod +x /app/docker-entrypoint.sh
 EXPOSE 3000
 VOLUME ["/app/data"]
 
+# 说明：入口需要 root 以修正 bind-mount 数据目录属主，
+# 随后由 docker-entrypoint.sh 通过 su-exec 降权到 mcguffin 用户运行服务，
+# 实际服务进程并非 root（docker-compose 另配 no-new-privileges 防提权）。
+# nosemgrep: dockerfile.security.missing-user-entrypoint.missing-user-entrypoint
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
+# nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["/app/mcguffin-server"]

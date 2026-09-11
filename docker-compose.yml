@@ -5,6 +5,13 @@ services:
     image: ghcr.io/deng2010/mcguffin:v0.3.1
     container_name: mcguffin
     restart: unless-stopped
+    # 安全加固：禁止 setuid/setgid 提权（su-exec 降权不受影响）
+    security_opt:
+      - no-new-privileges:true
+    # 根文件系统只读；数据写入走 /app/data volume，临时文件走 tmpfs
+    read_only: true
+    tmpfs:
+      - /tmp
     # 多架构镜像：Docker 自动选择 amd64 (Intel/AMD) 或 arm64 (Apple Silicon/ARM 服务器)
     ports:
       - "3000:3000"
