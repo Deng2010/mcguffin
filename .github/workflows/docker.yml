@@ -42,13 +42,13 @@ jobs:
 
     steps:
       - name: 📥 Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: 🐳 Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: 🔑 Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -58,23 +58,25 @@ jobs:
       - name: 🏷️ Resolve lowercased image name and tags
         id: tags
         shell: bash
+        env:
+          # REGISTRY 来自工作流级 env；GITHUB_REF/GITHUB_REF_NAME 为 runner 默认环境变量
+          PLATFORM_SLUG: ${{ matrix.platform_slug }}
         run: |
-          REGISTRY="${{ env.REGISTRY }}"
           IMAGE="${GITHUB_REPOSITORY,,}"
 
           # Cache image tag — per-platform, persistent registry cache
-          echo "cache-image=${REGISTRY}/${IMAGE}:cache-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
+          echo "cache-image=${REGISTRY}/${IMAGE}:cache-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
 
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION_TAG="${GITHUB_REF_NAME}"
-            echo "push-tag=${REGISTRY}/${IMAGE}:${VERSION_TAG}-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
+            echo "push-tag=${REGISTRY}/${IMAGE}:${VERSION_TAG}-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
           else
             # 分支推送（main），推 latest 系列
-            echo "push-tag=${REGISTRY}/${IMAGE}:latest-${{ matrix.platform_slug }}" >> "$GITHUB_OUTPUT"
+            echo "push-tag=${REGISTRY}/${IMAGE}:latest-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 🔨 Build and push (native ${{ matrix.platform_slug }})
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
@@ -98,7 +100,7 @@ jobs:
 
     steps:
       - name: 🔑 Login to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -107,10 +109,9 @@ jobs:
       - name: 🔗 Create multi-arch manifest
         shell: bash
         run: |
-          REGISTRY="${{ env.REGISTRY }}"
           IMAGE="${GITHUB_REPOSITORY,,}"
 
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF_NAME}"
             echo "→ 创建多架构 manifest: ${REGISTRY}/${IMAGE}:${TAG} (amd64 + arm64)"
 
@@ -134,10 +135,9 @@ jobs:
       - name: 🔍 Verify manifest
         shell: bash
         run: |
-          REGISTRY="${{ env.REGISTRY }}"
           IMAGE="${GITHUB_REPOSITORY,,}"
 
-          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
             TAG="latest"
