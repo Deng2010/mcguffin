@@ -259,12 +259,25 @@ mcguffin/
 
 ## 插件系统
 
-McGuffin 支持**前端插件**，动态扩展页面与能力。
+McGuffin 支持**前端插件**，动态扩展页面与能力。两种存在形式，共用同一运行时（路由 / 插槽 / 数据 API）：
 
-- 插件注册表：`web/src/plugins/registry.ts`，类型在 `plugins/types.ts`，SDK 在 `plugins/sdk/`（`definePlugin` / `PluginSlots` / `hooks` / `data`）。
-- 内置插件：`plugins/lollipop-rank/`（趣味排行榜）、`plugins/team-members/`（团队成员展示）。
-- 插件通过 `definePlugin()` 定义元信息、声明所需权限、挂接 UI 插槽与数据 hooks；后端 `/api/v1/plugins/*` 提供插件注册、启用/禁用、全局状态与数据存储（见 `handlers/plugin.rs`、`domain/plugin.rs`）。
-- 插件可声明**任意字符串权限**（对应前端 `Permission` 联合类型中的 `(string & {})` 分支）。
+- **代码注册**：`web/src/plugins/` 下 `definePlugin()`，构建期经 `import.meta.glob` 发现。内置插件：`plugins/lollipop-rank/`（趣味排行榜）、`plugins/team-members/`（团队成员展示）。
+- **ZIP 安装**：管理后台上传含 `plugin.json` 的 zip（`POST /api/v1/admin/plugins/install-zip`，仅 superadmin）。后端解压到 `<数据目录>/plugins/{id}/assets/` 并经 `GET /api/v1/plugins/{id}/assets/*` 公开托管；前端从 `/api/v1/plugins` 发现 zip 插件后**动态 `import()` 其入口 ESM**，入口通过 `window.__MCGUFFIN_SDK__`（在 `main.tsx` 暴露：React / definePlugin / PluginSlots / data / hooks）自注册。打包契约见 `docs/admin/plugins.md`。
+
+关键实现点：
+
+- 插件注册表：`web/src/plugins/registry.ts`（含远程插件加载 `refreshRemotePlugins()` / `remove()` / 加载错误追踪），类型在 `plugins/types.ts`，SDK 在 `plugins/sdk/`。
+- 后端：`handlers/plugin.rs` + `domain/plugin.rs`。清单含 `source`（code/zip）与 `entry` 字段；注册时保留已有 `enabled` 与 zip 来源信息。
+- 数据 API（均需 `storage` 插件权限，服务端原子完成）：KV `/data`、计数器 `/data/add`、集合 `/data/set-*`、keys `/data/keys`、文件存储 `/files/*`（磁盘 `<数据目录>/plugins/{id}/files/`，单文件 ≤ 8 MiB，路径防穿越）。
+- **持久化**（写穿透 + 启动加载）：清单 → `plugins` 表，KV → `plugin_data` 表，全局开关 → `meta` 表 `plugins_disabled`；迁移文件 `migrations/20260901000001_add_plugins.sql`；加载在 `db.rs::load_all_from_sqlite`，写穿透 helper 在 `infra/persistence.rs`（`persist_plugin` / `persist_plugin_data_value` / `remove_plugin_db` / `persist_plugins_disabled`）。
+- 插件可声明**任意字符串权限**（对应前端 `Permission` 联合类型中的 `(string & {})` 分支）；插件权限常量权威定义在 `domain/plugin.rs::plugin_perms`。
+- **权限语义**：精确匹配用 `plugin_has_perm`；蕴含关系用 `plugin_perms::implies_read_team`（write:team / write:team_roles ⇒ read:team）与 `implies_read_users`（read:users:email ⇒ read:users），handler 里经 `ensure_plugin_perm()` 校验。
+- **权限冻结**：`POST /plugins/register` 无鉴权（代码插件页面加载时自注册），因此重注册**不会**改变已注册插件的权限（只刷新元信息，保留 enabled / source / entry）。调整权限只能走 `PUT /admin/plugins/{id}/permissions`（superadmin；管理后台插件页有勾选 UI，权限清单由 `GET /admin/plugins` 的 `known_permissions` 提供）。已知残留风险：新插件 id 首次注册仍按声明自动授权，如需更严可改为管理员审批制。
+- **前端隔离**：插件路由页（`PluginPage`）与每个插槽组件（`PluginSlots`）都包在 `ErrorBoundary`（`scope=plugin:{id}`，局部降级 + 自动上报）中，单个插件崩溃不影响宿主页面。
+- **插件上下文**：`plugins/sdk/PluginContext.tsx` 提供 `PluginProvider` / `usePluginContext()`；`PluginPage`（注入 route）与 `PluginSlots`（注入 pluginId）负责包裹，`usePluginId()` 优先读上下文、仅在无上下文时回退解析 URL。
+- **路由级组件**：`PluginRouteDef.component` 可为每条路由指定专属页面组件，省略时回退到 `definePlugin(def, component)` 的插件级组件；`routes.tsx` 以 `pluginId:path` 作为路由 key（一个插件可注册多条路由）。
+- **配额**：单值 ≤ 64 KiB、单插件 KV 条目 ≤ 2000（更新已有 key 不受限）、namespace/key/member ≤ 64/256/256、单文件 ≤ 8 MiB；校验集中在 `handlers/plugin.rs` 的 `validate_kv_*` / `ensure_kv_quota`。
+- **审计**：插件安装/卸载/启停/权限调整/全局开关经 `audit_plugin()` 写入审计日志（`plugin.install` 等，resource = `plugin:{id}`），可在 `GET /admin/audit-log` 查看。
 
 ---
 
