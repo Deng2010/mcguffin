@@ -1,22 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { PluginUserInfo, PluginTeamMember } from "./data";
 import * as data from "./data";
+import { usePluginContext } from "./PluginContext";
 
-// ── Context: get pluginId from nearest PluginSlots ancestor ──
+// ── Context: plugin id resolution ──
 
 /**
- * Get the current plugin ID. In a route-based plugin page, extracted from URL.
- * In a slot-based component, set via PluginSlots.
+ * 当前插件 id。
+ *
+ * 优先从插件上下文（`PluginPage` / `PluginSlots` 注入）读取 —— 这是可靠来源，
+ * 因为路由路径与插件 id 并不总是一致（如 id=lollipop-rank 挂在 /plugins/lollipop）。
+ * 仅在没有上下文时（例如插件组件被宿主之外的地方直接渲染）回退解析 URL。
  */
 export function usePluginId(): string {
-  const ref = useRef<string>("");
-  // This will be set by PluginDataProvider or extracted from route
-  if (!ref.current) {
-    // Try to get from URL if this is a route-based plugin page
+  const ctx = usePluginContext();
+  const fallbackRef = useRef<string>("");
+  if (!fallbackRef.current) {
     const match = window.location.pathname.match(/\/plugins\/([^/]+)/);
-    if (match) ref.current = match[1];
+    if (match) fallbackRef.current = match[1];
   }
-  return ref.current;
+  return ctx?.pluginId ?? fallbackRef.current;
 }
 
 // ── Data hooks ──

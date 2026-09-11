@@ -50,6 +50,14 @@ pub(crate) struct SavedData {
     // ── Permission Groups ──
     #[serde(default)]
     pub(crate) member_groups: HashMap<String, MemberGroup>,
+
+    // ── Plugin system ──
+    #[serde(default)]
+    pub(crate) plugins: HashMap<String, crate::domain::plugin::PluginManifest>,
+    #[serde(default)]
+    pub(crate) plugin_data: crate::state::PluginDataStore,
+    #[serde(default)]
+    pub(crate) plugins_disabled: bool,
 }
 
 /// Custom deserializer for sessions that handles both old format
@@ -728,6 +736,11 @@ impl AppState {
 
                 *self.posts.write().await = data.posts;
 
+                // 插件系统状态
+                *self.plugins.write().await = data.plugins;
+                *self.plugin_data.write().await = data.plugin_data;
+                *self.plugins_disabled.write().await = data.plugins_disabled;
+
                 // discussion_tags and discussion_emojis stay from config.toml
                 tracing::info!("内存状态已从 SQLite 重新加载");
             }
@@ -858,6 +871,9 @@ impl AppState {
             showcase_contest_ids,
             showcase_layout,
             posts,
+            plugins,
+            plugin_data,
+            plugins_disabled,
         ) = if let Some(data) = saved {
             tracing::info!("Loaded state from JSON: {}", json_path_str);
 
@@ -944,6 +960,9 @@ impl AppState {
                 data.showcase_contest_ids,
                 data.showcase_layout,
                 p,
+                data.plugins,
+                data.plugin_data,
+                data.plugins_disabled,
             )
         } else {
             tracing::info!("No saved state, using default seed data");
@@ -961,6 +980,9 @@ impl AppState {
                 Vec::new(),
                 None,
                 HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+                false,
             )
         };
 
@@ -1107,9 +1129,9 @@ impl AppState {
             discussion_emojis: Arc::new(RwLock::new(discussion_emojis)),
             role_permissions: Arc::new(RwLock::new(role_permissions)),
             member_groups: Arc::new(RwLock::new(member_groups)),
-            plugins: Arc::new(RwLock::new(HashMap::new())),
-            plugin_data: Arc::new(RwLock::new(HashMap::new())),
-            plugins_disabled: Arc::new(RwLock::new(false)),
+            plugins: Arc::new(RwLock::new(plugins)),
+            plugin_data: Arc::new(RwLock::new(plugin_data)),
+            plugins_disabled: Arc::new(RwLock::new(plugins_disabled)),
             db,
             backup_directory: Arc::new(RwLock::new(None)),
             http_client: reqwest::Client::builder()
@@ -1179,5 +1201,71 @@ impl Default for AppState {
         // Default 仅供少数边缘场景使用（如某些推导 trait），
         // 正常情况下应使用 AppState::new().await
         tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(Self::new()))
+    }
+}
+
+// ============== 插件系统写穿透持久化 ==============
+
+impl AppState {
+    /// 插件清单 upsert（注册 / 启用 / 禁用 / 安装时调用）。
+    pub async fn persist_plugin(&self, manifest: &crate::domain::plugin::PluginManifest) {
+        let permissions = serde_json::to_string(&manifest.permissions).unwrap_or_default();
+        let _ = sqlx::query(
+            "INSERT OR REPLACE INTO plugins \
+             (id, name, version, description, author, permissions, enabled, source, entry) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&manifest.id)
+        .bind(&manifest.name)
+        .bind(&manifest.version)
+        .bind(&manifest.description)
+        .bind(&manifest.author)
+        .bind(permissions)
+        .bind(manifest.enabled as i64)
+        .bind(&manifest.source)
+        .bind(&manifest.entry)
+        .execute(&self.db)
+        .await;
+    }
+
+    /// 删除插件清单及其全部 KV 数据（卸载时调用）。
+    pub async fn remove_plugin_db(&self, plugin_id: &str) {
+        let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+            .bind(plugin_id)
+            .execute(&self.db)
+            .await;
+        let _ = sqlx::query("DELETE FROM plugin_data WHERE plugin_id = ?")
+            .bind(plugin_id)
+            .execute(&self.db)
+            .await;
+    }
+
+    /// 插件 KV 单条 upsert。
+    pub async fn persist_plugin_data_value(
+        &self,
+        plugin_id: &str,
+        namespace: &str,
+        key: &str,
+        value: &str,
+    ) {
+        let _ = sqlx::query(
+            "INSERT OR REPLACE INTO plugin_data (plugin_id, namespace, key, value) \
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(plugin_id)
+        .bind(namespace)
+        .bind(key)
+        .bind(value)
+        .execute(&self.db)
+        .await;
+    }
+
+    /// 持久化插件全局开关（meta 表）。
+    pub async fn persist_plugins_disabled(&self, disabled: bool) {
+        let _ =
+            sqlx::query("INSERT OR REPLACE INTO meta (key, value) VALUES ('plugins_disabled', ?)")
+                .bind(if disabled { "true" } else { "false" })
+                .execute(&self.db)
+                .await;
     }
 }

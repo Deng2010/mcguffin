@@ -8,6 +8,13 @@ import { toastInfo } from "./ToastContext";
 
 interface Props {
   children: ReactNode;
+  /**
+   * 自定义降级 UI。提供时替换默认整页降级页，用于「局部隔离」场景
+   * （如插件插槽组件崩溃时不应让整个宿主页面消失）。
+   */
+  fallback?: ReactNode | ((error: Error) => ReactNode);
+  /** 错误来源标签（如 plugin:lollipop-rank），会随上报一起记录，便于定位。 */
+  scope?: string;
 }
 
 interface State {
@@ -28,6 +35,9 @@ export default class ErrorBoundary extends Component<Props, State> {
       const normalized = normalizeError(error);
       reportNormalizedError(normalized, {
         stack: `${error.stack || ""}\n\n组件栈:\n${info.componentStack}`,
+        ...(this.props.scope
+          ? { message: `[${this.props.scope}] ${normalized.message}` }
+          : {}),
       });
       this.setState({ reported: true });
     }
@@ -54,6 +64,23 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (!this.state.error) return this.props.children;
+
+    // 局部降级：给出 `scope`（插件等可隔离单元）或显式 `fallback` 时，
+    // 只替换出错区域，不影响宿主页面。
+    if (this.props.fallback !== undefined || this.props.scope !== undefined) {
+      const { fallback, scope } = this.props;
+      return (
+        <>
+          {typeof fallback === "function"
+            ? fallback(this.state.error)
+            : (fallback ?? (
+                <div className="border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                  {scope ? `「${scope}」` : "该插件"}渲染出错，已自动上报
+                </div>
+              ))}
+        </>
+      );
+    }
 
     return (
       <div className="min-h-screen bg-gray-100 dark:bg-gray-950 flex items-center justify-center p-6">

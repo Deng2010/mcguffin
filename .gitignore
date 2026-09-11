@@ -5,6 +5,7 @@ server/target/
 server/mcguffin_data.json
 server/mcguffin_data.json.bak
 server/backups/
+server/plugins/
 server/src/*.rs.corrupted
 
 # ========== React / Vite (web) ==========

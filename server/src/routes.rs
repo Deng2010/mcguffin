@@ -29,9 +29,12 @@ use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
 use crate::handlers::plugin::{
-    disable_plugin, enable_plugin, get_global_plugin_state, list_plugins, list_plugins_public,
-    plugin_get_data, plugin_list_users, plugin_notify, plugin_set_data, plugin_user_get,
-    plugin_user_me, register_plugin, set_global_plugin_state, unregister_plugin,
+    disable_plugin, enable_plugin, get_global_plugin_state, install_plugin_zip, list_plugins,
+    list_plugins_public, plugin_add_data, plugin_asset, plugin_data_keys, plugin_delete_file,
+    plugin_get_data, plugin_list_files, plugin_list_users, plugin_notify, plugin_read_file,
+    plugin_set_add, plugin_set_data, plugin_set_is_member, plugin_set_members, plugin_set_remove,
+    plugin_user_get, plugin_user_me, plugin_write_file, register_plugin, set_global_plugin_state,
+    set_plugin_permissions, unregister_plugin,
 };
 use crate::handlers::post::{
     create_announcement, create_post, create_suggestion, delete_announcement, delete_post,
@@ -226,6 +229,30 @@ pub fn build_router(state: AppState) -> Router {
             "/plugins/{plugin_id}/data",
             get(plugin_get_data).post(plugin_set_data),
         )
+        .route("/plugins/{plugin_id}/data/add", post(plugin_add_data))
+        .route("/plugins/{plugin_id}/data/set-add", post(plugin_set_add))
+        .route(
+            "/plugins/{plugin_id}/data/set-remove",
+            post(plugin_set_remove),
+        )
+        .route(
+            "/plugins/{plugin_id}/data/set-members",
+            get(plugin_set_members),
+        )
+        .route(
+            "/plugins/{plugin_id}/data/set-is-member",
+            get(plugin_set_is_member),
+        )
+        .route("/plugins/{plugin_id}/data/keys", get(plugin_data_keys))
+        .route("/plugins/{plugin_id}/files/list", get(plugin_list_files))
+        .route(
+            "/plugins/{plugin_id}/files/{*path}",
+            get(plugin_read_file)
+                .post(plugin_write_file)
+                .delete(plugin_delete_file)
+                .layer(axum::extract::DefaultBodyLimit::max(10 * 1024 * 1024)),
+        )
+        .route("/plugins/{plugin_id}/assets/{*path}", get(plugin_asset))
         .route("/plugins/{plugin_id}/notify", post(plugin_notify))
         // Admin plugin management
         .route("/admin/plugins", get(list_plugins))
@@ -233,7 +260,15 @@ pub fn build_router(state: AppState) -> Router {
             "/admin/plugins/global",
             get(get_global_plugin_state).post(set_global_plugin_state),
         )
+        .route(
+            "/admin/plugins/install-zip",
+            post(install_plugin_zip).layer(axum::extract::DefaultBodyLimit::max(48 * 1024 * 1024)),
+        )
         .route("/admin/plugins/{plugin_id}", delete(unregister_plugin))
+        .route(
+            "/admin/plugins/{plugin_id}/permissions",
+            put(set_plugin_permissions),
+        )
         .route("/admin/plugins/{plugin_id}/enable", post(enable_plugin))
         .route("/admin/plugins/{plugin_id}/disable", post(disable_plugin))
         // Error reporting & error center

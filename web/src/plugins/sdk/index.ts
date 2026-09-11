@@ -1,6 +1,11 @@
 export { definePlugin } from "./definePlugin";
 export { default as PluginSlots } from "./PluginSlots";
 export {
+  PluginProvider,
+  usePluginContext,
+  type PluginContextValue,
+} from "./PluginContext";
+export {
   pluginAdd,
   pluginIncr,
   pluginDecr,

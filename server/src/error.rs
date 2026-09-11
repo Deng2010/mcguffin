@@ -54,6 +54,7 @@ pub enum ErrorCode {
     PLUGIN_PERMISSION_DENIED,
     PLUGIN_ALREADY_REGISTERED,
     PLUGIN_DATA_INVALID,
+    PLUGIN_INVALID_PACKAGE,
     // 通知
     NOTIFICATION_NOT_FOUND,
     // 站点 / 配置
@@ -106,6 +107,7 @@ impl ErrorCode {
             ErrorCode::PLUGIN_PERMISSION_DENIED => "PLUGIN_PERMISSION_DENIED",
             ErrorCode::PLUGIN_ALREADY_REGISTERED => "PLUGIN_ALREADY_REGISTERED",
             ErrorCode::PLUGIN_DATA_INVALID => "PLUGIN_DATA_INVALID",
+            ErrorCode::PLUGIN_INVALID_PACKAGE => "PLUGIN_INVALID_PACKAGE",
             ErrorCode::NOTIFICATION_NOT_FOUND => "NOTIFICATION_NOT_FOUND",
             ErrorCode::SITE_CONFIG_INVALID => "SITE_CONFIG_INVALID",
             ErrorCode::SITE_DESCRIPTION_INVALID => "SITE_DESCRIPTION_INVALID",
@@ -147,6 +149,7 @@ impl ErrorCode {
             | ErrorCode::POST_INVALID_CONTENT
             | ErrorCode::POST_REPLY_INVALID
             | ErrorCode::PLUGIN_DATA_INVALID
+            | ErrorCode::PLUGIN_INVALID_PACKAGE
             | ErrorCode::SITE_CONFIG_INVALID
             | ErrorCode::SITE_DESCRIPTION_INVALID
             | ErrorCode::ADMIN_USER_PROTECTED => StatusCode::BAD_REQUEST,
@@ -201,6 +204,7 @@ impl ErrorCode {
             ErrorCode::PLUGIN_PERMISSION_DENIED => "插件未申请权限",
             ErrorCode::PLUGIN_ALREADY_REGISTERED => "插件已注册",
             ErrorCode::PLUGIN_DATA_INVALID => "插件数据不合法",
+            ErrorCode::PLUGIN_INVALID_PACKAGE => "插件包不合法",
             ErrorCode::NOTIFICATION_NOT_FOUND => "通知不存在或无权操作",
             ErrorCode::SITE_CONFIG_INVALID => "站点配置不合法",
             ErrorCode::SITE_DESCRIPTION_INVALID => "站点简介不合法",
@@ -237,6 +241,7 @@ impl ErrorCode {
             ErrorCode::PLUGIN_DISABLED => "请联系管理员启用该插件",
             ErrorCode::PLUGIN_PERMISSION_DENIED => "插件缺少所需权限，请联系管理员",
             ErrorCode::PLUGIN_DATA_INVALID => "namespace 与 key 不能为空",
+            ErrorCode::PLUGIN_INVALID_PACKAGE => "请上传包含 plugin.json 的有效 .zip 插件包",
             ErrorCode::NOTIFICATION_NOT_FOUND => "该通知可能已被删除",
             ErrorCode::NOT_FOUND => "请检查地址是否正确",
             ErrorCode::INTERNAL_ERROR => "请稍后重试，如持续出现请联系管理员",
@@ -467,6 +472,7 @@ mod tests {
             ErrorCode::PLUGIN_PERMISSION_DENIED,
             ErrorCode::PLUGIN_ALREADY_REGISTERED,
             ErrorCode::PLUGIN_DATA_INVALID,
+            ErrorCode::PLUGIN_INVALID_PACKAGE,
             ErrorCode::NOTIFICATION_NOT_FOUND,
             ErrorCode::SITE_CONFIG_INVALID,
             ErrorCode::SITE_DESCRIPTION_INVALID,

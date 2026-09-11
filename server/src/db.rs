@@ -697,6 +697,9 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
         showcase_layout: None,
         posts: HashMap::new(),
         member_groups: HashMap::new(),
+        plugins: HashMap::new(),
+        plugin_data: HashMap::new(),
+        plugins_disabled: false,
     };
 
     // ── 读取站点描述 ──
@@ -730,6 +733,63 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
         data.showcase_layout = serde_json::from_str(&s)
             .ok()
             .filter(|v: &serde_json::Value| v.is_object());
+    }
+
+    // ── 读取插件清单 ──
+    if let Ok(rows) = sqlx::query(
+        "SELECT id, name, version, description, author, permissions, enabled, source, entry \
+         FROM plugins",
+    )
+    .fetch_all(pool)
+    .await
+    {
+        for row in rows {
+            let id: String = row.get("id");
+            let enabled: i64 = row.get("enabled");
+            data.plugins.insert(
+                id.clone(),
+                crate::domain::plugin::PluginManifest {
+                    id,
+                    name: row.get("name"),
+                    version: row.get("version"),
+                    description: row.get("description"),
+                    author: row.get("author"),
+                    permissions: serde_json::from_str(&row.get::<String, _>("permissions"))
+                        .unwrap_or_default(),
+                    enabled: enabled != 0,
+                    source: row.get("source"),
+                    entry: row.get("entry"),
+                },
+            );
+        }
+    }
+
+    // ── 读取插件 KV 数据 ──
+    if let Ok(rows) = sqlx::query("SELECT plugin_id, namespace, key, value FROM plugin_data")
+        .fetch_all(pool)
+        .await
+    {
+        for row in rows {
+            let plugin_id: String = row.get("plugin_id");
+            let namespace: String = row.get("namespace");
+            let key: String = row.get("key");
+            let value: String = row.get("value");
+            data.plugin_data
+                .entry(plugin_id)
+                .or_default()
+                .entry(namespace)
+                .or_default()
+                .insert(key, value);
+        }
+    }
+
+    // ── 读取插件全局开关 ──
+    if let Ok(Some(row)) = sqlx::query("SELECT value FROM meta WHERE key = 'plugins_disabled'")
+        .fetch_optional(pool)
+        .await
+    {
+        let s: String = row.get("value");
+        data.plugins_disabled = s == "true";
     }
 
     // ── 读取用户 ──
@@ -1245,6 +1305,9 @@ mod tests {
             showcase_layout: None,
             posts,
             member_groups: HashMap::new(),
+            plugins: HashMap::new(),
+            plugin_data: HashMap::new(),
+            plugins_disabled: false,
         }
     }
 
@@ -1524,6 +1587,9 @@ mod tests {
             showcase_layout: None,
             posts: HashMap::new(),
             member_groups: HashMap::new(),
+            plugins: HashMap::new(),
+            plugin_data: HashMap::new(),
+            plugins_disabled: false,
         };
 
         let count = import_saved_data(&pool, &data).await.unwrap();
@@ -1556,6 +1622,9 @@ mod tests {
             showcase_layout: None,
             posts: HashMap::new(),
             member_groups: HashMap::new(),
+            plugins: HashMap::new(),
+            plugin_data: HashMap::new(),
+            plugins_disabled: false,
         };
 
         data.users.insert(

@@ -3,6 +3,7 @@ import {
   getAdminPlugins,
   installPluginZip,
   setPluginEnabled,
+  setPluginPermissions,
   setPluginsGloballyEnabled,
   uninstallPlugin,
 } from "../../services/plugin.service";
@@ -20,11 +21,15 @@ interface PluginManifest {
   homepage?: string;
   permissions_needed: string[];
   enabled: boolean;
+  /** 安装来源（后端提供）：code = 前端代码注册；zip = 上传安装 */
+  source?: "code" | "zip";
+  entry?: string;
 }
 
 interface PluginsListResponse {
   plugins: PluginManifest[];
   plugins_disabled?: boolean;
+  known_permissions?: string[];
 }
 
 interface DisplayPlugin extends PluginManifest {
@@ -41,6 +46,12 @@ export default function AdminPluginsPage() {
   const [loading, setLoading] = useState(true);
   const [globallyDisabled, setGloballyDisabled] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [knownPermissions, setKnownPermissions] = useState<string[]>([]);
+  /** 正在编辑权限的插件 id */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  /** 权限编辑草稿 */
+  const [draftPerms, setDraftPerms] = useState<string[]>([]);
+  const [savingPerms, setSavingPerms] = useState(false);
   const toast = useToast();
   const uploadRef = useRef<HTMLInputElement>(null);
 
@@ -52,6 +63,7 @@ export default function AdminPluginsPage() {
       const res = await getAdminPlugins();
       setBackendPlugins(res.plugins);
       setGloballyDisabled(res.plugins_disabled === true);
+      setKnownPermissions(res.known_permissions ?? []);
     } catch {
       // ignore
     } finally {
@@ -72,11 +84,15 @@ export default function AdminPluginsPage() {
 
   const displayPlugins: DisplayPlugin[] = [
     // Plugins from backend (includes both local-registered and zip-installed)
-    ...backendPlugins.map((p) => ({
-      ...p,
-      isLocal: localIds.has(p.id),
-      isUploaded: !localIds.has(p.id),
-    })),
+    ...backendPlugins.map((p) => {
+      // 优先相信后端记录的安装来源；旧数据无 source 字段时按本地注册情况推断
+      const isZip = p.source ? p.source === "zip" : !localIds.has(p.id);
+      return {
+        ...p,
+        isLocal: !isZip,
+        isUploaded: isZip,
+      };
+    }),
     // Plugins only registered locally (not yet synced to backend)
     ...Array.from(localIds)
       .filter((id) => !backendPlugins.some((p) => p.id === id))
@@ -127,6 +143,8 @@ export default function AdminPluginsPage() {
         `✅ 插件「${data.plugin.name} v${data.plugin.version}」安装成功`,
         "success",
       );
+      // 动态加载新安装的远程插件（无需刷新页面）
+      await PluginRegistry.getInstance().refreshRemotePlugins();
       loadBackendPlugins();
     } catch (err) {
       showMsg(`安装失败: ${err}`, "error");
@@ -149,6 +167,8 @@ export default function AdminPluginsPage() {
         return;
       }
       showMsg(`✅ 已卸载「${pluginName}」`, "success");
+      // 从本地注册中心移除（路由 / 导航 / 插槽立即失效）
+      PluginRegistry.getInstance().remove(pluginId);
       loadBackendPlugins();
     } catch (err) {
       showMsg(`卸载失败: ${err}`, "error");
@@ -196,9 +216,42 @@ export default function AdminPluginsPage() {
         return;
       }
       showMsg(`✅ 已${actionLabel}「${pluginName}」`, "success");
+      // 启用 zip 插件后立即尝试加载；禁用后刷新状态（导航/路由同步隐藏）
+      await PluginRegistry.getInstance().refreshRemotePlugins();
       loadBackendPlugins();
     } catch (err) {
       showMsg(`${actionLabel}失败: ${err}`, "error");
+    }
+  };
+
+  // ── Permissions editing ──
+
+  const startEditPerms = (p: PluginManifest) => {
+    setEditingId(p.id);
+    setDraftPerms([...p.permissions_needed]);
+  };
+
+  const toggleDraftPerm = (perm: string) => {
+    setDraftPerms((prev) =>
+      prev.includes(perm) ? prev.filter((x) => x !== perm) : [...prev, perm],
+    );
+  };
+
+  const handleSavePerms = async (pluginId: string, pluginName: string) => {
+    setSavingPerms(true);
+    try {
+      const res = await setPluginPermissions(pluginId, draftPerms);
+      if (!res.success) {
+        showMsg(`权限保存失败: ${res.message}`, "error");
+        return;
+      }
+      showMsg(`✅ 已更新「${pluginName}」的权限`, "success");
+      setEditingId(null);
+      loadBackendPlugins();
+    } catch (err) {
+      showMsg(`权限保存失败: ${err}`, "error");
+    } finally {
+      setSavingPerms(false);
     }
   };
 
@@ -350,6 +403,16 @@ export default function AdminPluginsPage() {
                         ZIP 安装
                       </span>
                     )}
+
+                    {/* Remote load error badge */}
+                    {p.isUploaded && registry.getPluginLoadError(p.id) && (
+                      <span
+                        className="text-xs px-1.5 py-0.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+                        title={registry.getPluginLoadError(p.id)}
+                      >
+                        加载失败
+                      </span>
+                    )}
                   </div>
 
                   <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
@@ -367,6 +430,17 @@ export default function AdminPluginsPage() {
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 ml-4 shrink-0">
+                  {/* Permissions editor toggle */}
+                  <button
+                    onClick={() =>
+                      editingId === p.id
+                        ? setEditingId(null)
+                        : startEditPerms(p)
+                    }
+                    className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  >
+                    {editingId === p.id ? "收起权限" : "权限"}
+                  </button>
                   {/* Enable/Disable toggle */}
                   <button
                     onClick={() =>
@@ -391,6 +465,54 @@ export default function AdminPluginsPage() {
                 </div>
               </div>
             ))}
+            {/* 权限编辑面板（贴在对应插件条目下方） */}
+            {displayPlugins
+              .filter((p) => p.id === editingId)
+              .map((p) => (
+                <div
+                  key={`${p.id}-perms`}
+                  className="border border-t-0 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/60 p-4 -mt-2"
+                >
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                    勾选「{p.name}」被授予的插件权限（仅超级管理员可改；注册接口
+                    不会修改已注册插件的权限）。
+                  </p>
+                  {knownPermissions.length === 0 ? (
+                    <p className="text-xs text-gray-400">未获取到权限清单</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 mb-3">
+                      {knownPermissions.map((perm) => (
+                        <label
+                          key={perm}
+                          className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={draftPerms.includes(perm)}
+                            onChange={() => toggleDraftPerm(perm)}
+                          />
+                          {perm}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleSavePerms(p.id, p.name)}
+                      disabled={savingPerms}
+                      className="px-4 py-1.5 text-xs border border-gray-800 dark:border-gray-600 text-gray-800 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+                    >
+                      {savingPerms ? "保存中..." : "保存权限"}
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="px-4 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ))}
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
               共 {displayPlugins.length} 个插件
             </p>

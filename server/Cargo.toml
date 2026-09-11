@@ -53,6 +53,14 @@ features = ["cors", "fs", "compression-gzip", "mime_guess", "trace", "request-id
 version = "1"
 features = ["v4"]
 
+[dependencies.zip]
+version = "2"
+default-features = false
+features = ["deflate"]
+
+[dependencies.mime_guess]
+version = "2"
+
 [[bin]]
 path = "src/bin/mcguffin.rs"
 name = "mcguffin"
@@ -75,6 +83,7 @@ tower-http = { version = "0.6", features = ["catch-panic", "request-id"] }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
 chrono = "0.4"
 serde_json = "1"
+zip = "2"
 
 [lib]
 path = "src/lib.rs"

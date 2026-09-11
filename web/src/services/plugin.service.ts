@@ -11,11 +11,17 @@ export interface BackendPlugin {
   homepage?: string;
   permissions_needed: string[];
   enabled: boolean;
+  /** 安装来源：code = 前端代码注册；zip = 后台上传安装 */
+  source?: "code" | "zip";
+  /** zip 插件入口文件 */
+  entry?: string;
 }
 
 export interface PluginsListResponse {
   plugins: BackendPlugin[];
   plugins_disabled?: boolean;
+  /** 后端已知的插件权限清单（用于权限编辑 UI） */
+  known_permissions?: string[];
 }
 
 export async function getAdminPlugins(): Promise<PluginsListResponse> {
@@ -48,6 +54,17 @@ export async function setPluginEnabled(
   return apiFetch<Record<string, any>>(
     `/admin/plugins/${encodeURIComponent(pluginId)}/${action}`,
     { method: "POST" },
+  );
+}
+
+/** 调整插件已授予的权限（superadmin）。注册后权限冻结，只能经此接口变更。 */
+export async function setPluginPermissions(
+  pluginId: string,
+  permissions: string[],
+): Promise<Record<string, any>> {
+  return apiFetch<Record<string, any>>(
+    `/admin/plugins/${encodeURIComponent(pluginId)}/permissions`,
+    { method: "PUT", body: JSON.stringify({ permissions }) },
   );
 }
 

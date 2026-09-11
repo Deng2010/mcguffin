@@ -1,18 +1,27 @@
 import { Suspense } from "react";
 import { useParams } from "react-router-dom";
 import { PluginRegistry } from "./registry";
+import ErrorBoundary from "../errors/ErrorBoundary";
+import { PluginProvider } from "./sdk/PluginContext";
+import type { PluginRouteDef } from "./types";
 
 interface PluginPageProps {
   pluginId?: string;
+  /** 命中该页面的路由定义（由 routes.tsx 传入），用于按路由选择组件与注入上下文 */
+  route?: PluginRouteDef;
 }
 
 export default function PluginPage({
   pluginId: pluginIdProp,
+  route,
 }: PluginPageProps) {
   const { pluginId: pluginIdParam } = useParams<{ pluginId: string }>();
   const pluginId = pluginIdProp ?? pluginIdParam;
   const registry = PluginRegistry.getInstance();
-  const component = pluginId ? registry.getComponent(pluginId) : null;
+  // 路由级组件优先；未指定时回退到 definePlugin 的插件级组件
+  const component = pluginId
+    ? (route?.component ?? registry.getComponent(pluginId))
+    : null;
 
   if (!pluginId || !component) {
     return (
@@ -38,12 +47,39 @@ export default function PluginPage({
 
   const Component = component;
   return (
-    <Suspense
-      fallback={
-        <div className="text-center py-12 text-gray-400">加载中...</div>
-      }
+    <ErrorBoundary
+      scope={`plugin:${pluginId}`}
+      fallback={(error) => (
+        <div className="min-h-[40vh] flex flex-col items-center justify-center gap-3 px-6 text-center">
+          <div className="text-4xl">🧩</div>
+          <h1 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+            插件「{pluginId}」出错了
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 max-w-md break-words">
+            {error.message}
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            错误已自动上报，其它功能不受影响。
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-1 border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            重新加载
+          </button>
+        </div>
+      )}
     >
-      <Component />
-    </Suspense>
+      <Suspense
+        fallback={
+          <div className="text-center py-12 text-gray-400">加载中...</div>
+        }
+      >
+        <PluginProvider pluginId={pluginId} route={route}>
+          <Component />
+        </PluginProvider>
+      </Suspense>
+    </ErrorBoundary>
   );
 }

@@ -17,10 +17,20 @@ pub struct PluginManifest {
     /// Newly registered plugins default to enabled.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    /// How the plugin was installed: "code"（前端 definePlugin 注册）| "zip"（后台上传安装）。
+    #[serde(default = "default_source")]
+    pub source: String,
+    /// zip 插件的入口文件（assets 目录内相对路径，如 "index.js"）；代码插件为 None。
+    #[serde(default)]
+    pub entry: Option<String>,
 }
 
 fn default_enabled() -> bool {
     true
+}
+
+fn default_source() -> String {
+    "code".to_string()
 }
 
 /// Plugin registration payload sent by the frontend on load.
@@ -42,6 +52,12 @@ pub struct PluginListResponse {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PluginTogglePayload {
     pub enabled: bool,
+}
+
+/// Payload for superadmin-adjusting a plugin's granted permissions.
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetPermissionsPayload {
+    pub permissions: Vec<String>,
 }
 
 // ── Plugin permission constants ──
@@ -102,6 +118,14 @@ pub mod plugin_perms {
     pub fn has_write_team_roles(perms: &[String]) -> bool {
         perms.iter().any(|p| p == WRITE_TEAM_ROLES)
     }
+
+    /// Permissions that imply read:users.
+    /// `read:users:email` 是 `read:users` 的扩展，自然蕴含基础读取能力。
+    pub fn implies_read_users(perms: &[String]) -> bool {
+        perms
+            .iter()
+            .any(|p| p == READ_USERS || p == READ_USERS_EMAIL)
+    }
 }
 
 #[cfg(test)]
@@ -134,9 +158,21 @@ mod tests {
 
     #[test]
     fn has_write_team_roles_only_matches_roles() {
-        assert!(plugin_perms::has_write_team_roles(&perms(&[WRITE_TEAM_ROLES])));
+        assert!(plugin_perms::has_write_team_roles(&perms(&[
+            WRITE_TEAM_ROLES
+        ])));
         assert!(!plugin_perms::has_write_team_roles(&perms(&[WRITE_TEAM])));
         assert!(!plugin_perms::has_write_team_roles(&perms(&["read:team"])));
+    }
+
+    #[test]
+    fn implies_read_users_covers_email_extension() {
+        assert!(plugin_perms::implies_read_users(&perms(&["read:users"])));
+        assert!(plugin_perms::implies_read_users(&perms(&[
+            "read:users:email"
+        ])));
+        assert!(!plugin_perms::implies_read_users(&perms(&["read:team"])));
+        assert!(!plugin_perms::implies_read_users(&[]));
     }
 }
 

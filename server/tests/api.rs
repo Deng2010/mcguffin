@@ -1140,3 +1140,822 @@ async fn test_verifier_comment() {
     assert_eq!(p.verifiers[0].comments.len(), 1);
     assert_eq!(p.verifiers[0].comments[0].content, "这是一个验题评论");
 }
+
+// ============== Plugin data API & persistence tests ==============
+
+/// 唯一插件 id（测试共享同一个 SQLite 文件，避免相互污染）。
+fn uniq_plugin_id(prefix: &str) -> String {
+    format!(
+        "t-{}-{}",
+        prefix,
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    )
+}
+
+/// 通过 API 注册一个插件，返回 (router, token)。
+async fn register_plugin_api(
+    state: &AppState,
+    plugin_id: &str,
+    perms: &[&str],
+) -> (Router, String) {
+    let token = create_session(state, "admin").await;
+    let app = test_router(state.clone());
+    let body = serde_json::json!({
+        "id": plugin_id,
+        "manifest": {
+            "id": plugin_id,
+            "name": plugin_id,
+            "version": "1.0.0",
+            "description": "",
+            "permissions_needed": perms,
+        },
+        "permissions": perms,
+    });
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/plugins/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    (app, token)
+}
+
+fn authed_json_post(uri: String, token: &str, body: serde_json::Value) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap()
+}
+
+async fn body_json(res: axum::response::Response) -> serde_json::Value {
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    serde_json::from_slice(&body).unwrap()
+}
+
+/// KV 读写 + 原子计数器 + keys 列举 + SQLite 持久化。
+#[tokio::test]
+async fn test_plugin_kv_counter_keys_and_persistence() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("kv");
+    let (app, token) = register_plugin_api(&state, &pid, &["storage"]).await;
+
+    // KV 写入
+    let res = app
+        .clone()
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "counter", "value": "1"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 原子加（基于已有值 "1"）
+    let res = app
+        .clone()
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data/add", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "counter", "delta": 4}),
+        ))
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["value"], 5);
+
+    // 原子减
+    let res = app
+        .clone()
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data/add", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "counter", "delta": -2}),
+        ))
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["value"], 3);
+
+    // KV 读取
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/plugins/{}/data?namespace=ns&key=counter",
+                    pid
+                ))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["value"], "3");
+
+    // keys 列举
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/plugins/{}/data/keys?namespace=ns", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["keys"], serde_json::json!(["counter"]));
+
+    // SQLite 已持久化 KV 与清单
+    let row = sqlx::query(
+        "SELECT value FROM plugin_data WHERE plugin_id = ? AND namespace = 'ns' AND key = 'counter'",
+    )
+    .bind(&pid)
+    .fetch_one(&state.db)
+    .await
+    .expect("plugin_data row should exist");
+    use sqlx::Row;
+    let value: String = row.get("value");
+    assert_eq!(value, "3");
+
+    let row = sqlx::query("SELECT source, enabled FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .fetch_one(&state.db)
+        .await
+        .expect("plugins row should exist");
+    let source: String = row.get("source");
+    assert_eq!(source, "code");
+
+    // 清理
+    let _ = std::fs::remove_dir_all(format!("plugins/{}", pid));
+    let _ = sqlx::query("DELETE FROM plugin_data WHERE plugin_id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// 字符串集合：add / members / is-member / remove。
+#[tokio::test]
+async fn test_plugin_set_operations() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("set");
+    let (app, token) = register_plugin_api(&state, &pid, &["storage"]).await;
+
+    for (member, expect_added) in [("u1", true), ("u1", false), ("u2", true)] {
+        let res = app
+            .clone()
+            .oneshot(authed_json_post(
+                format!("/api/plugins/{}/data/set-add", pid),
+                &token,
+                serde_json::json!({"namespace": "ns", "key": "s", "member": member}),
+            ))
+            .await
+            .unwrap();
+        let v = body_json(res).await;
+        assert_eq!(v["added"], expect_added, "set-add {}", member);
+    }
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/plugins/{}/data/set-members?namespace=ns&key=s",
+                    pid
+                ))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["count"], 2);
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/plugins/{}/data/set-is-member?namespace=ns&key=s&member=u3",
+                    pid
+                ))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["is_member"], false);
+
+    let res = app
+        .clone()
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data/set-remove", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "s", "member": "u1"}),
+        ))
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["removed"], true);
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/plugins/{}/data/set-members?namespace=ns&key=s",
+                    pid
+                ))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["members"], serde_json::json!(["u2"]));
+
+    let _ = sqlx::query("DELETE FROM plugin_data WHERE plugin_id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// 未申请 storage 权限的插件访问数据接口 → 403。
+#[tokio::test]
+async fn test_plugin_data_requires_storage_perm() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("noperm");
+    let (app, token) = register_plugin_api(&state, &pid, &[]).await;
+
+    let res = app
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "a", "value": "1"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    let v = body_json(res).await;
+    assert_eq!(v["code"], "PLUGIN_PERMISSION_DENIED");
+
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// 插件文件存储：写 / 读 / 列 / 删 + 路径穿越防护。
+#[tokio::test]
+async fn test_plugin_file_api() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("file");
+    let (app, token) = register_plugin_api(&state, &pid, &["storage"]).await;
+
+    // 写文件
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/plugins/{}/files/docs/hello.txt", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::from("hello plugin"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let v = body_json(res).await;
+    assert_eq!(v["path"], "docs/hello.txt");
+    assert_eq!(v["size"], 12);
+
+    // 读文件
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/plugins/{}/files/docs/hello.txt", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"hello plugin");
+
+    // 列出文件
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/plugins/{}/files/list", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    assert_eq!(v["files"], serde_json::json!(["docs/hello.txt"]));
+
+    // 路径穿越被拒绝
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/plugins/{}/files/..%2Fevil.txt", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::from("evil"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // 删除文件
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/plugins/{}/files/docs/hello.txt", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 删除后读取 → 404
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/plugins/{}/files/docs/hello.txt", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+
+    // 清理磁盘与 DB
+    let _ = std::fs::remove_dir_all(format!("plugins/{}", pid));
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// ZIP 安装：上传 → 资产可公开访问 → 卸载后清理。
+#[tokio::test]
+async fn test_plugin_install_zip_and_assets() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("zip");
+    let token = create_session(&state, "admin").await;
+    let app = test_router(state.clone());
+
+    // 构造内存 zip（plugin.json + index.js）
+    let zip_bytes = {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts: zip::write::FileOptions<()> = zip::write::FileOptions::default();
+        w.start_file("plugin.json", opts).unwrap();
+        std::io::Write::write_all(
+            &mut w,
+            serde_json::to_vec(&serde_json::json!({
+                "id": pid,
+                "name": "ZIP 测试插件",
+                "version": "1.2.3",
+                "permissions_needed": ["storage"],
+            }))
+            .unwrap()
+            .as_slice(),
+        )
+        .unwrap();
+        w.start_file("index.js", opts).unwrap();
+        std::io::Write::write_all(&mut w, b"console.log('hi');".as_slice()).unwrap();
+        w.finish().unwrap().into_inner()
+    };
+
+    // 安装
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/admin/plugins/install-zip")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/octet-stream")
+                .body(Body::from(zip_bytes))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let v = body_json(res).await;
+    assert_eq!(v["success"], true);
+    assert_eq!(v["plugin"]["source"], "zip");
+    assert_eq!(v["plugin"]["entry"], "index.js");
+
+    // 资产公开可访问（无需 token）
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/plugins/{}/assets/index.js", pid))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"console.log('hi');");
+
+    // 公开列表带 source 字段
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/plugins")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let v = body_json(res).await;
+    let found = v["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["id"] == pid)
+        .cloned();
+    assert!(found.is_some(), "public list should contain zip plugin");
+    assert_eq!(found.unwrap()["source"], "zip");
+
+    // 卸载 → 资产目录与 DB 记录被清理
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/admin/plugins/{}", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(!std::path::Path::new(&format!("plugins/{}", pid)).exists());
+}
+
+/// 损坏的 zip 包 → 400 PLUGIN_INVALID_PACKAGE。
+#[tokio::test]
+async fn test_plugin_install_zip_rejects_garbage() {
+    let state = AppState::new().await;
+    let token = create_session(&state, "admin").await;
+    let app = test_router(state);
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/admin/plugins/install-zip")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/octet-stream")
+                .body(Body::from("not a zip file"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let v = body_json(res).await;
+    assert_eq!(v["code"], "PLUGIN_INVALID_PACKAGE");
+}
+
+/// 重注册不能修改已注册插件的权限（防止无鉴权接口被用来扩权）。
+#[tokio::test]
+async fn test_plugin_reregister_cannot_change_permissions() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("freeze");
+    let (app, _token) = register_plugin_api(&state, &pid, &["storage"]).await;
+
+    // 用更宽的权限重注册
+    let body = serde_json::json!({
+        "id": pid,
+        "manifest": {
+            "id": pid,
+            "name": pid,
+            "version": "2.0.0",
+            "description": "",
+            "permissions_needed": ["storage", "read:users:email"],
+        },
+        "permissions": ["storage", "read:users:email"],
+    });
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/plugins/register")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let plugins = state.plugins.read().await;
+    let manifest = plugins.get(&pid).expect("plugin registered");
+    assert_eq!(
+        manifest.permissions,
+        vec!["storage".to_string()],
+        "重注册不得改变权限清单"
+    );
+    assert_eq!(manifest.version, "2.0.0", "元信息应刷新");
+    drop(plugins);
+
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// write:team 蕴含 read:team：只申请 write:team 的插件也能列成员。
+#[tokio::test]
+async fn test_plugin_write_team_implies_read_team() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("implyteam");
+    let (app, token) = register_plugin_api(&state, &pid, &["write:team"]).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/plugins/{}/users", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "write:team 应蕴含 read:team（而不是 403）"
+    );
+
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// read:users:email 蕴含 read:users：能读取用户资料。
+#[tokio::test]
+async fn test_plugin_read_users_email_implies_read_users() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("implyusers");
+    let (app, token) = register_plugin_api(&state, &pid, &["read:users:email"]).await;
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/plugins/{}/users/admin", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let v = body_json(res).await;
+    assert_eq!(v["id"], "admin");
+    assert!(
+        v.get("email").is_some(),
+        "read:users:email 应包含 email 字段"
+    );
+
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// superadmin 可通过管理接口调整插件权限，非法权限被拒绝。
+#[tokio::test]
+async fn test_admin_set_plugin_permissions() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("perms");
+    let (app, token) = register_plugin_api(&state, &pid, &["storage"]).await;
+
+    // 正常调整（含去重）
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/admin/plugins/{}/permissions", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "permissions": ["read:team", "storage", "read:team"],
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let v = body_json(res).await;
+    assert_eq!(
+        v["permissions_needed"],
+        serde_json::json!(["read:team", "storage"])
+    );
+
+    // 已持久化
+    let row = sqlx::query("SELECT permissions FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .fetch_one(&state.db)
+        .await
+        .expect("plugins row");
+    use sqlx::Row;
+    let perms: String = row.get("permissions");
+    assert_eq!(perms, r#"["read:team","storage"]"#);
+
+    // 非法权限 → 400
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/admin/plugins/{}/permissions", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "permissions": ["root:everything"],
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// KV 配额：超大值 / 超长 key 被拒。
+#[tokio::test]
+async fn test_plugin_kv_quota_limits() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("quota");
+    let (app, token) = register_plugin_api(&state, &pid, &["storage"]).await;
+
+    // 64 KiB + 1 的值 → 400
+    let big = "x".repeat(64 * 1024 + 1);
+    let res = app
+        .clone()
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "k", "value": big}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let v = body_json(res).await;
+    assert_eq!(v["code"], "PLUGIN_DATA_INVALID");
+
+    // 超长 key → 400
+    let res = app
+        .clone()
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "k".repeat(257), "value": "v"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+
+    // 边界内的值可以写入
+    let ok = "x".repeat(1024);
+    let res = app
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "ok", "value": ok}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let _ = sqlx::query("DELETE FROM plugin_data WHERE plugin_id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
+/// 插件生命周期操作写入审计日志。
+#[tokio::test]
+async fn test_plugin_lifecycle_audited() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("audit");
+    let token = create_session(&state, "admin").await;
+    let app = test_router(state.clone());
+
+    // 注册 + 禁用（走管理接口，带审计）
+    let _ = register_plugin_api(&state, &pid, &["storage"]).await;
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/admin/plugins/{}/disable", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 审计日志包含 plugin.disable + 资源标识
+    let res = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/admin/audit-log")
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let v = body_json(res).await;
+    // GET /api/admin/audit-log 直接返回条目数组
+    let entries = v.as_array().expect("audit entries array");
+    let found = entries
+        .iter()
+        .any(|e| e["action"] == "plugin.disable" && e["resource"] == format!("plugin:{}", pid));
+    assert!(
+        found,
+        "审计日志应包含 plugin.disable（resource=plugin:{}），实际: {:?}",
+        pid,
+        entries
+            .iter()
+            .filter(|e| e["action"].as_str().unwrap_or("").starts_with("plugin."))
+            .collect::<Vec<_>>()
+    );
+
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}

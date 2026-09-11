@@ -35,6 +35,8 @@ class PluginRegistry {
   private statusFetched = false;
   /** Whether the plugin feature is globally disabled by an admin */
   private globallyDisabled = false;
+  /** pluginId → 远程（zip）插件加载失败原因，用于管理页展示 */
+  private loadErrors = new Map<string, string>();
 
   static getInstance(): PluginRegistry {
     if (!PluginRegistry.instance) {
@@ -94,6 +96,15 @@ class PluginRegistry {
     const routes = definition.routes ?? [];
     const slots = definition.slots ?? [];
 
+    // 去重：重复注册（HMR / 页面重载）时先清掉该插件旧的插槽组件，
+    // 避免同一插槽组件被渲染多次。
+    for (const [slotName, list] of this.slotComponents.entries()) {
+      const filtered = list.filter((s) => s.pluginId !== definition.id);
+      if (filtered.length !== list.length) {
+        this.slotComponents.set(slotName, filtered);
+      }
+    }
+
     // Store slots
     for (const slot of slots) {
       if (!this.slotComponents.has(slot.slot)) {
@@ -152,9 +163,23 @@ class PluginRegistry {
   async fetchPluginStatus(): Promise<void> {
     if (this.statusFetched) return;
     this.statusFetched = true;
+    await this.refreshRemotePlugins();
+  }
+
+  /**
+   * Re-fetch plugin status from the backend and dynamically load any
+   * zip-installed plugins that are not loaded yet. Safe to call multiple
+   * times (e.g. after installing / enabling a plugin in the admin page).
+   */
+  async refreshRemotePlugins(): Promise<void> {
     try {
       const res = await apiFetch<{
-        plugins: Array<{ id: string; enabled: boolean }>;
+        plugins: Array<{
+          id: string;
+          enabled: boolean;
+          source?: "code" | "zip";
+          entry?: string;
+        }>;
         plugins_disabled?: boolean;
       }>("/plugins");
       const disabled = new Set<string>();
@@ -166,9 +191,65 @@ class PluginRegistry {
       this.disabledPluginIds = disabled;
       this.globallyDisabled = res.plugins_disabled === true;
       this.notify();
+      await this.loadRemotePlugins(res.plugins);
     } catch {
       // Backend may not be available; treat all as enabled
     }
+  }
+
+  /**
+   * Dynamically import entry modules of zip-installed plugins.
+   * Each entry is an ESM that registers itself via
+   * `window.__MCGUFFIN_SDK__.definePlugin()`.
+   */
+  private async loadRemotePlugins(
+    plugins: Array<{
+      id: string;
+      enabled: boolean;
+      source?: "code" | "zip";
+      entry?: string;
+    }>,
+  ): Promise<void> {
+    if (this.globallyDisabled) return;
+    for (const p of plugins) {
+      if (p.source !== "zip" || !p.enabled) continue;
+      if (this.isLoaded(p.id)) continue;
+      const entry = p.entry ?? "index.js";
+      const url = `/api/plugins/${encodeURIComponent(p.id)}/assets/${entry
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`;
+      try {
+        await import(/* @vite-ignore */ url);
+        this.loadErrors.delete(p.id);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.loadErrors.set(p.id, msg);
+        console.error("[plugin] failed to load remote plugin %s:", p.id, err);
+      }
+    }
+  }
+
+  /** Get the load error of a remote plugin, if any. */
+  getPluginLoadError(pluginId: string): string | undefined {
+    return this.loadErrors.get(pluginId);
+  }
+
+  /**
+   * Remove a plugin from the local registry (routes, nav items, slots).
+   * Called after uninstalling a zip plugin; the already-imported ESM module
+   * itself cannot be unloaded, but it becomes unreachable.
+   */
+  remove(pluginId: string): void {
+    const existed = this.plugins.delete(pluginId);
+    for (const [slotName, list] of this.slotComponents.entries()) {
+      const filtered = list.filter((s) => s.pluginId !== pluginId);
+      if (filtered.length !== list.length) {
+        this.slotComponents.set(slotName, filtered);
+      }
+    }
+    this.loadErrors.delete(pluginId);
+    if (existed) this.notify();
   }
 
   /** Check whether a plugin is currently enabled. */
@@ -261,7 +342,7 @@ class PluginRegistry {
     // Each module that calls definePlugin() will self-register.
     for (const [path, importer] of Object.entries(allModules)) {
       importer().catch((err: unknown) => {
-        console.error(`[plugin] failed to load ${path}:`, err);
+        console.error("[plugin] failed to load %s:", path, err);
       });
     }
   }

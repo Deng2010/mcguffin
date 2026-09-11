@@ -91,16 +91,18 @@ export default function AppRoutes() {
           />
           <Route path="/profile/:username" element={<ProfilePage />} />
           {pluginRoutes.map(({ pluginId, route }) => {
+            // key 需同时区分插件与路由：一个插件可以注册多条路由
+            const routeKey = `${pluginId}:${route.path}`;
             const element = route.required_permission ? (
               <ProtectedRoute requiredPermission={route.required_permission}>
-                <PluginPage pluginId={pluginId} />
+                <PluginPage pluginId={pluginId} route={route} />
               </ProtectedRoute>
             ) : (
-              <PluginPage pluginId={pluginId} />
+              <PluginPage pluginId={pluginId} route={route} />
             );
             return (
               <Route
-                key={pluginId}
+                key={routeKey}
                 path={route.path.replace(/^\//, "")}
                 element={element}
               />
