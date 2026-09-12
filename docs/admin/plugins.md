@@ -160,9 +160,28 @@ ZIP 插件代码以主应用同等权限运行在浏览器中（可访问 DOM �
 
 ## 开发插件
 
+### 本地专属插件（不入版本库）
+
+主仓库**不跟踪任何具体插件**，只跟踪插件系统本身（`registry.ts` / `types.ts` /
+`PluginPage.tsx` / `index.ts` / `sdk/`）。以下两个插件是部署/本地专属的，已列入
+`.gitignore`，**克隆仓库后不会出现**：
+
+| 插件 | 说明 |
+|------|------|
+| `plugins/lollipop-rank/` | 榜榜糖（站点专属的趣味点糖玩法） |
+| `plugins/team-members/` | 团队成员页的插件化实现（参考实现） |
+
+这不会影响构建：插件由 `registry.ts` 的
+`import.meta.glob("/src/plugins/*/index.ts")` 在构建期发现，目录不存在时自动跳过。
+`bun run build` 与 `bun run test` 在没有这两个插件的干净克隆中均通过。
+
+> 如需自行维护这些插件，请从各自仓库获取后放入 `web/src/plugins/<插件id>/`
+> （目录结构见下文），或改以 ZIP 方式安装分发。
+
 ### 最小示例
 
-项目内置了一个完整的参考实现：`web/src/plugins/team-members/`，将团队成员页以插件形式重写。
+以下是一个完整的参考实现（团队成员页的插件化重写）。
+该实现是**本地专属插件**，不在版本库中（见「本地专属插件」），此处保留其源码作为编写参考：
 
 ```typescript
 // web/src/plugins/team-members/index.ts
