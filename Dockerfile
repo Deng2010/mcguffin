@@ -30,7 +30,7 @@ COPY server/ .
 RUN cargo build --release
 
 # ==================== Stage 3: Runtime ====================
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata sqlite wget su-exec \
     && addgroup -S mcguffin && adduser -S mcguffin -G mcguffin
 
