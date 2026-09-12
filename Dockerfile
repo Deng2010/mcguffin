@@ -11,7 +11,7 @@ COPY web/ ./
 RUN bun run build
 
 # ==================== Stage 2: Backend ====================
-FROM rust:1.88-alpine AS chef
+FROM rust:1.98-alpine AS chef
 RUN apk add --no-cache musl-dev sqlite-dev pkgconfig build-base
 RUN cargo install cargo-chef --locked
 
