@@ -1,9 +1,15 @@
 # ==========================================================
 # McGuffin PR / Push Testing
-# Runs on every push and pull request to verify:
-#   1. Frontend: install → build → test
-#   2. Backend:  test (unit + integration)
-# on Windows / macOS / Linux
+#
+# 校验内容：
+#   1. 前端：install → build（tsc + vite）→ test（vitest）
+#   2. 后端：fmt 检查 → clippy（warning 即错误）→ test（单元 + 集成）
+#   3. 版本一致性：Cargo.toml / Cargo.lock / package.json / docker-compose.yml
+#
+# 平台矩阵：Linux + macOS。
+#   本项目是跨平台 CLI/服务端（state.rs::resolve_config_path 有平台分支），
+#   故 macOS 也纳入。Windows 暂不纳入：rusqlite bundled 与路径语义
+#   需要额外验证，避免引入不稳定的红叉。
 # ==========================================================
 
 name: Test
@@ -25,13 +31,16 @@ env:
 
 jobs:
   test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
     strategy:
       fail-fast: false
       matrix:
         os:
           - ubuntu-latest
-
-    runs-on: ${{ matrix.os }}
+          - macos-latest
 
     steps:
       - name: 📥 Checkout repository
@@ -40,6 +49,8 @@ jobs:
       # ── Rust ────────────────────────────────────────────
       - name: 🦀 Setup Rust toolchain
         uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: rustfmt, clippy
 
       - name: 🦀 Rust cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
@@ -55,6 +66,7 @@ jobs:
         working-directory: web
         run: bun install --frozen-lockfile
 
+      # 构建包含 tsc --noEmit 类型检查与 vite build
       - name: 🌐 Build frontend (type-check + Vite)
         working-directory: web
         run: bun run build
@@ -64,10 +76,74 @@ jobs:
         run: bun run test
 
       # ── Backend ────────────────────────────────────────
+      # --locked：确保 Cargo.lock 与实际依赖一致（版本号变更时会在这里失败）
+      - name: 🦀 Check formatting
+        working-directory: server
+        run: cargo fmt --check
+
+      - name: 🦀 Clippy (warnings are errors)
+        working-directory: server
+        run: cargo clippy --locked --bins -- -D warnings
+
       - name: 🦀 Run backend unit + integration tests
         working-directory: server
-        run: cargo test
+        run: cargo test --locked
 
       # ── Summary ─────────────────────────────────────────
       - name: ✅ All checks passed
-        run: echo "✓ Frontend build + test passed on ${{ runner.os }}"
+        run: echo "✓ Frontend build + test, Rust fmt + clippy + test passed on ${{ runner.os }}"
+
+  # ==========================================================
+  # 版本一致性：前后端与部署清单必须同版本
+  # 约定见 AGENTS.md「提交与版本规范」。
+  # 任一位置漏改都会在这里失败，避免发出版本号错乱的镜像。
+  # ==========================================================
+  version-sync:
+    name: version sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: 🔢 Check all version sources agree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Cargo.toml 的 [package] version（只取首个 version，避免命中依赖表）
+          CARGO_V=$(grep -m1 '^version' server/Cargo.toml | cut -d'"' -f2)
+          # package.json 的顶层 version
+          WEB_V=$(grep -m1 '"version"' web/package.json | cut -d'"' -f4)
+          # Cargo.lock 中 mcguffin-server 自身的 version
+          LOCK_V=$(awk '/^name = "mcguffin-server"$/{getline; gsub(/[",]/,""); print $3}' server/Cargo.lock)
+          # docker-compose.yml 固定的镜像 tag
+          COMPOSE_V=$(grep -oE 'mcguffin:v[0-9]+\.[0-9]+\.[0-9]+' docker-compose.yml | head -1 | sed 's/.*:v//')
+          # AGENTS.md 中声明的当前版本
+          AGENTS_V=$(grep -oE '当前均 `[0-9]+\.[0-9]+\.[0-9]+`' AGENTS.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+
+          printf '%-28s %s\n' \
+            "server/Cargo.toml:"      "$CARGO_V" \
+            "web/package.json:"       "$WEB_V" \
+            "server/Cargo.lock:"      "$LOCK_V" \
+            "docker-compose.yml:"     "$COMPOSE_V" \
+            "AGENTS.md:"              "$AGENTS_V"
+
+          fail=0
+          check() {
+            if [ "$1" != "$CARGO_V" ]; then
+              echo "::error file=$2::$2 的版本为 '$1'，应为 '$CARGO_V'（以 server/Cargo.toml 为准）"
+              fail=1
+            fi
+          }
+          check "$WEB_V"     "web/package.json"
+          check "$LOCK_V"    "server/Cargo.lock（修复：cd server && cargo update --workspace）"
+          check "$COMPOSE_V" "docker-compose.yml"
+          check "$AGENTS_V"  "AGENTS.md"
+
+          if [ "$fail" -ne 0 ]; then
+            echo "❌ 版本号不一致，请按 AGENTS.md「提交与版本规范」同步后再提交。"
+            exit 1
+          fi
+          echo "✅ 全部版本一致：$CARGO_V"

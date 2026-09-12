@@ -1,0 +1,203 @@
+# ==========================================================
+# McGuffin Release
+#
+# 触发：推送 v*.*.* tag（与 docker.yml 的 tag 触发一致）
+#
+# 产物：
+#   - GitHub Release（自动生成 release notes）
+#   - 预编译压缩包：server 二进制 + CLI + 前端 dist
+#   - SHA256SUMS
+#
+# 压缩包布局（服务端按 cwd 相对路径探测前端，见 routes.rs::locate_frontend_dist）：
+#   mcguffin-v{VERSION}-{target}/
+#   ├── mcguffin-server      # 服务端（默认监听 :3000）
+#   ├── mcguffin             # CLI（init / config / backup / service）
+#   ├── web/dist/            # 前端构建产物（cwd/web/dist 命中探测）
+#   └── LICENSE
+#
+# 说明：镜像由 docker.yml 单独构建推送；此处只产出裸机部署用的压缩包。
+# 使用 gh CLI（runner 预装）而非第三方 action，减少供应链面。
+# ==========================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+# 同一 tag 只跑一次；release 不做并发取消，避免半成品发布
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  # ==========================================================
+  # 0. tag 与源码版本号必须一致，否则拒绝发布
+  # ==========================================================
+  verify:
+    name: verify tag matches version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: 🔢 Verify tag == Cargo.toml == package.json
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+          CARGO_V=$(grep -m1 '^version' server/Cargo.toml | cut -d'"' -f2)
+          WEB_V=$(grep -m1 '"version"' web/package.json | cut -d'"' -f4)
+
+          echo "tag=$TAG cargo=$CARGO_V web=$WEB_V"
+
+          if [ "$CARGO_V" != "$WEB_V" ]; then
+            echo "::error::前后端版本号不一致（$CARGO_V vs $WEB_V）"
+            exit 1
+          fi
+          if [ "$TAG" != "v$CARGO_V" ]; then
+            echo "::error::tag '$TAG' 与源码版本 'v$CARGO_V' 不一致，请先同步版本号再打 tag"
+            exit 1
+          fi
+          echo "✅ tag 与源码版本一致：$TAG"
+
+  # ==========================================================
+  # 1. 各平台构建压缩包（原生 runner，无交叉编译）
+  # ==========================================================
+  build:
+    name: build ${{ matrix.target }}
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: linux-x86_64
+          - runner: ubuntu-24.04-arm
+            target: linux-aarch64
+          - runner: macos-latest
+            target: macos-aarch64
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      # ── Rust ────────────────────────────────────────────
+      - name: 🦀 Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+
+      - name: 🦀 Rust cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: server
+          key: release-${{ matrix.target }}
+
+      # ── Frontend ───────────────────────────────────────
+      - name: 📦 Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+      - name: 🌐 Build frontend
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      # ── Backend ────────────────────────────────────────
+      - name: 🦀 Build release binaries
+        working-directory: server
+        run: cargo build --release --locked
+
+      # ── Package ────────────────────────────────────────
+      - name: 📦 Package tarball
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          PKG="mcguffin-v${VERSION}-${TARGET}"
+          STAGE="target/dist/${PKG}"
+
+          rm -rf target/dist
+          mkdir -p "${STAGE}/web"
+
+          cp server/target/release/mcguffin-server "${STAGE}/"
+          cp server/target/release/mcguffin        "${STAGE}/"
+          # 前端放在 web/dist：服务端从 cwd 探测 web/dist 命中
+          cp -r web/dist "${STAGE}/web/dist"
+          cp LICENSE "${STAGE}/"
+          chmod +x "${STAGE}/mcguffin-server" "${STAGE}/mcguffin"
+
+          tar -czf "target/dist/${PKG}.tar.gz" -C target/dist "${PKG}"
+          rm -rf "${STAGE}"
+
+          ls -lh "target/dist/${PKG}.tar.gz"
+          echo "PKG=${PKG}" >> "$GITHUB_ENV"
+
+      - name: 📤 Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ env.PKG }}
+          path: target/dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # ==========================================================
+  # 2. 汇总产物 + 校验和 → 创建 GitHub Release
+  # ==========================================================
+  release:
+    name: publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: 📥 Download all artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: 🔐 Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          ls -1 *.tar.gz
+          sha256sum *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: 🚀 Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # tag 已由 verify 任务确认存在；此处创建 release 并附带产物。
+          # --generate-notes：按 PR 标签/作者自动归类生成 notes。
+          gh release create "$TAG" \
+            --title "McGuffin $TAG" \
+            --generate-notes \
+            dist/*.tar.gz dist/SHA256SUMS
+
+          echo "✅ Release 已发布：$TAG"

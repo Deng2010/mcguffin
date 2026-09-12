@@ -5,6 +5,12 @@
 #   1. build — 在原生 runner 上并行构建各架构，推送到 ghcr
 #   2. merge — 合并各架构为多架构 manifest
 #
+# 触发与行为：
+#   - push main       → 推 latest-{arch} 并合成 :latest
+#   - push tag v*.*.* → 推 v{ver}-{arch} 并合成 :v{ver}
+#   - pull_request    → 只构建、不登录、不推送（push=false），
+#                       用于在合并前发现 Dockerfile / 构建上下文被改坏
+#
 # 优势：使用原生 ARM runner (ubuntu-24.04-arm) 而非 QEMU
 # 模拟，arm64 构建速度提升 2-5 倍（尤其 Rust 编译）。
 # ==========================================================
@@ -17,6 +23,16 @@ on:
       - "v*.*.*"
     branches:
       - main
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "Containerfile"
+      - "docker-entrypoint.sh"
+      - ".dockerignore"
+      - "docker-compose.yml"
+      - "web/**"
+      - "server/**"
+      - ".github/workflows/docker.yml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -24,6 +40,7 @@ env:
 
 jobs:
   build:
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +65,7 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: 🔑 Login to GitHub Container Registry
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -67,7 +85,10 @@ jobs:
           # Cache image tag — per-platform, persistent registry cache
           echo "cache-image=${REGISTRY}/${IMAGE}:cache-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
 
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            # PR：只验证能构建，tag 仅用于本地标识（不推送）
+            echo "push-tag=${REGISTRY}/${IMAGE}:pr-${GITHUB_REF_NAME}-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION_TAG="${GITHUB_REF_NAME}"
             echo "push-tag=${REGISTRY}/${IMAGE}:${VERSION_TAG}-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
           else
@@ -79,12 +100,14 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          push: true
+          # PR 上只构建不推送：合并前即可发现 Dockerfile 被改坏
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.tags.outputs.push-tag }}
           platforms: ${{ matrix.platform }}
           # 使用 registry 缓存：持久化到 ghcr.io，跨 runner 共享
+          # PR 无法写入 registry 缓存（未登录），仅读取
           cache-from: type=registry,ref=${{ steps.tags.outputs.cache-image }}
-          cache-to: type=registry,ref=${{ steps.tags.outputs.cache-image }},mode=max
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0},mode=max', steps.tags.outputs.cache-image) || '' }}
           provenance: false
 
   #
@@ -92,7 +115,10 @@ jobs:
   #
   merge:
     needs: build
+    # PR 上没有任何架构镜像被推送，跳过 manifest 合成
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     permissions:
       contents: read

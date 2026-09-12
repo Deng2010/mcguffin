@@ -1,0 +1,63 @@
+# ==========================================================
+# Dependabot 依赖更新
+#
+# 背景：本仓库的 workflow 全部把 action 固定到 commit SHA
+# （见 `ci: 固定 Actions 版本并消除脚本注入风险`）。固定 SHA 是安全
+# 上的正确做法，但代价是不会自动收到新版本，长期会停在含漏洞的旧版。
+# Dependabot 恰好补上这一点：自动提 PR 更新 SHA 与依赖版本。
+#
+# 分组策略：把同一生态的补丁/次要更新合并成一个 PR，
+# 避免每周被十几个 PR 淹没；主版本更新仍单独提 PR，便于审查 breaking change。
+# ==========================================================
+
+version: 2
+updates:
+  # ── Rust 依赖（server/）──
+  - package-ecosystem: cargo
+    directory: /server
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-patch:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+
+  # ── 前端依赖（web/，bun）──
+  - package-ecosystem: bun
+    directory: /web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      web-patch:
+        patterns: ["*"]
+        update-types: ["patch", "minor"]
+
+  # ── GitHub Actions（固定 SHA 的自动升级）──
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions-all:
+        patterns: ["*"]
+
+  # ── Docker 基础镜像（Containerfile/Dockerfile）──
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
