@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   mcguffin:
-    image: ghcr.io/deng2010/mcguffin:v0.3.1
+    image: ghcr.io/deng2010/mcguffin:v0.4.0
     container_name: mcguffin
     restart: unless-stopped
     # 安全加固：禁止 setuid/setgid 提权（su-exec 降权不受影响）

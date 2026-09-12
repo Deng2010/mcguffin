@@ -7,7 +7,9 @@
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
 ![Rust](https://img.shields.io/badge/Rust-2021-orange)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue)
-![Build](https://img.shields.io/github/actions/workflow/status/your-org/mcguffin/release.yml?branch=main&label=release)
+![Test](https://img.shields.io/github/actions/workflow/status/Deng2010/mcguffin/test.yml?branch=main&label=test)
+![Release](https://img.shields.io/github/v/release/Deng2010/mcguffin?label=release)
+![Docker](https://img.shields.io/badge/ghcr.io-mcguffin-blue?logo=docker)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
 
 <br>
