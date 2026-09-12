@@ -8,7 +8,7 @@
 
 **McGuffin** 是算法竞赛出题团队的协作工具。React 18 SPA + Rust/Axum 后端，CP OAuth 认证，SQLite 持久化，带前端插件系统与错误上报。
 
-- 前/后端版本号必须同步（当前 `0.3.1`）
+- 前/后端版本号必须同步（当前 `0.4.0`）
 - 架构：浏览器 → React SPA → Axum API（`/api/v1/` + 兼容层 `/api/`）→ SQLite / CP OAuth
 - 后端为 **分层架构**：`domain`（数据+领域逻辑）→ `handlers`（HTTP 层）→ `infra`（持久化/配置/备份），路由统一在 `routes.rs` 注册。
 - 前端为 **特性分层**：`app`（路由+布局）→ `features`（按领域分组的页面）→ `services`（API 封装）→ `stores`（zustand 状态）→ `plugins`（插件系统）。
@@ -58,6 +58,15 @@ cargo build --release     # 生产构建 → target/release/mcguffin-server + mc
 cargo run                 # 开发服务器 :3000
 cargo run --bin mcguffin  # CLI 工具
 ```
+
+> **已知环境问题（macOS，非代码缺陷）**：个别 macOS 机器上
+> `cargo build --release` 会以
+> `dlopen(...libsqlx_macros-*.dylib): mis-aligned LINKEDIT string pool` 失败 ——
+> release profile 产出的 proc-macro dylib 被 strip/签名后损坏。
+> 该问题只影响本机 release 构建：`cargo test` / `cargo check` / clippy（dev profile）
+> 全部正常，CI（Ubuntu/macOS runner）与 Docker（Linux musl）均不受影响。
+> 需要本机出 release 产物时可临时绕过：
+> `CARGO_PROFILE_RELEASE_STRIP=none cargo build --release`。
 
 ### 全量（项目根，`just`）
 
@@ -116,7 +125,7 @@ mcguffin/
 │       ├── hooks/            # 自定义 Hooks（useDifficulties / useMention）
 │       ├── utils/            # 工具函数（groups / time）
 │       ├── errors/           # 错误边界 + 错误标准化 + 上报 + Toast
-│       ├── plugins/          # 前端插件系统（含 SDK + 内置插件）
+│       ├── plugins/          # 前端插件系统（SDK + 运行时；具体插件为本地专属，见 .gitignore）
 │       └── test/             # Vitest 测试（含 setup.ts）
 ├── server/                   # 后端（Rust / Axum / sqlx / rusqlite）
 │   ├── Cargo.toml            # 依赖与二进制定义
@@ -147,9 +156,12 @@ mcguffin/
 │   │   ├── infra/            # 基础设施：persistence / backup / config
 │   │   └── bin/mcguffin.rs   # CLI 工具（init/config/backup/service）
 │   └── tests/api.rs          # 集成测试
-└── .github/workflows/
-    ├── test.yml              # PR/Push 测试
-    └── docker.yml            # Docker 多架构构建
+└── .github/
+    ├── dependabot.yml        # 依赖/action 自动更新（action 固定 SHA，靠它升级）
+    └── workflows/
+        ├── test.yml          # PR/Push：前端构建+测试、Rust fmt/clippy/test、版本一致性
+        ├── docker.yml        # 多架构镜像构建推送（PR 上只构建不推送）
+        └── release.yml       # tag：GitHub Release + 预编译压缩包 + SHA256SUMS
 ```
 
 ### 前端 features 目录（页面一览）
@@ -261,7 +273,7 @@ mcguffin/
 
 McGuffin 支持**前端插件**，动态扩展页面与能力。两种存在形式，共用同一运行时（路由 / 插槽 / 数据 API）：
 
-- **代码注册**：`web/src/plugins/` 下 `definePlugin()`，构建期经 `import.meta.glob` 发现。内置插件：`plugins/lollipop-rank/`（趣味排行榜）、`plugins/team-members/`（团队成员展示）。
+- **代码注册**：`web/src/plugins/` 下 `definePlugin()`，构建期经 `import.meta.glob("/src/plugins/*/index.ts")` 发现。**主仓库不跟踪任何具体插件**，只跟踪插件系统本身（`registry.ts` / `types.ts` / `PluginPage.tsx` / `index.ts` / `sdk/`）；`plugins/lollipop-rank/`（榜榜糖）与 `plugins/team-members/`（团队成员页）是本地专属插件，已在 `.gitignore` 中，克隆后不存在（详见 `docs/admin/plugins.md` 的「本地专属插件」）。glob 无匹配时静默跳过，干净克隆的 `bun run build` / `bun run test` 均通过。
 - **ZIP 安装**：管理后台上传含 `plugin.json` 的 zip（`POST /api/v1/admin/plugins/install-zip`，仅 superadmin）。后端解压到 `<数据目录>/plugins/{id}/assets/` 并经 `GET /api/v1/plugins/{id}/assets/*` 公开托管；前端从 `/api/v1/plugins` 发现 zip 插件后**动态 `import()` 其入口 ESM**，入口通过 `window.__MCGUFFIN_SDK__`（在 `main.tsx` 暴露：React / definePlugin / PluginSlots / data / hooks）自注册。打包契约见 `docs/admin/plugins.md`。
 
 关键实现点：
@@ -330,6 +342,9 @@ CP OAuth 不可用时回退。输入的 token 直接作为 user_id 前缀匹配�
 
 ## 提交与版本规范
 
-- 前/后端版本号保持同步（`server/Cargo.toml` 的 `version` 与 `web/package.json` 的 `version`，当前均 `0.3.1`）。
+- 前/后端版本号保持同步（`server/Cargo.toml` 的 `version` 与 `web/package.json` 的 `version`，当前均 `0.4.0`）。
+  - 同时需更新 `server/Cargo.lock` 中 `mcguffin-server` 的 `version`（`cd server && cargo update --workspace`），
+    否则 `--locked` 构建会失败；`docker-compose.yml` 的镜像 tag 与本文档中的版本号也应一并同步。
+  - CI 的 `version-sync` 任务会校验以上位置，漏改会直接失败。
 - 提交信息建议使用 Conventional Commits（`feat:` / `fix:` / `chore:` / `refactor:` / `docs:` 等）。
-- CI：`.github/workflows/test.yml`（PR/Push 跑测试与检查）、`docker.yml`（多架构镜像构建与推送）。
+- CI：`.github/workflows/test.yml`（PR/Push 跑测试、fmt、clippy 与版本一致性检查）、`docker.yml`（多架构镜像构建与推送，PR 上只构建不推送）、`release.yml`（tag 触发 GitHub Release + 二进制产物）。
