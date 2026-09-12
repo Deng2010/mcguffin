@@ -1,0 +1,12 @@
+# 固定 Rust 工具链版本。
+#
+# 原因：CI 用 `dtolnay/rust-toolchain@stable`（浮动），一旦 stable 前进，
+# 新增/收紧的 lint 会在 `-D warnings` 下让流水线失败，而本地工具链较旧时
+# 完全复现不出来。实际案例：rustc 1.98 判定 `pub use domain::*`（已被
+# `pub use types::*` 覆盖）为冗余 glob 而报 unused_imports，CI 红、本地绿。
+#
+# 固定后本地与 CI 使用同一版本，升级即一次显式提交（需同时更新本文件）。
+# CI 的 dtolnay/rust-toolchain 会读取本文件，无需改动 workflow。
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
