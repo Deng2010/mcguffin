@@ -2,7 +2,7 @@
 // These functions are called by React hooks. They talk to the
 // generic backend data API at /api/v1/plugins/{plugin_id}/data/*
 
-import { apiFetch } from "../../services/api";
+import { apiFetch, getToken } from "../../services/api";
 
 function pluginApi<T>(
   pluginId: string,
@@ -156,7 +156,7 @@ export async function pluginWriteFile(
   filePath: string,
   data: Blob | ArrayBuffer,
 ): Promise<{ path: string; size: number }> {
-  const token = localStorage.getItem("auth_token");
+  const token = getToken();
   const res = await fetch(
     `/api/plugins/${encodeURIComponent(pluginId)}/files/${encodeURIComponent(filePath)}`,
     {
@@ -178,7 +178,7 @@ export async function pluginReadFile(
   pluginId: string,
   filePath: string,
 ): Promise<Blob> {
-  const token = localStorage.getItem("auth_token");
+  const token = getToken();
   const res = await fetch(
     `/api/plugins/${encodeURIComponent(pluginId)}/files/${encodeURIComponent(filePath)}`,
     {

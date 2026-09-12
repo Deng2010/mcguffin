@@ -6,8 +6,26 @@ import { toastError } from "../errors/ToastContext";
 
 const TOKEN_KEY = "mcguffin_token";
 
+/**
+ * 0.3.1 及更早版本使用 "auth_token" 作为 localStorage key。
+ * 读到旧值时惰性迁移到 TOKEN_KEY，避免升级后已登录用户被迫重新登录。
+ */
+const LEGACY_TOKEN_KEY = "auth_token";
+
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  try {
+    const current = localStorage.getItem(TOKEN_KEY);
+    // 已有新 key 时直接返回：绝不能用遗留值覆盖更新的会话
+    if (current !== null) return current;
+    const legacy = localStorage.getItem(LEGACY_TOKEN_KEY);
+    if (legacy === null) return null;
+    localStorage.setItem(TOKEN_KEY, legacy);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+    return legacy;
+  } catch {
+    // localStorage 不可用（Safari 隐私模式等）时按未登录处理
+    return null;
+  }
 }
 
 export function setToken(token: string) {
@@ -16,6 +34,12 @@ export function setToken(token: string) {
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  // 一并清掉遗留 key，避免登出后旧 token 被迁移逻辑重新读回
+  try {
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 // ============== API Error ==============

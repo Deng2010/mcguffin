@@ -1,6 +1,6 @@
 // ============== 管理后台插件 API ==============
 
-import { apiFetch } from "./api";
+import { apiFetch, getToken } from "./api";
 
 export interface BackendPlugin {
   id: string;
@@ -74,7 +74,7 @@ export async function installPluginZip(
   return fetch("/api/admin/plugins/install-zip", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+      Authorization: `Bearer ${getToken()}`,
       "Content-Type": "application/octet-stream",
     },
     body: buffer,
