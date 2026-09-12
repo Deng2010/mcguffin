@@ -86,8 +86,10 @@ jobs:
           echo "cache-image=${REGISTRY}/${IMAGE}:cache-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
 
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            # PR：只验证能构建，tag 仅用于本地标识（不推送）
-            echo "push-tag=${REGISTRY}/${IMAGE}:pr-${GITHUB_REF_NAME}-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
+            # PR：只验证能否构建，tag 仅作本地标识。
+            # 必须用 PR 编号：pull_request 事件下 GITHUB_REF_NAME 是 "6/merge"
+            # 这样的形式，直接拼进 tag 会得到非法引用（含 "/"）而构建失败。
+            echo "push-tag=${REGISTRY}/${IMAGE}:pr-${{ github.event.pull_request.number }}-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
           elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             VERSION_TAG="${GITHUB_REF_NAME}"
             echo "push-tag=${REGISTRY}/${IMAGE}:${VERSION_TAG}-${PLATFORM_SLUG}" >> "$GITHUB_OUTPUT"
