@@ -9,7 +9,7 @@ version: "3.8"
 
 services:
   mcguffin:
-    image: ghcr.io/deng2010/mcguffin:latest
+    image: ghcr.io/deng2010/mcguffin:stable
     container_name: mcguffin
     restart: unless-stopped
     ports:
@@ -28,6 +28,34 @@ services:
 volumes:
   mcguffin_data:
 ```
+
+### 镜像标签：用 `:stable`，不要用 `:latest`
+
+| 标签 | 含义 |
+|------|------|
+| `:stable` | **最新正式 release**（`v*.*.*` tag 构建）。`docker.yml` 在每次发版、以及 push main 时把它同步到 semver 最大的正式 release，因此它只会前进、不会回退 |
+| `:latest` | `main` 分支的开发构建，未发布，不保证可用 |
+| `:v0.4.0` | 某个具体 release；适合锁定版本或回滚 |
+
+需要临时锁定版本时，在 compose 同目录放一个 `.env`：
+
+```bash
+# .env
+MCGUFFIN_IMAGE_TAG=v0.3.1
+```
+
+然后 `docker compose up -d` 生效；删掉该变量即回到 `:stable`。
+
+### 自动更新（watchtower）
+
+仓库根目录的 `docker-compose.yml` 内置 watchtower 服务：每天 04:00 检查 `:stable` 的
+digest，有变化就拉新镜像并用相同参数重建 `mcguffin` 容器，并清理被替换的旧镜像。
+
+- 只处理带 `com.centurylinklabs.watchtower.enable=true` 标签的容器，其它容器不受影响
+  （`WATCHTOWER_LABEL_ENABLE=true`）。
+- 上游 `containrrr/watchtower` 已于 2025-12 归档，这里使用社区维护分支 `nickfedor/watchtower`。
+- 不想等定时：`docker compose pull && docker compose up -d`，或 `docker exec watchtower /watchtower --run-once`。
+- 自动更新只保证「运行的是最新正式版」；升级出问题时用上面的 `MCGUFFIN_IMAGE_TAG` 锁回具体版本。
 
 ## 反向代理
 

@@ -1,10 +1,32 @@
-version: "3.9"
+# =============================================================================
+# McGuffin 正式站部署（docker compose）
+#
+#   docker compose up -d                           # 启动 / 应用变更
+#   docker compose logs -f mcguffin
+#   docker compose ps
+#
+# 镜像策略：默认跟随滚动标签 :stable
+#   - docker.yml 在每次「正式 release tag (v*.*.*)」推送、以及 push main 时，
+#     把 ghcr.io/deng2010/mcguffin:stable 指向最新的正式 release 镜像。
+#   - :latest 是 main 分支的开发构建，正式站不使用。
+#   - 需要临时锁定版本或回滚：在本目录 .env 里设 MCGUFFIN_IMAGE_TAG=v0.4.0
+#     然后 docker compose up -d。
+#
+# 自动更新：watchtower
+#   - containrrr/watchtower 已于 2025-12 归档，这里用社区维护分支 nickfedor/watchtower。
+#   - WATCHTOWER_LABEL_ENABLE=true：只更新带 com.centurylinklabs.watchtower.enable=true
+#     标签的容器（即下面的 mcguffin），其它容器一律不碰。
+#   - 每天 04:00 检查 :stable 的 digest，变化则拉取新镜像并用相同参数重建容器。
+# =============================================================================
 
 services:
   mcguffin:
-    image: ghcr.io/deng2010/mcguffin:v0.4.0
+    image: ghcr.io/deng2010/mcguffin:${MCGUFFIN_IMAGE_TAG:-stable}
     container_name: mcguffin
     restart: unless-stopped
+    labels:
+      # 显式声明由 watchtower 接管（配合 WATCHTOWER_LABEL_ENABLE=true）
+      com.centurylinklabs.watchtower.enable: "true"
     # 安全加固：禁止 setuid/setgid 提权（su-exec 降权不受影响）
     security_opt:
       - no-new-privileges:true
@@ -29,5 +51,23 @@ services:
       retries: 3
       start_period: 15s
 
-volumes:
-  mcguffin_data:
+  watchtower:
+    # containrrr/watchtower 已归档，使用社区维护分支
+    image: nickfedor/watchtower:1.22.1
+    container_name: watchtower
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=Asia/Shanghai
+      # 只处理显式打上 watchtower.enable=true 标签的容器
+      - WATCHTOWER_LABEL_ENABLE=true
+      # 更新成功后清理被替换掉的旧镜像
+      - WATCHTOWER_CLEANUP=true
+      # 每天 04:00 检查一次（6 段 cron，第一位是秒）
+      - "WATCHTOWER_SCHEDULE=0 0 4 * * *"
+      # 多容器时逐个重启，避免同时中断
+      - WATCHTOWER_ROLLING_RESTART=true
+      - WATCHTOWER_TIMEOUT=30s
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

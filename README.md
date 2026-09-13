@@ -108,6 +108,10 @@ docker compose up -d
 # → http://localhost:3000
 ```
 
+镜像默认跟随 `:stable`（= 最新正式 release，不是 `main` 分支的 `:latest`），
+编排里还带一个 watchtower 服务，每天 04:00 自动升级到最新正式版。
+细节见 `docs/guide/deployment.md`。
+
 #### 2.1.4 配置方式
 
 Docker 容器优先读取环境变量，也支持挂载自定义配置文件：
