@@ -8,7 +8,7 @@
 
 **McGuffin** 是算法竞赛出题团队的协作工具。React 18 SPA + Rust/Axum 后端，CP OAuth 认证，SQLite 持久化，带前端插件系统与错误上报。
 
-- 前/后端版本号必须同步（当前 `0.4.0`）
+- 前/后端版本号必须同步（当前 `0.5.0`）
 - 架构：浏览器 → React SPA → Axum API（`/api/v1/` + 兼容层 `/api/`）→ SQLite / CP OAuth
 - 后端为 **分层架构**：`domain`（数据+领域逻辑）→ `handlers`（HTTP 层）→ `infra`（持久化/配置/备份），路由统一在 `routes.rs` 注册。
 - 前端为 **特性分层**：`app`（路由+布局）→ `features`（按领域分组的页面）→ `services`（API 封装）→ `stores`（zustand 状态）→ `plugins`（插件系统）。
@@ -93,10 +93,11 @@ just clean         # 清理所有构建产物
 mcguffin/
 ├── docs/                     # 文档（部署/管理/使用）
 │   ├── README.md             # 文档索引
-│   ├── guide/                # 部署与开发指南（quick-start/development/configuration/deployment/showcase-components）
+│   ├── guide/                # 部署与开发指南（quick-start/development/configuration/deployment/showcase-components/plugin-development）
 │   ├── admin/                # 管理后台手册（overview/users/contests/backups/plugins）
 │   ├── user/                 # 用户手册（getting-started/problems/community）
 │   └── images/               # 文档图片
+├── templates/                # 独立插件 repo 模板骨架（plugin/：Vite lib 模式 + zip 打包 + Release CI）
 ├── justfile                  # 构建/部署/测试命令（just）
 ├── AGENTS.md                 # 本文件
 ├── README.md                 # 项目主页
@@ -110,6 +111,7 @@ mcguffin/
 │   ├── tsconfig.json / tsconfig.node.json
 │   ├── vite.config.ts / vitest.config.ts
 │   ├── tailwind.config.js / postcss.config.js
+│   ├── public/               # 静态资源：plugin-sdk/*.js = 插件 import map 的 react 垫片
 │   └── src/
 │       ├── main.tsx          # 入口
 │       ├── App.tsx           # 根组件：Provider 组装 + 路由挂载
@@ -125,7 +127,7 @@ mcguffin/
 │       ├── hooks/            # 自定义 Hooks（useDifficulties / useMention）
 │       ├── utils/            # 工具函数（groups / time）
 │       ├── errors/           # 错误边界 + 错误标准化 + 上报 + Toast
-│       ├── plugins/          # 前端插件系统（SDK + 运行时；具体插件为本地专属，见 .gitignore）
+│       ├── plugins/          # 前端插件系统（SDK + 运行时；具体插件经 .zip 安装到数据目录，不入仓库）
 │       └── test/             # Vitest 测试（含 setup.ts）
 ├── server/                   # 后端（Rust / Axum / sqlx / rusqlite）
 │   ├── Cargo.toml            # 依赖与二进制定义
@@ -265,31 +267,34 @@ mcguffin/
 ### 技术栈速查
 
 - 后端：axum 0.8、sqlx 0.8（runtime-tokio + sqlite + migrate）、rusqlite 0.32（bundled）、tower-http 0.6（cors/fs/compression/request-id/catch-panic）、chrono、uuid v4、clap 4、reqwest 0.13、toml_edit、tracing。
-- 前端：React 18、Vite 6、TypeScript ~5.6、Tailwind 3、zustand 5、react-router-dom 6、react-markdown + remark/rehype（GFM、KaTeX、Prism）、Vitest 4 + Testing Library。
+- 前端：React 18、Vite 6、TypeScript ~7.0、Tailwind 3、zustand 5、react-router-dom 6、react-markdown + remark/rehype（GFM、KaTeX、Prism）、Vitest 4 + Testing Library。
 
 ---
 
 ## 插件系统
 
-McGuffin 支持**前端插件**，动态扩展页面与能力。两种存在形式，共用同一运行时（路由 / 插槽 / 数据 API）：
+McGuffin 支持**前端插件**，动态扩展页面与能力。插件一律以 **ZIP 包**安装，共用同一运行时（路由 / 插槽 / 数据 API）：
 
-- **代码注册**：`web/src/plugins/` 下 `definePlugin()`，构建期经 `import.meta.glob("/src/plugins/*/index.ts")` 发现。**主仓库不跟踪任何具体插件**，只跟踪插件系统本身（`registry.ts` / `types.ts` / `PluginPage.tsx` / `index.ts` / `sdk/`）；`plugins/lollipop-rank/`（榜榜糖）与 `plugins/team-members/`（团队成员页）是本地专属插件，已在 `.gitignore` 中，克隆后不存在（详见 `docs/admin/plugins.md` 的「本地专属插件」）。glob 无匹配时静默跳过，干净克隆的 `bun run build` / `bun run test` 均通过。
-- **ZIP 安装**：管理后台上传含 `plugin.json` 的 zip（`POST /api/v1/admin/plugins/install-zip`，仅 superadmin）。后端解压到 `<数据目录>/plugins/{id}/assets/` 并经 `GET /api/v1/plugins/{id}/assets/*` 公开托管；前端从 `/api/v1/plugins` 发现 zip 插件后**动态 `import()` 其入口 ESM**，入口通过 `window.__MCGUFFIN_SDK__`（在 `main.tsx` 暴露：React / definePlugin / PluginSlots / data / hooks）自注册。打包契约见 `docs/admin/plugins.md`。
+- **安装方式**：上传 .zip（`POST /api/v1/admin/plugins/install-zip`）或**从 URL 安装**（`POST /api/v1/admin/plugins/install-url`，body `{url}`），均仅 superadmin。服务端解压到 `<数据目录>/plugins/{id}/assets/` 并经 `GET /api/v1/plugins/{id}/assets/*` 公开托管；前端从 `/api/v1/plugins` 发现 zip 插件后**动态 `import()` 其入口 ESM**，入口通过 `window.__MCGUFFIN_SDK__`（在 `main.tsx` 暴露：React / ReactDOM / definePlugin / PluginSlots / data / hooks）自注册。URL 安装会记录 `source_url`，可 `POST /api/v1/admin/plugins/{id}/update` 从原 URL 更新；本地上传更新走 `POST /api/v1/admin/plugins/{id}/update-zip`。打包契约见 `docs/admin/plugins.md`。
+- **更新语义**（id 已存在即更新）：`assets/` 整体替换，但**保留**插件 KV / files 数据、`enabled` 状态与**已授权权限**；新版本额外申请的权限不自动授予，响应里经 `new_permissions` 提示管理员勾选；更新要求包内 id 与目标插件一致（否则 400）。审计动作为 `plugin.update`。
+- **独立插件 repo 准备**：模板骨架在 `templates/plugin/`（Vite lib 模式 + zip 打包 + Release CI），SDK 类型声明 `web/src/plugins/sdk/plugin-sdk.d.ts`（模板内 `types/mcguffin-plugin-sdk.d.ts` 为其副本，`web/src/test/plugin-sdk-types.test.ts` 防漂移），开发指南见 `docs/guide/plugin-development.md`。
+- **插件 import map（JSX 开箱可用）**：`web/index.html` 的 `<script type="importmap">` 把 `react` / `react/jsx-runtime` / `react/jsx-dev-runtime` / `react-dom` 映射到 `web/public/plugin-sdk/*.js` 静态垫片；垫片转发到 `window.__MCGUFFIN_SDK__`（同一份 React / ReactDOM），因此插件可直接 `import { useState } from "react"` 与写 JSX，不必自带 React。映射与垫片的一致性由 `web/src/test/plugin-sdk-import-map.test.ts` 守卫（含 main.tsx 成员 ↔ 规范声明）。
+- **主仓库不含任何具体插件**，只跟踪插件系统本身（`registry.ts` / `types.ts` / `PluginPage.tsx` / `index.ts` / `sdk/`）。早期基于 `definePlugin()` + `import.meta.glob("/src/plugins/*/index.ts")` 的**前端代码注册机制已移除**（`registry.discover()` 随之删除）；`source` 字段中的 `"code"` 仅作为历史数据残留值保留。
 
 关键实现点：
 
 - 插件注册表：`web/src/plugins/registry.ts`（含远程插件加载 `refreshRemotePlugins()` / `remove()` / 加载错误追踪），类型在 `plugins/types.ts`，SDK 在 `plugins/sdk/`。
-- 后端：`handlers/plugin.rs` + `domain/plugin.rs`。清单含 `source`（code/zip）与 `entry` 字段；注册时保留已有 `enabled` 与 zip 来源信息。
+- 后端：`handlers/plugin.rs` + `domain/plugin.rs`。清单含 `source`（code/zip）、`entry` 与 `source_url` 字段；注册时保留已有 `enabled` / 来源信息。
 - 数据 API（均需 `storage` 插件权限，服务端原子完成）：KV `/data`、计数器 `/data/add`、集合 `/data/set-*`、keys `/data/keys`、文件存储 `/files/*`（磁盘 `<数据目录>/plugins/{id}/files/`，单文件 ≤ 8 MiB，路径防穿越）。
-- **持久化**（写穿透 + 启动加载）：清单 → `plugins` 表，KV → `plugin_data` 表，全局开关 → `meta` 表 `plugins_disabled`；迁移文件 `migrations/20260901000001_add_plugins.sql`；加载在 `db.rs::load_all_from_sqlite`，写穿透 helper 在 `infra/persistence.rs`（`persist_plugin` / `persist_plugin_data_value` / `remove_plugin_db` / `persist_plugins_disabled`）。
+- **持久化**（写穿透 + 启动加载）：清单 → `plugins` 表，KV → `plugin_data` 表，全局开关 → `meta` 表 `plugins_disabled`；迁移文件 `migrations/20260901000001_add_plugins.sql` 与 `migrations/20260920000001_add_plugin_source_url.sql`；加载在 `db.rs::load_all_from_sqlite`，写穿透 helper 在 `infra/persistence.rs`（`persist_plugin` / `persist_plugin_data_value` / `remove_plugin_db` / `persist_plugins_disabled`）。
 - 插件可声明**任意字符串权限**（对应前端 `Permission` 联合类型中的 `(string & {})` 分支）；插件权限常量权威定义在 `domain/plugin.rs::plugin_perms`。
 - **权限语义**：精确匹配用 `plugin_has_perm`；蕴含关系用 `plugin_perms::implies_read_team`（write:team / write:team_roles ⇒ read:team）与 `implies_read_users`（read:users:email ⇒ read:users），handler 里经 `ensure_plugin_perm()` 校验。
-- **权限冻结**：`POST /plugins/register` 无鉴权（代码插件页面加载时自注册），因此重注册**不会**改变已注册插件的权限（只刷新元信息，保留 enabled / source / entry）。调整权限只能走 `PUT /admin/plugins/{id}/permissions`（superadmin；管理后台插件页有勾选 UI，权限清单由 `GET /admin/plugins` 的 `known_permissions` 提供）。已知残留风险：新插件 id 首次注册仍按声明自动授权，如需更严可改为管理员审批制。
+- **权限冻结**：`POST /plugins/register` 无鉴权（zip 插件入口页面加载时自注册），因此重注册**不会**改变已注册插件的权限（只刷新元信息，保留 enabled / source / entry / source_url）。调整权限只能走 `PUT /admin/plugins/{id}/permissions`（superadmin；管理后台插件页有勾选 UI，权限清单由 `GET /admin/plugins` 的 `known_permissions` 提供）。已知残留风险：新插件 id 首次注册仍按声明自动授权，如需更严可改为管理员审批制。
 - **前端隔离**：插件路由页（`PluginPage`）与每个插槽组件（`PluginSlots`）都包在 `ErrorBoundary`（`scope=plugin:{id}`，局部降级 + 自动上报）中，单个插件崩溃不影响宿主页面。
 - **插件上下文**：`plugins/sdk/PluginContext.tsx` 提供 `PluginProvider` / `usePluginContext()`；`PluginPage`（注入 route）与 `PluginSlots`（注入 pluginId）负责包裹，`usePluginId()` 优先读上下文、仅在无上下文时回退解析 URL。
 - **路由级组件**：`PluginRouteDef.component` 可为每条路由指定专属页面组件，省略时回退到 `definePlugin(def, component)` 的插件级组件；`routes.tsx` 以 `pluginId:path` 作为路由 key（一个插件可注册多条路由）。
 - **配额**：单值 ≤ 64 KiB、单插件 KV 条目 ≤ 2000（更新已有 key 不受限）、namespace/key/member ≤ 64/256/256、单文件 ≤ 8 MiB；校验集中在 `handlers/plugin.rs` 的 `validate_kv_*` / `ensure_kv_quota`。
-- **审计**：插件安装/卸载/启停/权限调整/全局开关经 `audit_plugin()` 写入审计日志（`plugin.install` 等，resource = `plugin:{id}`），可在 `GET /admin/audit-log` 查看。
+- **审计**：插件安装/更新/卸载/启停/权限调整/全局开关经 `audit_plugin()` 写入审计日志（`plugin.install` / `plugin.update` 等，resource = `plugin:{id}`），可在 `GET /admin/audit-log` 查看。
 
 ---
 
@@ -342,9 +347,11 @@ CP OAuth 不可用时回退。输入的 token 直接作为 user_id 前缀匹配�
 
 ## 提交与版本规范
 
-- 前/后端版本号保持同步（`server/Cargo.toml` 的 `version` 与 `web/package.json` 的 `version`，当前均 `0.4.0`）。
+- 前/后端版本号保持同步（`server/Cargo.toml` 的 `version` 与 `web/package.json` 的 `version`，当前均 `0.5.0`）。
   - 同时需更新 `server/Cargo.lock` 中 `mcguffin-server` 的 `version`（`cd server && cargo update --workspace`），
-    否则 `--locked` 构建会失败；`docker-compose.yml` 的镜像 tag 与本文档中的版本号也应一并同步。
-  - CI 的 `version-sync` 任务会校验以上位置，漏改会直接失败。
+    否则 `--locked` 构建会失败。
+  - `docker-compose.yml` 跟随滚动标签 `:stable`（由 `docker.yml` 指向最新正式 release），
+    因此**不再**写死版本号；只有临时回滚写死 `mcguffin:vX.Y.Z` 时，`version-sync` 才要求它与 `Cargo.toml` 一致。
+  - CI 的 `version-sync` 任务校验 Cargo.toml / package.json / Cargo.lock / AGENTS.md（以及写死时的 compose），漏改会直接失败。
 - 提交信息建议使用 Conventional Commits（`feat:` / `fix:` / `chore:` / `refactor:` / `docs:` 等）。
 - CI：`.github/workflows/test.yml`（PR/Push 跑测试、fmt、clippy 与版本一致性检查）、`docker.yml`（多架构镜像构建与推送，PR 上只构建不推送）、`release.yml`（tag 触发 GitHub Release + 二进制产物）。
