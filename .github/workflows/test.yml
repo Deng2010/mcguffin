@@ -4,7 +4,8 @@
 # 校验内容：
 #   1. 前端：install → build（tsc + vite）→ test（vitest）
 #   2. 后端：fmt 检查 → clippy（warning 即错误）→ test（单元 + 集成）
-#   3. 版本一致性：Cargo.toml / Cargo.lock / package.json / docker-compose.yml
+#   3. 版本一致性：Cargo.toml / Cargo.lock / package.json / AGENTS.md
+#      （docker-compose.yml 跟随滚动标签 :stable，仅在写死 vX.Y.Z 时参与校验）
 #
 # 平台矩阵：Linux + macOS。
 #   本项目是跨平台 CLI/服务端（state.rs::resolve_config_path 有平台分支），
@@ -118,8 +119,10 @@ jobs:
           WEB_V=$(grep -m1 '"version"' web/package.json | cut -d'"' -f4)
           # Cargo.lock 中 mcguffin-server 自身的 version
           LOCK_V=$(awk '/^name = "mcguffin-server"$/{getline; gsub(/[",]/,""); print $3}' server/Cargo.lock)
-          # docker-compose.yml 固定的镜像 tag
-          COMPOSE_V=$(grep -oE 'mcguffin:v[0-9]+\.[0-9]+\.[0-9]+' docker-compose.yml | head -1 | sed 's/.*:v//')
+          # docker-compose.yml 的镜像 tag：正式站跟随滚动标签 :stable（由 docker.yml
+          # 维护，指向最新正式 release），因此不再写死版本号；若某处仍固定 vX.Y.Z
+          # （例如回滚期间临时写死），则必须与 Cargo.toml 一致。
+          COMPOSE_V=$(grep -oE 'mcguffin:v[0-9]+\.[0-9]+\.[0-9]+' docker-compose.yml | head -1 | sed 's/.*:v//' || true)
           # AGENTS.md 中声明的当前版本
           AGENTS_V=$(grep -oE '当前均 `[0-9]+\.[0-9]+\.[0-9]+`' AGENTS.md | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 
@@ -127,7 +130,7 @@ jobs:
             "server/Cargo.toml:"      "$CARGO_V" \
             "web/package.json:"       "$WEB_V" \
             "server/Cargo.lock:"      "$LOCK_V" \
-            "docker-compose.yml:"     "$COMPOSE_V" \
+            "docker-compose.yml:"     "${COMPOSE_V:-:stable（滚动标签，不校验）}" \
             "AGENTS.md:"              "$AGENTS_V"
 
           fail=0
@@ -139,8 +142,17 @@ jobs:
           }
           check "$WEB_V"     "web/package.json"
           check "$LOCK_V"    "server/Cargo.lock（修复：cd server && cargo update --workspace）"
-          check "$COMPOSE_V" "docker-compose.yml"
           check "$AGENTS_V"  "AGENTS.md"
+          # compose 只有在写死版本号时才校验（:stable 等滚动标签跳过）
+          if [ -n "$COMPOSE_V" ]; then
+            check "$COMPOSE_V" "docker-compose.yml"
+          fi
+
+          # 正式站不得使用 main 分支的 :latest 开发构建
+          if grep -qE 'mcguffin:latest' docker-compose.yml; then
+            echo "::error file=docker-compose.yml::正式站不应使用 :latest（main 分支开发构建），请用 :stable 或在 .env 锁定具体版本"
+            fail=1
+          fi
 
           if [ "$fail" -ne 0 ]; then
             echo "❌ 版本号不一致，请按 AGENTS.md「提交与版本规范」同步后再提交。"
