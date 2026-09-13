@@ -10,6 +10,13 @@
 #   - push tag v*.*.* → 推 v{ver}-{arch} 并合成 :v{ver}
 #   - pull_request    → 只构建、不登录、不推送（push=false），
 #                       用于在合并前发现 Dockerfile / 构建上下文被改坏
+#   - workflow_dispatch → 手动触发，用于重新同步 :stable（不改动镜像内容）
+#
+# 滚动标签 :stable：
+#   - 永远指向「最新正式 release」(v*.*.*) 的多架构镜像，由 merge job 在每次
+#     release tag / main 推送时同步（取 semver 最大者，乱序推 tag 不会回退）。
+#   - 正式站 docker compose 用 :stable 部署，watchtower 通过该标签的 digest
+#     变化实现自动升级；:latest 是 main 分支的开发构建，正式站不使用。
 #
 # 优势：使用原生 ARM runner (ubuntu-24.04-arm) 而非 QEMU
 # 模拟，arm64 构建速度提升 2-5 倍（尤其 Rust 编译）。
@@ -23,6 +30,8 @@ on:
       - "v*.*.*"
     branches:
       - main
+  # 手动触发：仅用于重新同步 :stable（例如 release 记录补建、或上游构建中断）
+  workflow_dispatch:
   pull_request:
     paths:
       - "Dockerfile"
@@ -173,3 +182,62 @@ jobs:
 
           echo "→ 验证 manifest: ${REGISTRY}/${IMAGE}:${TAG}"
           docker buildx imagetools inspect "${REGISTRY}/${IMAGE}:${TAG}"
+
+      # ── 滚动标签：:stable = 最新正式 release ──────────────────────────
+      # 正式站用 :stable 部署（见 docker-compose.yml），watchtower 靠该标签的
+      # digest 变化自动升级。这里把它指向 semver 最大的正式 release，所以即使
+      # tag 乱序推送，:stable 也只会前进、不会回退。
+      - name: 🏷️ Sync `stable` to newest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IMAGE="${GITHUB_REPOSITORY,,}"
+          REPO="${REGISTRY}/${IMAGE}"
+
+          # 候选项 1：已发布的正式 release（排除 draft / prerelease）
+          RELEASES="$(
+            gh release list --repo "${GITHUB_REPOSITORY}" \
+              --exclude-drafts --exclude-pre-releases --limit 100 \
+              --json tagName --jq '.[].tagName' 2>/dev/null || true
+          )"
+          if [[ -z "${RELEASES}" ]]; then
+            echo "→ gh release list 无结果，回退 GitHub REST API"
+            RELEASES="$(
+              curl -sfL -H "Authorization: Bearer ${GH_TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+                | jq -r '.[] | select(.draft == false and .prerelease == false) | .tag_name' \
+                || true
+            )"
+          fi
+
+          # 候选项 2：本次推送的 tag（release 记录可能比镜像生成得晚）
+          PUSHED_TAG=""
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            PUSHED_TAG="${GITHUB_REF_NAME}"
+          fi
+
+          LATEST="$(
+            printf '%s\n%s\n' "${RELEASES}" "${PUSHED_TAG}" \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V | tail -n 1
+          )"
+
+          if [[ -z "${LATEST}" ]]; then
+            echo "⚠️ 未找到任何正式 release（v*.*.*），跳过 :stable 同步"
+            exit 0
+          fi
+
+          echo "→ 最新正式 release: ${LATEST}"
+          # 优先直接复制该 release 的多架构 manifest；历史 release 可能没有
+          # {tag}-linux-{arch} 平台标签，此时按平台重新合成。
+          if ! docker buildx imagetools create -t "${REPO}:stable" "${REPO}:${LATEST}"; then
+            echo "→ 直接复制 manifest 失败，改为按平台合成"
+            docker buildx imagetools create -t "${REPO}:stable" \
+              "${REPO}:${LATEST}-linux-amd64" \
+              "${REPO}:${LATEST}-linux-arm64"
+          fi
+
+          echo "✓ :stable 现已指向 ${LATEST}"
+          docker buildx imagetools inspect "${REPO}:stable"
