@@ -5,24 +5,25 @@ import type { PluginDefinition } from "../types";
 /**
  * Declare a React plugin and register it with the PluginRegistry.
  *
- * Usage:
- *   // my-plugin/index.ts
- *   import { definePlugin } from '../sdk/definePlugin'
- *   import MyPage from './MyPage'
+ * ZIP 插件的入口 ESM（由 registry 动态 import）通过全局 SDK 调用它：
  *
- *   const plugin = definePlugin({
- *     id: 'my-plugin',
- *     name: 'My Plugin',
- *     version: '1.0.0',
- *     routes: [
- *       { path: '/plugins/my', label: 'My Plugin', icon: '🔌', nav_placement: 'main' },
- *     ],
- *     slots: [
- *       { slot: 'member_card_actions', component: MyButton },
- *     ],
- *   }, lazy(() => import('./MyPage')))
+ *   // index.js —— zip 包入口
+ *   const { definePlugin, React } = window.__MCGUFFIN_SDK__
  *
- *   export default plugin
+ *   definePlugin(
+ *     {
+ *       id: 'my-plugin',
+ *       name: 'My Plugin',
+ *       version: '1.0.0',
+ *       routes: [
+ *         { path: '/plugins/my', label: 'My Plugin', icon: '🔌', nav_placement: 'main' },
+ *       ],
+ *       slots: [
+ *         { slot: 'member_card_actions', component: MyButton },
+ *       ],
+ *     },
+ *     React.lazy(() => import('./MyPage.js')),
+ *   )
  */
 export function definePlugin(
   definition: PluginDefinition,

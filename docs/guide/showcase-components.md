@@ -275,6 +275,6 @@ export interface ShowcaseContext {
 - **拖拽排布**：面板内用 HTML5 Drag & Drop 或 dnd-kit 替换 ↑↓ 按钮。
 - **多实例组件**：同一类型可添加多个实例（`id` 独立），如两个题目组件
   （“热门题目” + “最新题目”）不同设置并存。
-- **插件化组件**：接入前端插件系统（`plugins/`），第三方组件经
-  `definePlugin` 注册进 `SHOWCASE_COMPONENT_DEFS`，后端仍零改动。
+- **插件化组件**：接入前端插件系统（zip 插件），第三方组件经 SDK 注册进
+  `SHOWCASE_COMPONENT_DEFS`，后端仍零改动。
 - **每实例标题**：settings 提供 `title` 覆盖默认标题文案。

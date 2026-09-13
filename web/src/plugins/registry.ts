@@ -29,7 +29,6 @@ class PluginRegistry {
     string,
     Array<{ pluginId: string; component: ComponentType<any> }>
   >();
-  private discovered = false;
   /** IDs of plugins that are disabled on the backend */
   private disabledPluginIds = new Set<string>();
   private statusFetched = false;
@@ -78,7 +77,10 @@ class PluginRegistry {
     }
   }
 
-  /** Register a plugin definition from a `definePlugin()` call. */
+  /**
+   * Register a plugin definition. Called through `definePlugin()` by the entry
+   * module of a ZIP-installed plugin when it is dynamically imported.
+   */
   register(
     definition: PluginDefinition,
     component?: LazyExoticComponent<ComponentType<unknown>>,
@@ -272,17 +274,6 @@ class PluginRegistry {
     this.notify();
   }
 
-  /**
-   * Get the IDs of ALL locally-registered plugins, regardless of enabled /
-   * disabled status. This is intended for the admin plugins page so it can
-   * tell code-registered plugins apart from ZIP-installed ones. Use
-   * `getPluginRoutes()` when you need the route list with disabled plugins
-   * filtered out.
-   */
-  getRegisteredPluginIds(): Set<string> {
-    return new Set(this.plugins.keys());
-  }
-
   /** Get slot components for a named slot. Disabled plugins are excluded. */
   getSlotComponents(
     slot: string,
@@ -310,56 +301,9 @@ class PluginRegistry {
     return this.plugins.get(pluginId)?.component ?? null;
   }
 
-  /**
-   * Auto-discover plugins by dynamically importing modules under `web/src/plugins/`.
-   *
-   * Uses Vite's `import.meta.glob` to find plugin entry points. Each discovered
-   * module that calls `definePlugin()` will self-register via the `register()` method.
-   *
-   * Convention: files matching `**\/*.plugin.ts` or `**\/index.ts` under
-   * `src/plugins/` are treated as potential plugin entry points.
-   */
-  discover(): void {
-    if (this.discovered) return;
-    this.discovered = true;
-
-    // Use Vite's import.meta.glob to discover plugin entry points.
-    // The glob pattern is resolved at build time.
-    const pluginModules = import.meta.glob("/src/plugins/**/*.plugin.ts");
-
-    // Also scan for index.ts in plugin subdirectories
-    const pluginIndexModules = import.meta.glob("/src/plugins/*/index.ts");
-
-    const allModules = { ...pluginModules, ...pluginIndexModules };
-    const paths = Object.keys(allModules);
-
-    if (paths.length === 0) {
-      // No plugin files found — this is fine; plugins register manually too.
-      tracing.info?.("[plugin] no plugin entry points found via glob");
-    }
-
-    // Dynamically import all discovered modules.
-    // Each module that calls definePlugin() will self-register.
-    for (const [path, importer] of Object.entries(allModules)) {
-      importer().catch((err: unknown) => {
-        console.error("[plugin] failed to load %s:", path, err);
-      });
-    }
-  }
-
   isLoaded(pluginId: string): boolean {
     return this.plugins.has(pluginId);
   }
 }
-
-// Minimal tracing-like shim for the registry itself
-const tracing = {
-  info: (msg: string) => {
-    if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
-      console.log(msg);
-    }
-  },
-};
 
 export { PluginRegistry };

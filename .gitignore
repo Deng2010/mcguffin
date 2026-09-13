@@ -16,18 +16,9 @@ web/*.tsbuildinfo
 web/vite.config.d.ts
 web/vite.config.d.ts.map
 
-# ========== Web 插件（本地专属，不入版本库）==========
-# 这两个插件是部署/本地专属的代码注册插件，不随主仓库分发：
-#   - lollipop-rank（榜榜糖）：站点特定玩法
-#   - team-members：团队成员页的插件化实现
-# 目录保留在工作区以便本地开发与构建，但 git 不再跟踪。
-# 构建期由 registry.ts 的 import.meta.glob("/src/plugins/*/index.ts") 发现，
-# 目录不存在时静默跳过，不会导致构建失败。
-# 注意：克隆仓库后这两个插件不会出现（属预期行为）。
-# 插件发现机制、SDK 与运行时（registry.ts / types.ts / PluginPage.tsx / index.ts / sdk/）
-# 仍在仓库中，不受以下规则影响。
-web/src/plugins/lollipop-rank/
-web/src/plugins/team-members/
+# ========== Web 插件 ==========
+# 插件一律以 .zip 包经管理后台上传安装（资产落在数据目录，不入版本库）；
+# 主仓库只保留插件系统本身（registry.ts / types.ts / PluginPage.tsx / index.ts / sdk/）。
 
 # ========== Package manager lock files ==========
 # bun.lock 需要提交以确保 CI 可复现构建

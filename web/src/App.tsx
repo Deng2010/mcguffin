@@ -13,7 +13,6 @@ export default function App() {
     initErrorCapture();
     initAuth();
     initSite();
-    PluginRegistry.getInstance().discover();
     PluginRegistry.getInstance().fetchPluginStatus();
   }, []);
 
