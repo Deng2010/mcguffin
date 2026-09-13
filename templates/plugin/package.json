@@ -1,0 +1,21 @@
+{
+  "name": "mcguffin-plugin-template",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "McGuffin 独立插件仓库模板：Vite 打包为单文件 ESM，配 plugin.json 打成 zip 安装",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "tsc --noEmit && vite build",
+    "zip": "node scripts/build-zip.mjs"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "adm-zip": "^0.5.16",
+    "typescript": "~7.0.2",
+    "vite": "^6.0.5"
+  }
+}

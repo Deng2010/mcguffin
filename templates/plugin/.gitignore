@@ -1,0 +1,11 @@
+# 依赖
+node_modules/
+
+# 构建产物 / 打包结果（由 CI 或本地 `npm run zip` 生成）
+dist/
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+*.log

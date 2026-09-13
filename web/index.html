@@ -10,6 +10,25 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
       rel="stylesheet"
     />
+    <!--
+      插件运行时 import map：让 zip 插件（独立构建的 ESM）可以直接写
+        import { useState } from "react"
+      以及 JSX（编译产物会 import "react/jsx-runtime"）。
+      这些裸模块名由 /plugin-sdk/*.js 垫片接住，再转发到宿主暴露的同一份
+      React 实例（window.__MCGUFFIN_SDK__），避免出现第二份 React。
+      垫片是 web/public 下的静态文件，不参与主应用构建；增删映射时请同步
+      web/public/plugin-sdk/ 与 web/src/test/plugin-sdk-import-map.test.ts。
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "/plugin-sdk/react.js",
+          "react/jsx-runtime": "/plugin-sdk/react-jsx-runtime.js",
+          "react/jsx-dev-runtime": "/plugin-sdk/react-jsx-dev-runtime.js",
+          "react-dom": "/plugin-sdk/react-dom.js"
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

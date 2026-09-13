@@ -1,0 +1,9 @@
+{
+  "id": "my-plugin",
+  "name": "我的插件",
+  "version": "1.0.0",
+  "description": "McGuffin 插件模板：一条主导航路由 + 键值存储示例",
+  "author": "your-name",
+  "permissions_needed": ["storage"],
+  "entry": "index.js"
+}

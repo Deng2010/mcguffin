@@ -1,0 +1,35 @@
+name: Release
+
+# 推送形如 v1.0.0 的 tag 时：安装依赖 → 构建 zip → 作为 release 资产上传。
+# 资产名固定为 <plugin.json 的 id>.zip（即 dist/*.zip），
+# 可长期用 https://github.com/<owner>/<repo>/releases/latest/download/<id>.zip 安装 / 更新。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 构建并打包 zip
+        run: npm run zip
+
+      - name: 上传 release 资产
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true

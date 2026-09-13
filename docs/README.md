@@ -8,6 +8,7 @@
 | [⚙️ 配置详解](guide/configuration.md) | 运维 / 站长 | 配置项说明、环境变量、运行时修改 |
 | [🛠️ 开发环境搭建](guide/development.md) | 开发者 | Rust + Bun 环境、本地开发、代码规范 |
 | [🧩 展板组件设计](guide/showcase-components.md) | 开发者 | 展板组件化架构、布局数据模型、扩展指南 |
+| [🔌 插件开发（独立 repo）](guide/plugin-development.md) | 插件开发者 | 模板骨架、SDK 类型、打包发布、安装与更新 |
 | [🚢 生产部署](guide/deployment.md) | 运维 / 站长 | 反向代理、HTTPS、系统服务、容器编排 |
 | [👥 管理后台总览](admin/overview.md) | 管理员 | 后台功能概览、导航说明 |
 | [🔐 用户与权限管理](admin/users.md) | 管理员 | 角色、权限组、成员管理 |
