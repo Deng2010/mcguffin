@@ -1,10 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/authStore";
-import {
-  getAdminMembers,
-  setProblemVisibility,
-} from "../../services/problem.service";
 import { getContests } from "../../services/contest.service";
 import { useDifficulties } from "../../hooks/useDifficulties";
 import type { ContestOption, ProblemListItem } from "../../types";
@@ -20,12 +16,7 @@ import SubmitProblemForm, {
   type ContestMode,
 } from "./components/SubmitProblemForm";
 import ReasonDialog from "./components/ReasonDialog";
-import ProblemCard, { cardClass } from "./components/ProblemCard";
-
-interface TeamMemberOption {
-  user_id: string;
-  name: string;
-}
+import ProblemCard from "./components/ProblemCard";
 
 type TabId =
   "list" | "mine" | "pending" | "approved" | "published" | "returned";
@@ -43,11 +34,7 @@ export default function ProblemsPage() {
 
   // ====== Data ======
   const { problems, loading, loadProblems } = useProblems(canApprove);
-  const [members, setMembers] = useState<TeamMemberOption[]>([]);
   const [contests, setContests] = useState<ContestOption[]>([]);
-  const [visibilityMap, setVisibilityMap] = useState<Record<string, string[]>>(
-    {},
-  );
   const [activeTab, setActiveTab] = useState<TabId>("list");
 
   // ====== Search & filter state ======
@@ -67,7 +54,7 @@ export default function ProblemsPage() {
   // 拥有“浏览所有待审核题目”权限时展示全部；仅拥有投稿权限时只展示自己提交的题目。
   const visiblePendingList = canViewPending
     ? lists.pendingList
-    : ((lists as any).ownPendingList ?? lists.pendingList);
+    : lists.ownPendingList;
   const visibleReturnedList = canViewPending
     ? lists.returnedList
     : lists.ownReturnedList;
@@ -99,40 +86,6 @@ export default function ProblemsPage() {
     tabs.push({ id: "returned", label: "已退回", count: returnedCount });
   }
 
-  // Lazy load members/contests when admin opens the pending tab
-  useEffect(() => {
-    if (activeTab === "pending" && canApprove && members.length === 0) {
-      Promise.all([
-        getAdminMembers() as Promise<TeamMemberOption[]>,
-        getContests() as Promise<ContestOption[]>,
-      ])
-        .then(([memberList, contestList]) => {
-          setMembers(memberList);
-          setContests(contestList);
-        })
-        .catch(() => {});
-    }
-  }, [activeTab, canApprove, members.length]);
-
-  // Initialize visibilityMap from problems when problems change (admin only)
-  useEffect(() => {
-    if (canApprove && problems.length > 0) {
-      const vm: Record<string, string[]> = {};
-      problems.forEach((p) => {
-        if (p.visible_to && p.visible_to.length > 0) {
-          vm[p.id] = p.visible_to;
-        }
-      });
-      setVisibilityMap((prev) => {
-        // Only merge new entries, preserve user edits
-        const merged = { ...prev, ...vm };
-        return Object.keys(merged).length > Object.keys(prev).length
-          ? merged
-          : prev;
-      });
-    }
-  }, [problems, canApprove]);
-
   // Load contests when submit form opens
   const [showSubmit, setShowSubmit] = useState(false);
   useEffect(() => {
@@ -151,16 +104,6 @@ export default function ProblemsPage() {
     onSubmitted: loadProblems,
   });
 
-  const toggleMember = (problemId: string, userId: string) => {
-    setVisibilityMap((prev) => {
-      const current = prev[problemId] || [];
-      const updated = current.includes(userId)
-        ? current.filter((id) => id !== userId)
-        : [...current, userId];
-      return { ...prev, [problemId]: updated };
-    });
-  };
-
   const resetFilters = () => {
     setSearchText("");
     setFilterDifficulty("");
@@ -170,40 +113,6 @@ export default function ProblemsPage() {
   const goDetail = (problemId: string) => navigate(`/problems/${problemId}`);
   const isAuthorOf = (p: { author_name: string }) =>
     user?.display_name === p.author_name;
-
-  // Visibility editor (for pending tab — admin only)
-  const renderVisibilityEditor = (problemId: string) => {
-    if (members.length === 0) return null;
-    return (
-      <div className="mb-2">
-        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-2">
-          可见性设置（选择可查看此题目的成员）
-        </h4>
-        <div className="flex flex-wrap gap-2 mb-2">
-          {members.map((m) => (
-            <label
-              key={m.user_id}
-              className="flex items-center gap-1.5 text-sm cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                checked={(visibilityMap[problemId] || []).includes(m.user_id)}
-                onChange={() => toggleMember(problemId, m.user_id)}
-                className="accent-gray-800 dark:accent-gray-400"
-              />
-              {m.name}
-            </label>
-          ))}
-        </div>
-        <button
-          onClick={() => actions.handleSetVisibility(problemId, visibilityMap)}
-          className="text-xs px-3 py-1 border border-gray-300 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-        >
-          保存可见性
-        </button>
-      </div>
-    );
-  };
 
   const renderCard = (p: ProblemListItem, extraActions?: React.ReactNode) => (
     <ProblemCard
@@ -298,22 +207,33 @@ export default function ProblemsPage() {
       );
     return (
       <div className="space-y-4">
-        {items.map((p) => (
-          <div key={p.id}>
-            <div className={cardClass} onClick={() => goDetail(p.id)}>
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-lg font-semibold text-gray-800 dark:text-gray-100 truncate">
-                      {p.title}
-                    </span>
-                    {renderVisibilityEditor(p.id)}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
+        {items.map((p) =>
+          renderCard(
+            p,
+            canApprove ? (
+              <>
+                <button
+                  onClick={() => actions.handleReview(p.id, "approve")}
+                  className="px-3 py-1.5 text-xs bg-green-700 text-white hover:bg-green-600"
+                >
+                  通过
+                </button>
+                <button
+                  onClick={() => actions.openReasonDialog(p.id, "reply")}
+                  className="px-3 py-1.5 text-xs border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
+                >
+                  回复
+                </button>
+                <button
+                  onClick={() => actions.openReasonDialog(p.id, "reject")}
+                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                >
+                  退回
+                </button>
+              </>
+            ) : undefined,
+          ),
+        )}
       </div>
     );
   };

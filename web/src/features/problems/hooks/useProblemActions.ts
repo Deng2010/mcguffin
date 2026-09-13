@@ -5,7 +5,6 @@ import {
   resubmitProblem,
   reviewProblem,
   setProblemContest,
-  setProblemVisibility,
   unclaimProblem,
 } from "../../../services/problem.service";
 import { useToast } from "../../../errors/ToastContext";
@@ -100,23 +99,6 @@ export function useProblemActions(loadProblems: () => void) {
     setReasonText("");
   };
 
-  const handleSetVisibility = async (
-    problemId: string,
-    visibilityMap: Record<string, string[]>,
-  ) => {
-    const ids = visibilityMap[problemId] || [];
-    try {
-      const res = await setProblemVisibility(problemId, ids);
-      if (!res.success) {
-        toast.error(res.message);
-        return;
-      }
-      toast.success("可见性已更新");
-    } catch (err) {
-      toast.error(`设置失败: ${errorMessage(err)}`);
-    }
-  };
-
   const handleSetContest = async (problemId: string, contestId: string) => {
     try {
       const res = await setProblemContest(problemId, contestId);
@@ -156,7 +138,6 @@ export function useProblemActions(loadProblems: () => void) {
     handleUnclaim,
     handleReview,
     handleResubmit,
-    handleSetVisibility,
     handleSetContest,
     handleDelete,
   };
