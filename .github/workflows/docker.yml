@@ -216,6 +216,15 @@ jobs:
           PUSHED_TAG=""
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             PUSHED_TAG="${GITHUB_REF_NAME}"
+            # 若该 tag 的 release 已创建且被标记为 pre-release，则不纳入候选，
+            # 避免预发布版本被推进正式站（查不到 release 时按正式版处理）
+            PRE=""
+            PRE="$(gh release view "${PUSHED_TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --json isPrerelease --jq '.isPrerelease' 2>/dev/null || true)"
+            if [[ "${PRE}" == "true" ]]; then
+              echo "→ ${PUSHED_TAG} 已标记为 pre-release，不作为 :stable 候选"
+              PUSHED_TAG=""
+            fi
           fi
 
           LATEST="$(
