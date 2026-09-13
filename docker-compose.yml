@@ -34,6 +34,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    # 服务不处理 SIGTERM，停止时只能等满这个时间再被 SIGKILL；
+    # 持久化是「内存 + SQLite 双写」，硬杀不会丢已提交数据，所以放短一点
+    stop_grace_period: 10s
     # 多架构镜像：Docker 自动选择 amd64 (Intel/AMD) 或 arm64 (Apple Silicon/ARM 服务器)
     ports:
       - "3000:3000"
@@ -68,6 +71,8 @@ services:
       - "WATCHTOWER_SCHEDULE=0 0 4 * * *"
       # 多容器时逐个重启，避免同时中断
       - WATCHTOWER_ROLLING_RESTART=true
-      - WATCHTOWER_TIMEOUT=30s
+      # 与 mcguffin 的 stop_grace_period 对齐：容器不响应 SIGTERM，
+      # 超时后由 SIGKILL 结束，双写持久化不会因此丢数据
+      - WATCHTOWER_TIMEOUT=10s
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
