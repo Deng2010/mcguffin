@@ -2,39 +2,60 @@
 
 McGuffin 支持通过插件系统扩展前端功能。插件可以添加独立页面、在现有页面插入组件、使用键值存储持久化数据。
 
-## 插件注册方式
+## 插件安装方式
 
-插件有两种存在形式：
-
-| 方式 | 适用场景 | 说明 |
-|------|----------|------|
-| **代码注册** | 开发/定制 | 在 `web/src/plugins/` 下编写 `definePlugin()` 调用，构建时自动发现 |
-| **ZIP 安装** | 生产分发 | 上传包含 `plugin.json` 的 .zip 包，后端管理生命周期 |
-
-两种方式注册的插件共用同一个运行时（路由、插槽、数据 API），可并存。
+插件以 **ZIP 包**安装，由后端管理其生命周期：既可以**上传本地 .zip**，也可以**从 URL 安装**
+（服务端下载并记录来源，便于之后一键更新）。主仓库**不含任何具体插件**，只包含插件系统本身
+（`web/src/plugins/`）；早期基于 `import.meta.glob` 的前端代码注册机制已移除。
 
 ---
 
 ## 安装插件
 
-### 方式一：代码注册（开发环境）
-
-1. 在 `web/src/plugins/` 下创建插件目录，例如 `my-plugin/`
-2. 创建入口文件 `index.ts`，调用 `definePlugin()`
-3. 重新构建前端（`bun run build`），插件会在启动时自动发现
-
-插件目录需满足以下约定之一即可被自动扫描：
-- 文件名匹配 `*.plugin.ts`
-- 子目录下存在 `index.ts`
-
-### 方式二：ZIP 上传（管理后台）
+### 方式一：上传 .zip
 
 1. 进入后台 → 插件管理 → 点击「上传 .zip 文件」
 2. 选择一个包含 `plugin.json` 的 .zip 包（格式见下文「打包分发插件」）
 3. 安装成功后插件立即出现在列表中，前端会**动态加载**其入口模块，无需刷新页面
 
-安装后的插件文件存放在数据目录 `plugins/{插件id}/assets/` 下，通过
+### 方式二：从 URL 安装
+
+1. 在「从 URL 安装」输入框填写**可直接下载 .zip** 的地址，例如插件仓库 Release 的稳定地址
+   `https://github.com/<owner>/<repo>/releases/latest/download/<id>.zip`
+2. 点击「从 URL 安装」，服务端下载并安装（下载失败/体积超限会直接报错）
+3. 安装成功后会记录**来源 URL**，插件列表里可看到「来源」并一键「从原 URL 更新」
+
+限制与约定：
+
+- 仅支持 `http` / `https`，不接受带账号密码的 URL；云元数据地址（`169.254.169.254`）被拒绝
+- 包体上限 64 MiB（与服务端解压后总大小上限一致），下载超时 120s
+- 该接口仅超级管理员可用；内网镜像地址可以正常使用
+
+无论哪种方式，安装后的插件文件都存放在数据目录 `plugins/{插件id}/assets/` 下，通过
 `GET /api/plugins/{id}/assets/*` 公开访问（仅静态代码；数据接口仍需权限校验）。
+
+---
+
+## 更新插件
+
+插件列表每行的「更新」按钮支持两种更新方式：
+
+| 方式 | 操作 | 适用场景 |
+|------|------|----------|
+| 上传新 .zip | 点「更新」→ 选择新的 .zip（包内 `plugin.json` 的 id 必须与该插件一致） | 本地上传、手工发布 |
+| 从原 URL 更新 | 点「从原 URL 更新」（仅当插件记录了来源 URL 时出现） | 插件发布在 Release / 自建分发地址 |
+
+更新语义（与「卸载后重装」不同，务必注意）：
+
+- **插件数据保留**：KV / 计数器 / 集合 / 文件存储（`plugins/{id}/files/`）都不受影响
+- **启用状态保留**：更新前被禁用的插件，更新后仍是禁用状态
+- **权限冻结**：不会因为新版本声明了新权限就自动授权。若新版本申请了额外权限，
+  响应里会给出提示（`new_permissions`），需要管理员在「权限」里手动勾选后才生效
+- **资产整体替换**：`assets/` 目录被新包覆盖，旧的入口与资源文件不再存在
+- 更新操作会写入审计日志（`plugin.update`）
+
+> 通过「上传 .zip」安装的插件没有来源 URL，只能用「更新」按钮上传新包更新；
+> 此时调用「从原 URL 更新」会返回 `PLUGIN_UPDATE_UNAVAILABLE`。
 
 ---
 
@@ -96,8 +117,22 @@ definePlugin(
 );
 ```
 
-`window.__MCGUFFIN_SDK__` 暴露的完整能力：`React`、`definePlugin`、`PluginSlots`，
-以及下文「SDK API」列出的全部数据函数与 React Hooks。
+`window.__MCGUFFIN_SDK__` 暴露的完整能力：`React`、`ReactDOM`、`definePlugin`、
+`PluginSlots`，以及下文「SDK API」列出的全部数据函数与 React Hooks。
+
+### 关于 React / JSX
+
+宿主 `index.html` 提供了 **import map**，把 `react` / `react/jsx-runtime` /
+`react/jsx-dev-runtime` / `react-dom` 映射到 `/plugin-sdk/*.js` 垫片，垫片再转发到
+`window.__MCGUFFIN_SDK__` 里的同一份 React 实例。所以插件产物里可以直接写
+
+```js
+import { useState } from "react";   // 解析到宿主 React，不会打包出第二份
+```
+
+以及 JSX（编译产物 `import { jsx } from "react/jsx-runtime"` 同样由 import map 接住）。
+构建时请把这几个模块保持 `external`（不要打进产物）；其它裸模块名不在映射范围内，
+需要按普通依赖打包进来。
 
 ### 安全说明
 
@@ -109,14 +144,8 @@ ZIP 插件代码以主应用同等权限运行在浏览器中（可访问 DOM �
 
 ## 卸载插件
 
-### 代码注册的插件
-
-直接删除 `web/src/plugins/` 下对应目录，重新构建即可。
-
-### ZIP 安装的插件
-
 1. 进入后台 → 插件管理
-2. 在插件列表中找到要卸载的插件（标记为「ZIP 安装」）
+2. 在插件列表中找到要卸载的插件
 3. 点击「卸载」按钮确认
 
 卸载会同时删除插件的持久化数据（KV 存储、文件存储与 zip 资产目录）。
@@ -129,7 +158,7 @@ ZIP 插件代码以主应用同等权限运行在浏览器中（可访问 DOM �
 
 | 数据 | 位置 |
 |------|------|
-| 插件清单（含启用状态、安装来源） | SQLite `plugins` 表 |
+| 插件清单（含启用状态、安装来源与来源 URL） | SQLite `plugins` 表 |
 | 插件 KV / 计数器 / 集合数据 | SQLite `plugin_data` 表 |
 | 全局插件开关 | SQLite `meta` 表（`plugins_disabled`） |
 | 插件文件存储 | 数据目录 `plugins/{id}/files/` |
@@ -153,63 +182,28 @@ ZIP 插件代码以主应用同等权限运行在浏览器中（可访问 DOM �
 ### 审计
 
 插件生命周期操作会写入审计日志（`GET /api/v1/admin/audit-log`，需 `view_stats`）：
-`plugin.install` / `plugin.uninstall` / `plugin.enable` / `plugin.disable` /
+`plugin.install` / `plugin.update` / `plugin.uninstall` / `plugin.enable` / `plugin.disable` /
 `plugin.set_permissions` / `plugin.global_toggle`，资源标识为 `plugin:{id}`。
 
 ---
 
 ## 开发插件
 
-### 本地专属插件（不入版本库）
+### 开发流程
 
-主仓库**不跟踪任何具体插件**，只跟踪插件系统本身（`registry.ts` / `types.ts` /
-`PluginPage.tsx` / `index.ts` / `sdk/`）。以下两个插件是部署/本地专属的，已列入
-`.gitignore`，**克隆仓库后不会出现**：
+插件独立于主应用构建，**建议单独一个 repo**（源码不放进主仓库的 `web/src/plugins/`）：
 
-| 插件 | 说明 |
-|------|------|
-| `plugins/lollipop-rank/` | 榜榜糖（站点专属的趣味点糖玩法） |
-| `plugins/team-members/` | 团队成员页的插件化实现（参考实现） |
+1. 复制模板骨架 `templates/plugin/` 到新 repo（Vite lib 模式、`plugin.json`、zip 打包脚本都已配好），
+   详见 `docs/guide/plugin-development.md`；
+2. 编写页面组件与入口 ESM：入口通过 `window.__MCGUFFIN_SDK__.definePlugin()` 自注册
+   （示例见上文「入口模块契约」）；类型提示来自模板的 `types/mcguffin-plugin-sdk.d.ts`
+   （与主仓库 `web/src/plugins/sdk/plugin-sdk.d.ts` 保持一致）；
+3. 构建并打包：`bun run build && bun run zip` 产出 `<id>.zip`；
+4. 安装到 McGuffin：后台上传 zip，或填写 Release 稳定地址用「从 URL 安装」；
+   之后发版只需点「从原 URL 更新」，插件数据与已授权权限都会保留。
 
-这不会影响构建：插件由 `registry.ts` 的
-`import.meta.glob("/src/plugins/*/index.ts")` 在构建期发现，目录不存在时自动跳过。
-`bun run build` 与 `bun run test` 在没有这两个插件的干净克隆中均通过。
-
-> 如需自行维护这些插件，请从各自仓库获取后放入 `web/src/plugins/<插件id>/`
-> （目录结构见下文），或改以 ZIP 方式安装分发。
-
-### 最小示例
-
-以下是一个完整的参考实现（团队成员页的插件化重写）。
-该实现是**本地专属插件**，不在版本库中（见「本地专属插件」），此处保留其源码作为编写参考：
-
-```typescript
-// web/src/plugins/team-members/index.ts
-import React from "react";
-import { definePlugin } from "../sdk";
-
-const plugin = definePlugin(
-  {
-    id: "team-members",
-    name: "团队成员",
-    version: "1.0.0",
-    description: "团队成员列表、角色管理、入队审批",
-    author: "mcguffin",
-    routes: [
-      {
-        path: "/plugins/team",
-        label: "团队",
-        icon: "👥",
-        nav_placement: "main",
-        required_permission: "view_team",
-      },
-    ],
-  },
-  React.lazy(() => import("./TeamMembersPage")),
-);
-
-export default plugin;
-```
+调试建议：入口加载失败的原因会显示在插件列表的「加载失败」标记上（悬停查看详情），
+也可在浏览器控制台按 `[plugin]` 前缀过滤日志。
 
 ### 多页面插件（路由级组件）
 
@@ -235,8 +229,8 @@ definePlugin({
 插件组件内用 `usePluginId()` / `usePluginContext()` 获取**准确的** pluginId
 （宿主通过 `PluginProvider` 注入；不要解析 URL —— 路由路径与插件 id 并不总是一致）：
 
-```typescript
-import { usePluginId, usePluginContext } from "../sdk";
+```js
+const { usePluginId, usePluginContext } = window.__MCGUFFIN_SDK__;
 
 const pluginId = usePluginId();                 // 可靠来源：上下文
 const { route } = usePluginContext() ?? {};     // 命中当前页面的路由定义（插槽中为 undefined）
@@ -269,12 +263,12 @@ const { route } = usePluginContext() ?? {};     // 命中当前页面的路由�
 
 路由页面组件需单独导出，建议用 `React.lazy()` 实现代码分割：
 
-```typescript
-import { definePlugin } from "../sdk";
+```js
+const { definePlugin, React } = window.__MCGUFFIN_SDK__;
 
 const plugin = definePlugin(
   { /* ...路由定义... */ },
-  React.lazy(() => import("./MyPage"))
+  React.lazy(() => import("./MyPage.js"))
 );
 ```
 
@@ -295,12 +289,12 @@ slots: [
 
 ## SDK API
 
-插件通过 `web/src/plugins/sdk` 访问系统能力。所有 API 调用传入的 `pluginId` 自动限定数据访问范围，不同插件之间数据隔离。
+插件通过全局 `window.__MCGUFFIN_SDK__` 访问系统能力（宿主侧实现在 `web/src/plugins/sdk/`）。所有 API 调用传入的 `pluginId` 自动限定数据访问范围，不同插件之间数据隔离。
 
 ### 键值存储
 
 ```typescript
-import { getPluginData, setPluginData, pluginKeys } from "../sdk";
+const { getPluginData, setPluginData, pluginKeys } = window.__MCGUFFIN_SDK__;
 
 // 写入
 await setPluginData("my-plugin", "config", "theme", JSON.stringify({ color: "blue" }));
@@ -316,7 +310,7 @@ const keys = await pluginKeys("my-plugin", "config");
 ### 计数器
 
 ```typescript
-import { pluginIncr, pluginDecr, pluginAdd } from "../sdk";
+const { pluginIncr, pluginDecr, pluginAdd } = window.__MCGUFFIN_SDK__;
 
 const newVal = await pluginIncr("my-plugin", "stats", "visits");  // +1
 await pluginDecr("my-plugin", "stats", "pending");                 // -1
@@ -326,7 +320,7 @@ await pluginAdd("my-plugin", "score", "total", 100);               // +100
 ### 集合
 
 ```typescript
-import { pluginSetAdd, pluginSetRemove, pluginSetMembers } from "../sdk";
+const { pluginSetAdd, pluginSetRemove, pluginSetMembers } = window.__MCGUFFIN_SDK__;
 
 await pluginSetAdd("my-plugin", "groups", "admins", "user-123");
 await pluginSetRemove("my-plugin", "groups", "admins", "user-123");
@@ -336,7 +330,8 @@ const members = await pluginSetMembers("my-plugin", "groups", "admins");
 ### 文件存储
 
 ```typescript
-import { pluginWriteFile, pluginReadFile, pluginListFiles, pluginDeleteFile } from "../sdk";
+const { pluginWriteFile, pluginReadFile, pluginListFiles, pluginDeleteFile } =
+  window.__MCGUFFIN_SDK__;
 
 // 写入文件
 await pluginWriteFile("my-plugin", "assets/logo.png", fileBlob);
@@ -354,7 +349,7 @@ await pluginDeleteFile("my-plugin", "assets/logo.png");
 ### 用户信息
 
 ```typescript
-import { pluginUserMe, pluginUserGet, pluginUserList } from "../sdk";
+const { pluginUserMe, pluginUserGet, pluginUserList } = window.__MCGUFFIN_SDK__;
 
 // 当前登录用户
 const me = await pluginUserMe("my-plugin");
@@ -369,7 +364,7 @@ const { members } = await pluginUserList("my-plugin");
 ### 通知
 
 ```typescript
-import { pluginCreateNotification } from "../sdk";
+const { pluginCreateNotification } = window.__MCGUFFIN_SDK__;
 
 await pluginCreateNotification(
   "my-plugin",
@@ -385,7 +380,7 @@ await pluginCreateNotification(
 SDK 也提供了 React Hooks 封装，适合在组件中直接使用：
 
 ```typescript
-import {
+const {
   usePluginData,
   usePluginCounter,
   usePluginSet,
@@ -393,7 +388,7 @@ import {
   usePluginUserMe,
   usePluginUser,
   usePluginTeamMembers,
-} from "../sdk";
+} = window.__MCGUFFIN_SDK__;
 
 // 响应式数据读取
 const { value, loading, refresh } = usePluginData("my-plugin", "config", "theme");
@@ -407,23 +402,26 @@ const { members, refresh } = usePluginTeamMembers("my-plugin");
 
 ---
 
-## 插件目录结构参考
+## 插件系统目录结构
+
+主仓库只包含插件系统本身，**不含任何具体插件**：
 
 ```
 web/src/plugins/
 ├── index.ts              # 导出 PluginRegistry、definePlugin 等
-├── registry.ts           # 插件注册中心（单例）
+├── registry.ts           # 插件注册中心（单例，含 zip 插件动态加载）
 ├── types.ts              # 类型定义
 ├── PluginPage.tsx         # 插件路由页面容器
 └── sdk/
     ├── index.ts           # SDK 公开 API 导出
-    ├── definePlugin.ts    # definePlugin() 入口
+    ├── definePlugin.ts    # definePlugin() 入口（zip 插件经 window.__MCGUFFIN_SDK__ 调用）
     ├── data.ts            # 数据 API（KV、计数器、文件、用户）
     ├── hooks.ts           # React Hooks 封装
     └── PluginSlots.tsx    # 插槽渲染组件
 ```
 
-你自己的插件放在 `web/src/plugins/` 下的子目录中，每个插件一个目录。
+具体插件的文件不在源码树里：zip 包解压到数据目录 `plugins/{插件id}/assets/`，
+插件写入的文件在其 `plugins/{插件id}/files/` 下。
 
 ## 权限模型
 
@@ -449,7 +447,7 @@ web/src/plugins/
 
 ### 授予与变更
 
-- **首次注册**（代码插件页面加载自注册 / ZIP 安装）时，按声明自动授予已知权限，未知权限名被静默忽略。
+- **首次登记**（ZIP 安装写入清单）、或插件入口页面加载时自注册，按声明自动授予已知权限，未知权限名被静默忽略。
 - **权限冻结**：注册接口无需鉴权，因此**重注册不会修改已注册插件的权限**，只刷新名称/版本等元信息（防止有人用同一 id 顶替并扩权）。
 - **调整权限**：仅超级管理员，两种方式 ——
   1. 管理后台 → 插件管理 → 「权限」按钮勾选保存；
@@ -464,7 +462,7 @@ web/src/plugins/
 A: 插件的路由页面通过 `React.lazy()` 动态加载，数据存储按 `pluginId + namespace` 隔离，不同插件无法互相访问对方的数据。
 
 **Q: 插件可以使用主应用的组件吗？**  
-A: 可以。插件代码运行在主应用的构建上下文中，可以 import 主应用的任何组件或工具函数。但建议尽量自包含以保证可移植性。
+A: 通过 `window.__MCGUFFIN_SDK__` 可以用到 React、全部数据 API 与 Hooks；主应用的内部组件不在 SDK 暴露范围内，插件 UI 建议自带。
 
 **Q: 插件注册后不显示？**  
 A: 检查 `nav_placement` 是否正确（`main` 出现在主导航栏，`admin` 出现在管理后台左侧栏，`hidden` 不显示但路由仍可访问）。若有 `required_permission`，确认当前用户拥有该权限。

@@ -42,6 +42,9 @@ export type ErrorCode =
   | "PLUGIN_PERMISSION_DENIED"
   | "PLUGIN_ALREADY_REGISTERED"
   | "PLUGIN_DATA_INVALID"
+  | "PLUGIN_INVALID_PACKAGE"
+  | "PLUGIN_DOWNLOAD_FAILED"
+  | "PLUGIN_UPDATE_UNAVAILABLE"
   // 通知
   | "NOTIFICATION_NOT_FOUND"
   // 站点 / 配置
@@ -124,6 +127,18 @@ export const errorRegistry: Record<string, ErrorMeta> = {
   },
   PLUGIN_ALREADY_REGISTERED: { hint: "插件已注册", suggestion: "重复注册同一插件" },
   PLUGIN_DATA_INVALID: { hint: "namespace 与 key 不能为空", suggestion: "插件 KV 参数不合法" },
+  PLUGIN_INVALID_PACKAGE: {
+    hint: "请上传包含 plugin.json 的有效 .zip 插件包",
+    suggestion: "插件包缺少 plugin.json、入口文件或包含超限文件",
+  },
+  PLUGIN_DOWNLOAD_FAILED: {
+    hint: "请检查 URL 是否为可直接下载的 .zip 地址，且服务端可访问",
+    suggestion: "插件包下载失败：URL 不合法、不可访问或体积超限",
+  },
+  PLUGIN_UPDATE_UNAVAILABLE: {
+    hint: "该插件不是通过 URL 安装的，请上传新的 .zip 包更新",
+    suggestion: "插件缺少来源 URL 记录，无法执行「从原 URL 更新」",
+  },
   NOTIFICATION_NOT_FOUND: { hint: "该通知可能已被删除", suggestion: "通知不存在或无权操作" },
   SITE_CONFIG_INVALID: { hint: "请检查站点配置", suggestion: "配置项缺失或格式不合法" },
   SITE_DESCRIPTION_INVALID: { hint: "请检查站点简介", suggestion: "站点简介不合法" },

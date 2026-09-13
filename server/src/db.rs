@@ -737,7 +737,7 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
 
     // ── 读取插件清单 ──
     if let Ok(rows) = sqlx::query(
-        "SELECT id, name, version, description, author, permissions, enabled, source, entry \
+        "SELECT id, name, version, description, author, permissions, enabled, source, entry, source_url \
          FROM plugins",
     )
     .fetch_all(pool)
@@ -759,6 +759,7 @@ pub(crate) async fn load_all_from_sqlite(pool: &SqlitePool) -> Result<SavedData,
                     enabled: enabled != 0,
                     source: row.get("source"),
                     entry: row.get("entry"),
+                    source_url: row.get("source_url"),
                 },
             );
         }

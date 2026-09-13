@@ -55,6 +55,8 @@ pub enum ErrorCode {
     PLUGIN_ALREADY_REGISTERED,
     PLUGIN_DATA_INVALID,
     PLUGIN_INVALID_PACKAGE,
+    PLUGIN_DOWNLOAD_FAILED,
+    PLUGIN_UPDATE_UNAVAILABLE,
     // 通知
     NOTIFICATION_NOT_FOUND,
     // 站点 / 配置
@@ -108,6 +110,8 @@ impl ErrorCode {
             ErrorCode::PLUGIN_ALREADY_REGISTERED => "PLUGIN_ALREADY_REGISTERED",
             ErrorCode::PLUGIN_DATA_INVALID => "PLUGIN_DATA_INVALID",
             ErrorCode::PLUGIN_INVALID_PACKAGE => "PLUGIN_INVALID_PACKAGE",
+            ErrorCode::PLUGIN_DOWNLOAD_FAILED => "PLUGIN_DOWNLOAD_FAILED",
+            ErrorCode::PLUGIN_UPDATE_UNAVAILABLE => "PLUGIN_UPDATE_UNAVAILABLE",
             ErrorCode::NOTIFICATION_NOT_FOUND => "NOTIFICATION_NOT_FOUND",
             ErrorCode::SITE_CONFIG_INVALID => "SITE_CONFIG_INVALID",
             ErrorCode::SITE_DESCRIPTION_INVALID => "SITE_DESCRIPTION_INVALID",
@@ -139,7 +143,8 @@ impl ErrorCode {
             | ErrorCode::PLUGIN_PERMISSION_DENIED => StatusCode::FORBIDDEN,
             ErrorCode::VALIDATION_NAME_TAKEN
             | ErrorCode::TEAM_APPLICATION_EXISTS
-            | ErrorCode::PLUGIN_ALREADY_REGISTERED => StatusCode::CONFLICT,
+            | ErrorCode::PLUGIN_ALREADY_REGISTERED
+            | ErrorCode::PLUGIN_UPDATE_UNAVAILABLE => StatusCode::CONFLICT,
             ErrorCode::VALIDATION_INVALID
             | ErrorCode::TEAM_APPLICATION_INVALID
             | ErrorCode::PROBLEM_INVALID_STATE
@@ -150,6 +155,7 @@ impl ErrorCode {
             | ErrorCode::POST_REPLY_INVALID
             | ErrorCode::PLUGIN_DATA_INVALID
             | ErrorCode::PLUGIN_INVALID_PACKAGE
+            | ErrorCode::PLUGIN_DOWNLOAD_FAILED
             | ErrorCode::SITE_CONFIG_INVALID
             | ErrorCode::SITE_DESCRIPTION_INVALID
             | ErrorCode::ADMIN_USER_PROTECTED => StatusCode::BAD_REQUEST,
@@ -205,6 +211,8 @@ impl ErrorCode {
             ErrorCode::PLUGIN_ALREADY_REGISTERED => "插件已注册",
             ErrorCode::PLUGIN_DATA_INVALID => "插件数据不合法",
             ErrorCode::PLUGIN_INVALID_PACKAGE => "插件包不合法",
+            ErrorCode::PLUGIN_DOWNLOAD_FAILED => "插件包下载失败",
+            ErrorCode::PLUGIN_UPDATE_UNAVAILABLE => "该插件无法从原 URL 更新",
             ErrorCode::NOTIFICATION_NOT_FOUND => "通知不存在或无权操作",
             ErrorCode::SITE_CONFIG_INVALID => "站点配置不合法",
             ErrorCode::SITE_DESCRIPTION_INVALID => "站点简介不合法",
@@ -242,6 +250,12 @@ impl ErrorCode {
             ErrorCode::PLUGIN_PERMISSION_DENIED => "插件缺少所需权限，请联系管理员",
             ErrorCode::PLUGIN_DATA_INVALID => "namespace 与 key 不能为空",
             ErrorCode::PLUGIN_INVALID_PACKAGE => "请上传包含 plugin.json 的有效 .zip 插件包",
+            ErrorCode::PLUGIN_DOWNLOAD_FAILED => {
+                "请检查 URL 是否为可直接下载的 .zip 地址，且服务端可访问"
+            }
+            ErrorCode::PLUGIN_UPDATE_UNAVAILABLE => {
+                "该插件不是通过 URL 安装的（或缺少来源记录），请上传新的 .zip 包更新"
+            }
             ErrorCode::NOTIFICATION_NOT_FOUND => "该通知可能已被删除",
             ErrorCode::NOT_FOUND => "请检查地址是否正确",
             ErrorCode::INTERNAL_ERROR => "请稍后重试，如持续出现请联系管理员",
@@ -473,6 +487,8 @@ mod tests {
             ErrorCode::PLUGIN_ALREADY_REGISTERED,
             ErrorCode::PLUGIN_DATA_INVALID,
             ErrorCode::PLUGIN_INVALID_PACKAGE,
+            ErrorCode::PLUGIN_DOWNLOAD_FAILED,
+            ErrorCode::PLUGIN_UPDATE_UNAVAILABLE,
             ErrorCode::NOTIFICATION_NOT_FOUND,
             ErrorCode::SITE_CONFIG_INVALID,
             ErrorCode::SITE_DESCRIPTION_INVALID,

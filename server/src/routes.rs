@@ -29,12 +29,13 @@ use crate::handlers::notification::{
     get_notifications, mark_all_notifications_read, mark_notification_read,
 };
 use crate::handlers::plugin::{
-    disable_plugin, enable_plugin, get_global_plugin_state, install_plugin_zip, list_plugins,
-    list_plugins_public, plugin_add_data, plugin_asset, plugin_data_keys, plugin_delete_file,
-    plugin_get_data, plugin_list_files, plugin_list_users, plugin_notify, plugin_read_file,
-    plugin_set_add, plugin_set_data, plugin_set_is_member, plugin_set_members, plugin_set_remove,
-    plugin_user_get, plugin_user_me, plugin_write_file, register_plugin, set_global_plugin_state,
-    set_plugin_permissions, unregister_plugin,
+    disable_plugin, enable_plugin, get_global_plugin_state, install_plugin_from_url,
+    install_plugin_zip, list_plugins, list_plugins_public, plugin_add_data, plugin_asset,
+    plugin_data_keys, plugin_delete_file, plugin_get_data, plugin_list_files, plugin_list_users,
+    plugin_notify, plugin_read_file, plugin_set_add, plugin_set_data, plugin_set_is_member,
+    plugin_set_members, plugin_set_remove, plugin_user_get, plugin_user_me, plugin_write_file,
+    register_plugin, set_global_plugin_state, set_plugin_permissions, unregister_plugin,
+    update_plugin_from_url, update_plugin_zip,
 };
 use crate::handlers::post::{
     create_announcement, create_post, create_suggestion, delete_announcement, delete_post,
@@ -264,7 +265,16 @@ pub fn build_router(state: AppState) -> Router {
             "/admin/plugins/install-zip",
             post(install_plugin_zip).layer(axum::extract::DefaultBodyLimit::max(48 * 1024 * 1024)),
         )
+        .route("/admin/plugins/install-url", post(install_plugin_from_url))
         .route("/admin/plugins/{plugin_id}", delete(unregister_plugin))
+        .route(
+            "/admin/plugins/{plugin_id}/update",
+            post(update_plugin_from_url),
+        )
+        .route(
+            "/admin/plugins/{plugin_id}/update-zip",
+            post(update_plugin_zip).layer(axum::extract::DefaultBodyLimit::max(48 * 1024 * 1024)),
+        )
         .route(
             "/admin/plugins/{plugin_id}/permissions",
             put(set_plugin_permissions),

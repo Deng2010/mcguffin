@@ -1,7 +1,7 @@
 // ============== Plugin API handlers ==============
 //
 // Endpoints:
-//   POST   /api/plugins/register              — register plugin metadata (code plugins)
+//   POST   /api/plugins/register              — register/refresh plugin metadata (zip plugin entries)
 //   GET    /api/plugins                        — public list (id/name/version/enabled/source)
 //   GET    /api/admin/plugins                  — list registered plugins
 //   DELETE /api/admin/plugins/{plugin_id}      — unregister plugin & delete data
@@ -67,6 +67,8 @@ const MAX_PLUGIN_FILE_SIZE: u64 = 8 * 1024 * 1024;
 const MAX_ZIP_FILES: usize = 512;
 /// zip 插件包：解压后总大小上限（64 MiB）
 const MAX_ZIP_TOTAL_UNCOMPRESSED: u64 = 64 * 1024 * 1024;
+/// 从 URL 下载的插件包体积上限（64 MiB，与解压后总大小上限对齐）
+const MAX_PLUGIN_ZIP_BYTES: u64 = 64 * 1024 * 1024;
 /// 文件列表接口最多返回的条目数
 const MAX_FILE_LIST: usize = 1000;
 /// 单个 KV 值（含集合序列化结果）上限
@@ -349,8 +351,8 @@ async fn audit_plugin(
 // ── Register ──
 
 /// POST /api/plugins/register
-/// Called by the frontend PluginRegistry on load. Stores plugin metadata for
-/// code-registered plugins. Idempotent: re-registering refreshes metadata but
+/// Called by the frontend PluginRegistry when a ZIP plugin's entry module
+/// self-registers on load. Idempotent: re-registering refreshes metadata but
 /// keeps `enabled` / `source` / `entry` / permissions unchanged (权限冻结，
 /// 防止无鉴权的重注册被用来顶替 id 并扩权)。
 pub async fn register_plugin(
@@ -365,11 +367,11 @@ pub async fn register_plugin(
         .cloned()
         .collect();
 
-    // 已注册插件：保留 enabled / source / entry，并**冻结权限清单**。
-    // 注册接口无需鉴权（前端代码插件在页面加载时自注册），若允许重注册改权限，
+    // 已注册插件：保留 enabled / source / entry / source_url，并**冻结权限清单**。
+    // 注册接口无需鉴权（zip 插件入口在页面加载时自注册），若允许重注册改权限，
     // 任何人都能顶掉某个插件 id 并扩权。权限变更只能走
     // PUT /api/admin/plugins/{id}/permissions（superadmin）。
-    let (existing_enabled, existing_source, existing_entry, existing_perms) = {
+    let (existing_enabled, existing_source, existing_entry, existing_source_url, existing_perms) = {
         let plugins = state.plugins.read().await;
         plugins
             .get(&payload.id)
@@ -378,10 +380,12 @@ pub async fn register_plugin(
                     p.enabled,
                     p.source.clone(),
                     p.entry.clone(),
+                    p.source_url.clone(),
                     Some(p.permissions.clone()),
                 )
             })
-            .unwrap_or((true, "code".to_string(), None, None))
+            // 未安装过的 id：沿用历史默认来源 "code"（无 zip 资产，前端不会加载它）。
+            .unwrap_or((true, "code".to_string(), None, None, None))
     };
 
     let valid_perms = match &existing_perms {
@@ -410,6 +414,7 @@ pub async fn register_plugin(
         enabled: existing_enabled,
         source: existing_source,
         entry: existing_entry,
+        source_url: existing_source_url,
     };
 
     {
@@ -711,7 +716,7 @@ pub async fn set_global_plugin_state(
     })))
 }
 
-// ── Install plugin from zip (superadmin) ──
+// ── Install / update plugins from zip or URL (superadmin) ──
 
 /// plugin.json 的期望结构（zip 包根目录）。
 #[derive(serde::Deserialize)]
@@ -730,23 +735,77 @@ struct ZipPluginManifestJson {
     entry: Option<String>,
 }
 
-/// POST /api/admin/plugins/install-zip
-/// Body: raw zip bytes (application/octet-stream).
-///
-/// zip 包约定：
-///   - 根目录必须有 plugin.json（id/name/version，可选 entry/permissions_needed）
-///   - 入口文件默认 index.js，须为 ESM，通过 window.__MCGUFFIN_SDK__ 调用 definePlugin()
-///   - 全部文件解压到 <data_dir>/plugins/{id}/assets/，经 /api/plugins/{id}/assets/* 公开访问
-pub async fn install_plugin_zip(
-    State(state): State<AppState>,
-    auth: AuthUser,
-    body: Bytes,
-) -> Result<Json<serde_json::Value>, ApiErr> {
-    auth.require_perm(&state, PERM_WILDCARD).await?;
+/// POST /api/admin/plugins/install-url 的请求体。
+#[derive(serde::Deserialize)]
+pub struct InstallFromUrlPayload {
+    pub url: String,
+}
 
+/// 一次「安装 / 更新」的结果。
+struct ZipInstallOutcome {
+    manifest: PluginManifest,
+    file_count: usize,
+    /// true = 覆盖已有插件（更新），false = 全新安装
+    updated: bool,
+    /// 更新前的版本号（全新安装为 None）
+    previous_version: Option<String>,
+    /// 新版本声明、但当前未被授予的权限（提示管理员到后台勾选）
+    new_permissions: Vec<String>,
+}
+
+impl ZipInstallOutcome {
+    fn into_response(self) -> Json<serde_json::Value> {
+        let message = match (&self.updated, &self.previous_version) {
+            (true, Some(prev)) if *prev != self.manifest.version => format!(
+                "插件「{}」已从 v{} 更新到 v{}",
+                self.manifest.name, prev, self.manifest.version
+            ),
+            (true, _) => format!(
+                "插件「{}」已重新安装 v{}",
+                self.manifest.name, self.manifest.version
+            ),
+            (false, _) => format!("插件「{}」安装成功", self.manifest.name),
+        };
+        Json(serde_json::json!({
+            "success": true,
+            "updated": self.updated,
+            "message": message,
+            "previous_version": self.previous_version,
+            "new_permissions": self.new_permissions,
+            "plugin": {
+                "id": self.manifest.id,
+                "name": self.manifest.name,
+                "version": self.manifest.version,
+                "description": self.manifest.description,
+                "author": self.manifest.author,
+                "permissions_needed": self.manifest.permissions,
+                "enabled": self.manifest.enabled,
+                "source": self.manifest.source,
+                "source_url": self.manifest.source_url,
+                "entry": self.manifest.entry,
+                "file_count": self.file_count,
+            }
+        }))
+    }
+}
+
+/// 安装 / 更新核心：解析 zip、整体替换 assets、登记清单。
+///
+/// 更新语义（已存在同 id 插件时）：
+///   - 保留 `enabled`、已授权权限与插件数据（KV / files 目录不动）
+///   - 不自动授予新版本额外申请的权限，改由 `new_permissions` 提示管理员勾选
+///   - `source_url` 传入 Some 时覆盖，否则保留原值
+///
+/// `expect_id` 为 Some 时要求 zip 内 plugin.json 的 id 与其一致（更新接口用）。
+async fn install_zip_bytes(
+    state: &AppState,
+    bytes: &[u8],
+    source_url: Option<String>,
+    expect_id: Option<&str>,
+) -> Result<ZipInstallOutcome, ApiErr> {
     let invalid = |msg: &str| bad_request(ErrorCode::PLUGIN_INVALID_PACKAGE, msg);
 
-    let cursor = std::io::Cursor::new(body.as_ref());
+    let cursor = std::io::Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(cursor).map_err(|_| invalid("无法解析 zip 文件"))?;
     if archive.len() > MAX_ZIP_FILES {
         return Err(invalid("插件包文件数超限"));
@@ -770,6 +829,14 @@ pub async fn install_plugin_zip(
     }
     if manifest_json.name.is_empty() || manifest_json.version.is_empty() {
         return Err(invalid("plugin.json 缺少 name 或 version"));
+    }
+    if let Some(expected) = expect_id {
+        if manifest_json.id != expected {
+            return Err(invalid(&format!(
+                "插件包内的 id「{}」与要更新的插件「{}」不一致",
+                manifest_json.id, expected
+            )));
+        }
     }
 
     let entry = manifest_json
@@ -815,7 +882,7 @@ pub async fn install_plugin_zip(
     }
 
     // ── 写入 assets 目录（整体替换，支持升级重装） ──
-    let assets_dir = plugin_assets_dir(&state, &manifest_json.id);
+    let assets_dir = plugin_assets_dir(state, &manifest_json.id);
     let _ = std::fs::remove_dir_all(&assets_dir);
     for (rel, data) in &files {
         let dest = assets_dir.join(rel);
@@ -830,21 +897,53 @@ pub async fn install_plugin_zip(
         })?;
     }
 
-    // ── 注册清单 ──
-    let valid_perms: Vec<String> = manifest_json
+    // ── 已注册信息（决定安装还是更新） ──
+    let existing = {
+        let plugins = state.plugins.read().await;
+        plugins.get(&manifest_json.id).cloned()
+    };
+    let previous_version = existing.as_ref().map(|p| p.version.clone());
+    let updated = previous_version.is_some();
+    let enabled = existing.as_ref().map(|p| p.enabled).unwrap_or(true);
+
+    let declared_perms: Vec<String> = manifest_json
         .permissions_needed
         .iter()
         .filter(|p| plugin_perms::ALL.contains(&p.as_str()))
         .cloned()
         .collect();
 
-    let existing_enabled = {
-        let plugins = state.plugins.read().await;
-        plugins
-            .get(&manifest_json.id)
-            .map(|p| p.enabled)
-            .unwrap_or(true)
+    let (valid_perms, new_permissions) = match existing.as_ref() {
+        // 更新：权限保持冻结，只把新版本额外申请的权限回给管理员提示
+        Some(prev) => (
+            prev.permissions.clone(),
+            declared_perms
+                .iter()
+                .filter(|p| !prev.permissions.contains(p))
+                .cloned()
+                .collect(),
+        ),
+        // 新装：按声明授予已知权限
+        None => (declared_perms, Vec::new()),
     };
+
+    let source_url = source_url.or_else(|| existing.as_ref().and_then(|p| p.source_url.clone()));
+
+    // ── 写入 assets 目录（整体替换；插件 KV 与 files 目录不受影响） ──
+    let assets_dir = plugin_assets_dir(state, &manifest_json.id);
+    let _ = std::fs::remove_dir_all(&assets_dir);
+    for (rel, data) in &files {
+        let dest = assets_dir.join(rel);
+        if let Some(parent) = dest.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(&dest, data).map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json_error(ErrorCode::INTERNAL_ERROR, "写入插件文件失败"),
+            )
+        })?;
+    }
 
     let manifest = PluginManifest {
         id: manifest_json.id.clone(),
@@ -853,9 +952,10 @@ pub async fn install_plugin_zip(
         description: manifest_json.description.clone(),
         author: manifest_json.author.clone(),
         permissions: valid_perms.clone(),
-        enabled: existing_enabled,
+        enabled,
         source: "zip".to_string(),
         entry: Some(entry),
+        source_url,
     };
 
     {
@@ -863,35 +963,217 @@ pub async fn install_plugin_zip(
         plugins.insert(manifest.id.clone(), manifest.clone());
     }
     state.persist_plugin(&manifest).await;
+
+    Ok(ZipInstallOutcome {
+        file_count: files.len(),
+        updated,
+        previous_version,
+        new_permissions,
+        manifest,
+    })
+}
+
+/// 审计 + 日志 + 统一响应（安装与更新共用）。
+async fn finish_install(
+    state: &AppState,
+    auth: &AuthUser,
+    outcome: ZipInstallOutcome,
+) -> Json<serde_json::Value> {
+    let action = if outcome.updated {
+        "plugin.update"
+    } else {
+        "plugin.install"
+    };
     audit_plugin(
-        &state,
-        &auth,
-        "plugin.install",
-        &manifest.id,
-        &format!("v{} files={}", manifest.version, files.len()),
+        state,
+        auth,
+        action,
+        &outcome.manifest.id,
+        &format!("v{} files={}", outcome.manifest.version, outcome.file_count),
     )
     .await;
 
     tracing::info!(
-        "plugin installed from zip: {} v{} ({} files, permissions: {:?})",
-        manifest.id,
-        manifest.version,
-        files.len(),
-        valid_perms,
+        "plugin {}: {} v{} ({} files, permissions: {:?}, newly requested: {:?})",
+        action,
+        outcome.manifest.id,
+        outcome.manifest.version,
+        outcome.file_count,
+        outcome.manifest.permissions,
+        outcome.new_permissions,
     );
 
-    Ok(Json(serde_json::json!({
-        "success": true,
-        "message": format!("插件「{}」安装成功", manifest.name),
-        "plugin": {
-            "id": manifest.id,
-            "name": manifest.name,
-            "version": manifest.version,
-            "permissions_needed": valid_perms,
-            "source": manifest.source,
-            "entry": manifest.entry,
+    outcome.into_response()
+}
+
+/// 更新前确认插件已注册，避免把新插件误当作「更新」装进来。
+async fn ensure_plugin_registered(state: &AppState, plugin_id: &str) -> Result<(), ApiErr> {
+    if state.plugins.read().await.contains_key(plugin_id) {
+        Ok(())
+    } else {
+        Err(not_found("插件未注册"))
+    }
+}
+
+/// 校验并归一化插件来源 URL：仅允许 http/https、禁止携带凭据，并拒绝云元数据地址
+/// （基础 SSRF 防护）。内网镜像地址仍允许 —— 该接口仅超级管理员可用。
+fn validate_plugin_source_url(raw: &str) -> Result<String, ApiErr> {
+    let fail = |msg: &str| bad_request(ErrorCode::PLUGIN_DOWNLOAD_FAILED, msg);
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(fail("URL 不能为空"));
+    }
+    let url = reqwest::Url::parse(trimmed).map_err(|_| fail("URL 格式不合法"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err(fail("仅支持 http/https URL"));
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(fail("URL 不能包含账号密码"));
+    }
+    if let Some(host) = url.host_str() {
+        let host = host.to_ascii_lowercase();
+        if host == "metadata.google.internal" || host == "169.254.169.254" {
+            return Err(fail("不允许从云元数据地址下载插件包"));
         }
-    })))
+    }
+    Ok(url.to_string())
+}
+
+/// 插件包下载专用客户端：超时比 OAuth 用的客户端更长（允许较大的包）。
+fn plugin_download_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("创建插件下载 HTTP 客户端失败")
+    })
+}
+
+/// 流式下载插件包，超过 `MAX_PLUGIN_ZIP_BYTES` 立即中断。
+async fn download_plugin_zip(url: &str) -> Result<Vec<u8>, ApiErr> {
+    let too_large = || {
+        bad_request(
+            ErrorCode::PLUGIN_DOWNLOAD_FAILED,
+            format!("插件包超过 {} MiB 上限", MAX_PLUGIN_ZIP_BYTES / 1024 / 1024),
+        )
+    };
+    let fail = |msg: String| bad_request(ErrorCode::PLUGIN_DOWNLOAD_FAILED, msg);
+
+    let mut res = plugin_download_client()
+        .get(url)
+        .header(
+            header::ACCEPT,
+            "application/zip, application/octet-stream, */*",
+        )
+        .header(header::USER_AGENT, "mcguffin-plugin-installer")
+        .send()
+        .await
+        .map_err(|e| fail(format!("下载插件包失败：{e}")))?;
+
+    if !res.status().is_success() {
+        return Err(fail(format!("下载插件包失败：HTTP {}", res.status())));
+    }
+    if res
+        .content_length()
+        .is_some_and(|len| len > MAX_PLUGIN_ZIP_BYTES)
+    {
+        return Err(too_large());
+    }
+
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = res
+        .chunk()
+        .await
+        .map_err(|e| fail(format!("下载插件包中断：{e}")))?
+    {
+        if buf.len() as u64 + chunk.len() as u64 > MAX_PLUGIN_ZIP_BYTES {
+            return Err(too_large());
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    if buf.is_empty() {
+        return Err(fail("下载到的插件包为空".to_string()));
+    }
+    Ok(buf)
+}
+
+/// POST /api/admin/plugins/install-zip
+/// Body: raw zip bytes (application/octet-stream).
+///
+/// zip 包约定：
+///   - 根目录必须有 plugin.json（id/name/version，可选 entry/permissions_needed）
+///   - 入口文件默认 index.js，须为 ESM，通过 window.__MCGUFFIN_SDK__ 调用 definePlugin()
+///   - 全部文件解压到 <data_dir>/plugins/{id}/assets/，经 /api/plugins/{id}/assets/* 公开访问
+///   - 若该 id 已安装，则按「更新」处理（保留插件数据、启用状态与已授权权限）
+pub async fn install_plugin_zip(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, ApiErr> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let outcome = install_zip_bytes(&state, body.as_ref(), None, None).await?;
+    Ok(finish_install(&state, &auth, outcome).await)
+}
+
+/// POST /api/admin/plugins/install-url
+/// Body: { "url": "https://example.com/my-plugin.zip" }
+///
+/// 服务端下载 zip 后按上述约定安装 / 更新，并记录来源 URL 供「从原 URL 更新」。
+pub async fn install_plugin_from_url(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(payload): Json<InstallFromUrlPayload>,
+) -> Result<Json<serde_json::Value>, ApiErr> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let url = validate_plugin_source_url(&payload.url)?;
+    let bytes = download_plugin_zip(&url).await?;
+    let outcome = install_zip_bytes(&state, &bytes, Some(url), None).await?;
+    Ok(finish_install(&state, &auth, outcome).await)
+}
+
+/// POST /api/admin/plugins/{plugin_id}/update-zip
+/// Body: raw zip bytes (application/octet-stream)；包内 plugin.json 的 id 必须与 {plugin_id} 一致。
+pub async fn update_plugin_zip(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(plugin_id): Path<String>,
+    body: Bytes,
+) -> Result<Json<serde_json::Value>, ApiErr> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    ensure_plugin_registered(&state, &plugin_id).await?;
+    let outcome = install_zip_bytes(&state, body.as_ref(), None, Some(&plugin_id)).await?;
+    Ok(finish_install(&state, &auth, outcome).await)
+}
+
+/// POST /api/admin/plugins/{plugin_id}/update
+/// 从安装时记录的来源 URL 重新下载并更新（保留插件数据、启用状态与已授权权限）。
+pub async fn update_plugin_from_url(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(plugin_id): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiErr> {
+    auth.require_perm(&state, PERM_WILDCARD).await?;
+    let source_url = {
+        let plugins = state.plugins.read().await;
+        let plugin = plugins
+            .get(&plugin_id)
+            .ok_or_else(|| not_found("插件未注册"))?;
+        plugin.source_url.clone()
+    };
+    let url = source_url.ok_or_else(|| {
+        (
+            ErrorCode::PLUGIN_UPDATE_UNAVAILABLE.status(),
+            json_error(
+                ErrorCode::PLUGIN_UPDATE_UNAVAILABLE,
+                "该插件不是从 URL 安装的，无法从原 URL 更新",
+            ),
+        )
+    })?;
+    let bytes = download_plugin_zip(&url).await?;
+    let outcome = install_zip_bytes(&state, &bytes, Some(url), Some(&plugin_id)).await?;
+    Ok(finish_install(&state, &auth, outcome).await)
 }
 
 // ── Static assets of zip-installed plugins (public) ──
@@ -1513,9 +1795,39 @@ pub async fn plugin_notify(
 mod tests {
     use super::{
         ensure_kv_quota, is_valid_plugin_id, read_json_set, sanitize_rel_path, validate_kv_member,
-        validate_kv_target, validate_kv_value, MAX_KV_KEYS_PER_PLUGIN, MAX_KV_KEY_LEN,
-        MAX_KV_NAMESPACE_LEN, MAX_KV_VALUE_BYTES,
+        validate_kv_target, validate_kv_value, validate_plugin_source_url, MAX_KV_KEYS_PER_PLUGIN,
+        MAX_KV_KEY_LEN, MAX_KV_NAMESPACE_LEN, MAX_KV_VALUE_BYTES,
     };
+
+    #[test]
+    fn plugin_source_url_accepts_http_and_https() {
+        assert_eq!(
+            validate_plugin_source_url("https://example.com/my-plugin.zip").unwrap(),
+            "https://example.com/my-plugin.zip"
+        );
+        // 前后空白被裁剪
+        assert_eq!(
+            validate_plugin_source_url("  http://mirror.local/p.zip  ").unwrap(),
+            "http://mirror.local/p.zip"
+        );
+        // 带查询串的发布地址（如 GitHub releases/latest/download）
+        assert_eq!(
+            validate_plugin_source_url("https://github.com/o/r/releases/latest/download/p.zip")
+                .unwrap(),
+            "https://github.com/o/r/releases/latest/download/p.zip"
+        );
+    }
+
+    #[test]
+    fn plugin_source_url_rejects_unsafe_inputs() {
+        assert!(validate_plugin_source_url("").is_err());
+        assert!(validate_plugin_source_url("   ").is_err());
+        assert!(validate_plugin_source_url("not a url").is_err());
+        assert!(validate_plugin_source_url("ftp://example.com/p.zip").is_err());
+        assert!(validate_plugin_source_url("file:///etc/passwd").is_err());
+        assert!(validate_plugin_source_url("https://user:pw@example.com/p.zip").is_err());
+        assert!(validate_plugin_source_url("http://169.254.169.254/latest/meta-data/").is_err());
+    }
 
     #[test]
     fn kv_target_and_value_limits() {

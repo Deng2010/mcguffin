@@ -1645,6 +1645,206 @@ async fn test_plugin_install_zip_and_assets() {
     assert!(!std::path::Path::new(&format!("plugins/{}", pid)).exists());
 }
 
+/// ZIP 更新：替换资产、保留启用状态与已授权权限、提示新申请的权限、插件数据不丢。
+#[tokio::test]
+async fn test_plugin_update_zip_preserves_state() {
+    let state = AppState::new().await;
+    let pid = uniq_plugin_id("upd");
+    let token = create_session(&state, "admin").await;
+    let app = test_router(state.clone());
+
+    /// 构造内存 zip（plugin.json + index.js）。
+    fn make_zip(id: &str, version: &str, perms: &[&str], js: &str) -> Vec<u8> {
+        let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts: zip::write::FileOptions<()> = zip::write::FileOptions::default();
+        w.start_file("plugin.json", opts).unwrap();
+        std::io::Write::write_all(
+            &mut w,
+            serde_json::to_vec(&serde_json::json!({
+                "id": id,
+                "name": "更新测试插件",
+                "version": version,
+                "permissions_needed": perms,
+            }))
+            .unwrap()
+            .as_slice(),
+        )
+        .unwrap();
+        w.start_file("index.js", opts).unwrap();
+        std::io::Write::write_all(&mut w, js.as_bytes()).unwrap();
+        w.finish().unwrap().into_inner()
+    }
+
+    async fn upload(app: Router, uri: String, token: &str, bytes: Vec<u8>) -> serde_json::Value {
+        let res = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .header("Authorization", format!("Bearer {}", token))
+                    .header("content-type", "application/octet-stream")
+                    .body(Body::from(bytes))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK, "上传插件包应成功");
+        body_json(res).await
+    }
+
+    // 1) 安装 v1（permissions_needed = storage）
+    let v1 = upload(
+        app.clone(),
+        "/api/admin/plugins/install-zip".to_string(),
+        &token,
+        make_zip(&pid, "1.0.0", &["storage"], "v1"),
+    )
+    .await;
+    assert_eq!(v1["updated"], false);
+    assert_eq!(
+        v1["plugin"]["permissions_needed"],
+        serde_json::json!(["storage"])
+    );
+
+    // 写入插件 KV 数据，稍后验证更新不影响数据
+    let res = app
+        .clone()
+        .oneshot(authed_json_post(
+            format!("/api/plugins/{}/data", pid),
+            &token,
+            serde_json::json!({"namespace": "ns", "key": "k", "value": "keep-me"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 禁用插件，验证更新后禁用状态保留
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/admin/plugins/{}/disable", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // 2) 用 id 不一致的包更新 → 400（防止误把别的插件当更新装进来）
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/admin/plugins/{}/update-zip", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/octet-stream")
+                .body(Body::from(make_zip(
+                    "some-other-plugin",
+                    "9.9.9",
+                    &["storage"],
+                    "evil",
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    let v = body_json(res).await;
+    assert_eq!(v["code"], "PLUGIN_INVALID_PACKAGE");
+
+    // 3) 更新到 v2：新版本额外申请 read:team，权限保持冻结、禁用状态保留
+    let v2 = upload(
+        app.clone(),
+        format!("/api/admin/plugins/{}/update-zip", pid),
+        &token,
+        make_zip(&pid, "2.0.0", &["storage", "read:team"], "v2"),
+    )
+    .await;
+    assert_eq!(v2["updated"], true);
+    assert_eq!(v2["previous_version"], "1.0.0");
+    assert_eq!(v2["plugin"]["version"], "2.0.0");
+    assert_eq!(v2["plugin"]["enabled"], false);
+    assert_eq!(
+        v2["plugin"]["permissions_needed"],
+        serde_json::json!(["storage"])
+    );
+    assert_eq!(v2["new_permissions"], serde_json::json!(["read:team"]));
+
+    // 插件数据仍在
+    let data = state.plugin_data.read().await;
+    assert_eq!(
+        data.get(&pid)
+            .and_then(|ns| ns.get("ns"))
+            .and_then(|kv| kv.get("k"))
+            .map(String::as_str),
+        Some("keep-me")
+    );
+    drop(data);
+
+    // 4) 重新启用后，资产已替换为 v2
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/admin/plugins/{}/enable", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/plugins/{}/assets/index.js", pid))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    assert_eq!(&body[..], b"v2");
+
+    // 5) 非 URL 安装的插件调用「从原 URL 更新」→ 409 PLUGIN_UPDATE_UNAVAILABLE
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/admin/plugins/{}/update", pid))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::CONFLICT);
+    let v = body_json(res).await;
+    assert_eq!(v["code"], "PLUGIN_UPDATE_UNAVAILABLE");
+
+    // 清理磁盘与 DB
+    let _ = std::fs::remove_dir_all(format!("plugins/{}", pid));
+    let _ = sqlx::query("DELETE FROM plugins WHERE id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+    let _ = sqlx::query("DELETE FROM plugin_data WHERE plugin_id = ?")
+        .bind(&pid)
+        .execute(&state.db)
+        .await;
+}
+
 /// 损坏的 zip 包 → 400 PLUGIN_INVALID_PACKAGE。
 #[tokio::test]
 async fn test_plugin_install_zip_rejects_garbage() {

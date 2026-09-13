@@ -1212,8 +1212,8 @@ impl AppState {
         let permissions = serde_json::to_string(&manifest.permissions).unwrap_or_default();
         let _ = sqlx::query(
             "INSERT OR REPLACE INTO plugins \
-             (id, name, version, description, author, permissions, enabled, source, entry) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (id, name, version, description, author, permissions, enabled, source, entry, source_url) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&manifest.id)
         .bind(&manifest.name)
@@ -1224,6 +1224,7 @@ impl AppState {
         .bind(manifest.enabled as i64)
         .bind(&manifest.source)
         .bind(&manifest.entry)
+        .bind(&manifest.source_url)
         .execute(&self.db)
         .await;
     }

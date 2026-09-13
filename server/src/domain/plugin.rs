@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// Plugin manifest — declared by the plugin in its plugin.json / definePlugin() call.
+/// Plugin manifest — declared in a ZIP plugin's `plugin.json`, and re-sent by
+/// the plugin's ESM entry through `definePlugin()` when it self-registers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {
     pub id: String,
@@ -17,18 +18,25 @@ pub struct PluginManifest {
     /// Newly registered plugins default to enabled.
     #[serde(default = "default_enabled")]
     pub enabled: bool,
-    /// How the plugin was installed: "code"（前端 definePlugin 注册）| "zip"（后台上传安装）。
+    /// How the plugin was installed: "zip" (uploaded through the admin backend).
+    /// "code" is the legacy frontend code-registration source — that mechanism
+    /// has been removed, so the value can only remain in historical rows.
     #[serde(default = "default_source")]
     pub source: String,
-    /// zip 插件的入口文件（assets 目录内相对路径，如 "index.js"）；代码插件为 None。
+    /// zip 插件的入口文件（assets 目录内相对路径，如 "index.js"）；非 zip 为 None。
     #[serde(default)]
     pub entry: Option<String>,
+    /// 安装来源 URL：从 URL 安装/更新时记录；本地上传 .zip 安装时为 None。
+    #[serde(default)]
+    pub source_url: Option<String>,
 }
 
 fn default_enabled() -> bool {
     true
 }
 
+/// 历史默认来源：早期前端代码注册的插件。代码注册机制已移除，该默认值现仅用于
+/// 兼容缺省 source 的旧数据（这类插件没有 zip 资产，前端不会动态加载其入口）。
 fn default_source() -> String {
     "code".to_string()
 }
