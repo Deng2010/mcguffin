@@ -121,6 +121,62 @@ function preprocessLuoguMarkdown(md: string): string {
   return result;
 }
 
+// ============== TeX Math Preprocessing ==============
+//
+// remark-math 只认 `$` / `$$`，这里先把 MathJax 风格的 `\( ... \)`（行内）与
+// `\[ ... \]`（块级）转换成前者；代码围栏（``` / ~~~）与行内代码（`...`）内的
+// 内容原样保留，避免把代码里的 LaTeX 也当公式。
+
+/** 代码片段（围栏代码块或行内代码），用于把它们从转换范围里排除。 */
+const CODE_SEGMENT_RE =
+  /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)/g;
+
+/** 公式内容里的 `$` 会被 remark-math 当成公式结束符，替换成 `\mathdollar`。 */
+function escapeDollar(tex: string): string {
+  return tex.replace(
+    /(^|[^\\])\$/g,
+    (_match, prefix: string) => `${prefix}\\mathdollar`,
+  );
+}
+
+/**
+ * `\( x \)` → `$x$`（行内）、`\[ x \]` → `$$\nx\n$$`（块级）。
+ * - 行内公式里的换行折叠成空格：`$...$` 不能跨行。
+ * - 块级公式的 `$$` 必须独占一行，否则会被当成行内公式渲染。
+ */
+function convertTexMathDelimiters(text: string): string {
+  const out = text.replace(
+    /(^|[^\\])\\\[([\s\S]*?)\\\]/g,
+    (match, prefix: string, body: string) => {
+      const tex = body.trim();
+      if (!tex) return match;
+      return `${prefix}\n$$\n${escapeDollar(tex)}\n$$\n`;
+    },
+  );
+
+  return out.replace(
+    /(^|[^\\])\\\(([\s\S]*?)\\\)/g,
+    (match, prefix: string, body: string) => {
+      const tex = body.replace(/\s*\n\s*/g, " ").trim();
+      if (!tex) return match;
+      return prefix + "$" + escapeDollar(tex) + "$";
+    },
+  );
+}
+
+/**
+ * 只处理代码片段之外的文本，代码块里的 LaTeX 保持原样。
+ * （`split` 带捕获组时结果按「文本 / 捕获 / 文本 / ...」交替，奇数下标即代码。）
+ */
+export function preprocessTexMath(md: string): string {
+  return md
+    .split(CODE_SEGMENT_RE)
+    .map((part, index) =>
+      index % 2 === 1 ? part : convertTexMathDelimiters(part),
+    )
+    .join("");
+}
+
 // Languages that are NOT programming languages — get word-wrapping instead of horizontal scroll
 const wrapLanguages = new Set([
   "",
@@ -247,7 +303,9 @@ const components: Components = {
 };
 
 export default function MarkdownRenderer({ content, className = "" }: Props) {
-  const processed = preprocessMentions(preprocessLuoguMarkdown(content));
+  const processed = preprocessMentions(
+    preprocessLuoguMarkdown(preprocessTexMath(content)),
+  );
   return (
     <div className={`${className}`}>
       <ReactMarkdown

@@ -263,6 +263,8 @@ mcguffin/
   `PUT /api/v1/admin/showcase/layout` 保存，权限 `edit_showcase`）。新增组件 = 实现组件 +
   在 `registry.ts` 注册，后端零改动。详见 `docs/guide/showcase-components.md`。
 - **错误边界**：`src/errors/` 提供 `ErrorBoundary` + 错误标准化（`normalize.ts`）+ 上报（`reporter.ts`）+ `ToastContext`。
+- **Markdown 渲染**：统一走 `src/components/MarkdownRenderer.tsx`（react-markdown + remark-gfm/remark-math + rehype-raw/rehype-prism-plus/rehype-katex）。除 `$` / `$$` 外，还经 `preprocessTexMath()` 支持 MathJax 风格的 `\( ... \)`（行内）与 `\[ ... \]`（块级）；不要新增第二套 Markdown 渲染管线。
+- **KaTeX 版本约束**：`katex`（只用于引 `katex.min.css`）必须与 `rehype-katex` 内部的 katex 同属 **0.16.x** —— katex 0.18 把结构类名改成了 `katex-` 前缀（`.base` → `.katex-base`、`.rlap>.inner` → `.rlap>.katex-inner`），版本不一致会让公式排版错乱（如 `\neq` 的斜杠不再叠加到 `=` 上）。`web/src/test/markdown-math.test.tsx` 有守卫，升级 `rehype-katex` 时要同步调 `web/package.json` 的 `katex` 版本。
 
 ### 技术栈速查
 
