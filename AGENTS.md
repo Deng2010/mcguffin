@@ -8,7 +8,7 @@
 
 **McGuffin** 是算法竞赛出题团队的协作工具。React 18 SPA + Rust/Axum 后端，CP OAuth 认证，SQLite 持久化，带前端插件系统与错误上报。
 
-- 前/后端版本号必须同步（当前 `0.5.0`）
+- 前/后端版本号必须同步（当前 `0.6.0`）
 - 架构：浏览器 → React SPA → Axum API（`/api/v1/` + 兼容层 `/api/`）→ SQLite / CP OAuth
 - 后端为 **分层架构**：`domain`（数据+领域逻辑）→ `handlers`（HTTP 层）→ `infra`（持久化/配置/备份），路由统一在 `routes.rs` 注册。
 - 前端为 **特性分层**：`app`（路由+布局）→ `features`（按领域分组的页面）→ `services`（API 封装）→ `stores`（zustand 状态）→ `plugins`（插件系统）。
@@ -350,7 +350,7 @@ CP OAuth 不可用时回退。输入的 token 直接作为 user_id 前缀匹配�
 
 ## 提交与版本规范
 
-- 前/后端版本号保持同步（`server/Cargo.toml` 的 `version` 与 `web/package.json` 的 `version`，当前均 `0.5.0`）。
+- 前/后端版本号保持同步（`server/Cargo.toml` 的 `version` 与 `web/package.json` 的 `version`，当前均 `0.6.0`）。
   - 同时需更新 `server/Cargo.lock` 中 `mcguffin-server` 的 `version`（`cd server && cargo update --workspace`），
     否则 `--locked` 构建会失败。
   - `docker-compose.yml` 跟随滚动标签 `:stable`（由 `docker.yml` 指向最新正式 release），
