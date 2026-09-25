@@ -70,6 +70,22 @@ pub struct SubmitProblemPayload {
     pub remark: Option<String>,
 }
 
+/// 区分「字段缺失」与「显式 null」的 Option 反序列化器。
+///
+/// 普通的 `Option<Option<T>>` 无法区分两者（serde 会把 `null` 也解成 `None`），
+/// 导致前端用 `{"remark": null}` 清空字段时会被后端当成「未修改」而静默忽略。
+/// 配合 `#[serde(default, deserialize_with = "deserialize_double_option")]`：
+/// - 字段缺失 → `None`（不修改）
+/// - `null`   → `Some(None)`（清空）
+/// - `"x"`    → `Some(Some("x"))`（设置）
+fn deserialize_double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
 #[derive(Deserialize)]
 pub struct EditProblemPayload {
     /// title to set, if changed
@@ -81,13 +97,14 @@ pub struct EditProblemPayload {
     /// content to set, if changed
     #[serde(default)]
     pub content: Option<String>,
-    /// solution to set (None = no change, Some("") = clear, Some("...") = update)
-    #[serde(default)]
-    pub solution: Option<String>,
-    /// contest_id to set (None = no change, Some("") = clear, Some("id") = assign)
-    #[serde(default)]
+    /// solution to set (None = no change, Some("")/Some(null) = clear, Some("...") = update)
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub solution: Option<Option<String>>,
+    /// contest_id to set (None = no change, Some("")/Some(null) = clear, Some("id") = assign)
+    #[serde(default, deserialize_with = "deserialize_double_option")]
     pub contest_id: Option<Option<String>>,
-    #[serde(default)]
+    /// link to set (None = no change, Some("")/Some(null) = clear, Some("url") = update)
+    #[serde(default, deserialize_with = "deserialize_double_option")]
     pub link: Option<Option<String>>,
     /// author_name to set (admin only) — the display name for the author
     #[serde(default)]
@@ -95,8 +112,9 @@ pub struct EditProblemPayload {
     /// author_id to set (admin only, None = no change, Some("unknown") = set unknown, Some("id") = assign to member)
     #[serde(default)]
     pub author_id: Option<String>,
-    #[serde(default)]
-    pub remark: Option<String>,
+    /// remark to set (None = no change, Some("")/Some(null) = clear, Some("...") = update)
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub remark: Option<Option<String>>,
 }
 
 #[derive(Serialize)]

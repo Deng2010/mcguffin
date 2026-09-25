@@ -1,3 +1,4 @@
+use axum::body::Bytes;
 use axum::http::HeaderMap;
 use axum::{
     extract::{Path, Query, State},
@@ -656,15 +657,24 @@ pub async fn review_problem(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((problem_id, action)): Path<(String, String)>,
-    body: Option<Json<serde_json::Value>>,
+    body: Bytes,
 ) -> Json<ReviewResponse> {
-    let reason = body
-        .and_then(|b| {
-            b.get("reason")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_default();
+    // body 是可选的：前端在 approve/publish/unpublish 时不发送内容（但仍带
+    // `Content-Type: application/json`）。axum 的 `Option<Json<T>>` 只在
+    // Content-Type 缺失时才返回 None，空 body + JSON 头会直接 400，因此这里
+    // 自己收 Bytes 并容错解析。
+    let reason = if body.is_empty() {
+        String::new()
+    } else {
+        serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| {
+                v.get("reason")
+                    .and_then(|r| r.as_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_default()
+    };
 
     let (_, _user) = match require_permission_custom(
         &state,
@@ -1429,23 +1439,19 @@ pub async fn update_problem(
     if let Some(val) = payload.content {
         problem.content = val;
     }
+    // 可空字段统一用「None = 不修改，Some(None) = 清空，Some(Some(v)) = 设置」
+    // （见 domain::problem::EditProblemPayload 的双层 Option 反序列化）
     if let Some(val) = payload.solution {
-        problem.solution = if val.is_empty() { None } else { Some(val) };
+        problem.solution = val.filter(|s| !s.is_empty());
     }
     if is_admin_user {
         if let Some(val) = payload.contest_id {
-            problem.contest_id = match val {
-                Some(s) if !s.is_empty() => Some(s),
-                _ => None,
-            };
+            problem.contest_id = val.filter(|s| !s.is_empty());
         }
     }
     if is_admin_user {
         if let Some(val) = payload.link {
-            problem.link = match val {
-                Some(s) if !s.is_empty() => Some(s),
-                _ => None,
-            };
+            problem.link = val.filter(|s| !s.is_empty());
         }
     }
     if is_admin_user {
@@ -1476,7 +1482,7 @@ pub async fn update_problem(
         }
     }
     if let Some(val) = payload.remark {
-        problem.remark = if val.is_empty() { None } else { Some(val) };
+        problem.remark = val.filter(|s| !s.is_empty());
     }
 
     state.insert_problem(&problem).await;

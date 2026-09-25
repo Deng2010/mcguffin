@@ -921,6 +921,120 @@ async fn test_resubmit_returned_problem() {
     assert!(p.remark.is_none());
 }
 
+// ============== Problem review / edit payload edge cases ==============
+
+/// approve/publish/unpublish 不带 body，但前端仍会带上
+/// `Content-Type: application/json`（apiFetch 统一设置），此时绝不能 400。
+#[tokio::test]
+async fn test_review_problem_accepts_empty_json_body() {
+    let state = AppState::new().await;
+    let problem_id = seed_pending_problem(&state, "member1").await;
+    let token = create_session(&state, "admin").await;
+    let app = test_router(state.clone());
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/problems/review/{}/approve", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "空 body + JSON Content-Type 不应被 axum 的 Json 提取器拒绝"
+    );
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], true);
+    assert_eq!(
+        state.problems.read().await.get(&problem_id).unwrap().status,
+        "approved"
+    );
+}
+
+/// 编辑题目：`null` 表示清空（remark / contest_id / link），字段缺失表示不修改。
+#[tokio::test]
+async fn test_edit_problem_null_clears_optional_fields() {
+    let state = AppState::new().await;
+    let problem_id = seed_pending_problem(&state, "member1").await;
+    {
+        let mut problems = state.problems.write().await;
+        let p = problems.get_mut(&problem_id).unwrap();
+        p.remark = Some("旧的审核备注".to_string());
+        p.contest_id = Some("contest-1".to_string());
+        p.link = Some("https://example.com/problem".to_string());
+    }
+
+    let token = create_session(&state, "admin").await;
+    let app = test_router(state.clone());
+
+    // 只清空 remark：contest_id / link 未出现在 body 中 → 保持不变
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/problems/{}", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"remark":null}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], true, "清空 remark 应成功: {v}");
+
+    {
+        let problems = state.problems.read().await;
+        let after = problems.get(&problem_id).unwrap();
+        assert!(after.remark.is_none(), "null 应清空 remark");
+        assert_eq!(
+            after.contest_id.as_deref(),
+            Some("contest-1"),
+            "未提交的 contest_id 不应被修改"
+        );
+        assert_eq!(
+            after.link.as_deref(),
+            Some("https://example.com/problem"),
+            "未提交的 link 不应被修改"
+        );
+    }
+
+    // 空字符串同样等价于清空；contest_id / link 用 null 清空
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/problems/{}", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"remark":"","contest_id":null,"link":null}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let problems = state.problems.read().await;
+    let after = problems.get(&problem_id).unwrap();
+    assert!(after.remark.is_none(), "空字符串应清空 remark");
+    assert!(after.contest_id.is_none(), "null 应清空 contest_id");
+    assert!(after.link.is_none(), "null 应清空 link");
+}
+
 // ============== Multi-verifier claim tests ==============
 
 /// Multiple distinct members can claim the same approved problem.
