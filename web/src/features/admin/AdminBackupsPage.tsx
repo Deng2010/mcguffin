@@ -25,9 +25,34 @@ export default function AdminBackupsPage() {
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [busy, setBusy] = useState(false);
   const toast = useToast();
   const importFileRef = useRef<HTMLInputElement>(null);
   const importConfigRef = useRef<HTMLInputElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  const allSelected = backups.length > 0 && selected.size === backups.length;
+  const someSelected = selected.size > 0 && !allSelected;
+
+  // 全选框的半选（indeterminate）状态只能通过 DOM 属性设置
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected;
+  }, [someSelected]);
+
+  const selectedNames = () =>
+    backups.filter((b) => selected.has(b.name)).map((b) => b.name);
+
+  const toggleOne = (name: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  const toggleAll = () =>
+    setSelected(allSelected ? new Set() : new Set(backups.map((b) => b.name)));
 
   const load = async () => {
     setLoading(true);
@@ -35,7 +60,15 @@ export default function AdminBackupsPage() {
       const res = (await getBackups()) as unknown as ActionResult & {
         backups: BackupEntry[];
       };
-      if (res.success) setBackups(res.backups);
+      if (res.success) {
+        setBackups(res.backups);
+        // 丢弃已不存在的备份的勾选状态
+        const names = new Set(res.backups.map((b) => b.name));
+        setSelected((prev) => {
+          const next = new Set([...prev].filter((n) => names.has(n)));
+          return next.size === prev.size ? prev : next;
+        });
+      }
     } catch (err) {
       toast.error(`加载备份列表失败: ${err}`);
     } finally {
@@ -100,6 +133,39 @@ export default function AdminBackupsPage() {
         ? `${(b / 1024).toFixed(1)} KB`
         : `${b} B`;
 
+  /** 把后端返回的文件内容（base64 或纯文本）保存为本地下载 */
+  const saveResponse = (res: ActionResult) => {
+    const blob =
+      res.encoding === "base64"
+        ? new Blob(
+            [Uint8Array.from(atob(res.content), (c) => c.charCodeAt(0))],
+            { type: res.mime },
+          )
+        : new Blob([res.content], { type: res.mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = res.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  /** 汇总批量操作结果 */
+  const summarize = (verb: string, total: number, failed: string[]) => {
+    const ok = total - failed.length;
+    if (failed.length === 0) {
+      toast.success(`已${verb} ${ok} 个备份`);
+    } else if (ok === 0) {
+      toast.error(`${verb}失败: ${failed.join("、")}`);
+    } else {
+      toast.error(
+        `已${verb} ${ok} 个，${failed.length} 个失败: ${failed.join("、")}`,
+      );
+    }
+  };
+
   const handleDownload = async (name: string) => {
     try {
       const res = await downloadBackup(name);
@@ -107,24 +173,68 @@ export default function AdminBackupsPage() {
         toast.error(`下载失败: ${res.message}`);
         return;
       }
-      const blob =
-        res.encoding === "base64"
-          ? new Blob(
-              [Uint8Array.from(atob(res.content), (c) => c.charCodeAt(0))],
-              { type: res.mime },
-            )
-          : new Blob([res.content], { type: res.mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = res.filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      saveResponse(res);
       toast.success(`已下载: ${res.filename}`);
     } catch (err) {
       toast.error(`下载失败: ${err}`);
+    }
+  };
+
+  /** 批量下载：依次下载选中的备份并汇总结果 */
+  const handleBatchDownload = async () => {
+    const names = selectedNames();
+    if (names.length === 0) return;
+    if (
+      names.length > 1 &&
+      !confirm(
+        `将依次下载选中的 ${names.length} 个备份文件，浏览器可能询问是否允许下载多个文件。继续吗？`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      const failed: string[] = [];
+      for (let i = 0; i < names.length; i++) {
+        try {
+          const res = await downloadBackup(names[i]);
+          if (res.success) saveResponse(res);
+          else failed.push(names[i]);
+        } catch {
+          failed.push(names[i]);
+        }
+        // 稍作间隔，避免连续触发被浏览器当作自动下载拦截
+        if (i < names.length - 1) {
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      }
+      summarize("下载", names.length, failed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 批量删除：逐条调用删除接口并汇总成功/失败数量 */
+  const handleBatchDelete = async () => {
+    const names = selectedNames();
+    if (names.length === 0) return;
+    if (!confirm(`确定要删除选中的 ${names.length} 个备份吗？此操作不可恢复。`))
+      return;
+    setBusy(true);
+    try {
+      const failed: string[] = [];
+      for (const name of names) {
+        try {
+          const res = await deleteBackup(name);
+          if (!res.success) failed.push(name);
+        } catch {
+          failed.push(name);
+        }
+      }
+      summarize("删除", names.length, failed);
+      setSelected(new Set());
+      await load();
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -135,15 +245,7 @@ export default function AdminBackupsPage() {
         toast.error(`导出失败: ${res.message}`);
         return;
       }
-      const blob = new Blob([res.content!], { type: res.mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = res.filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      saveResponse(res);
       toast.success(`已导出: ${res.filename}`);
     } catch (err) {
       toast.error(`导出失败: ${err}`);
@@ -157,18 +259,7 @@ export default function AdminBackupsPage() {
         toast.error(`导出失败: ${res.message}`);
         return;
       }
-      const blob = new Blob(
-        [Uint8Array.from(atob(res.content), (c) => c.charCodeAt(0))],
-        { type: res.mime },
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = res.filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      saveResponse(res);
       toast.success(`已导出: ${res.filename}`);
     } catch (err) {
       toast.error(`导出失败: ${err}`);
@@ -291,7 +382,7 @@ export default function AdminBackupsPage() {
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-100 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
           备份管理
         </h2>
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex flex-wrap items-center gap-3 mb-4">
           <button
             onClick={handleCreate}
             disabled={creating}
@@ -306,6 +397,47 @@ export default function AdminBackupsPage() {
           >
             刷新
           </button>
+          {!loading && backups.length > 0 && (
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 select-none cursor-pointer ml-1">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                disabled={busy}
+                aria-label="全选备份"
+              />
+              全选
+            </label>
+          )}
+          {selected.size > 0 && (
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                已选 {selected.size} / {backups.length} 项
+              </span>
+              <button
+                onClick={handleBatchDownload}
+                disabled={busy}
+                className="px-3 py-1.5 text-xs border border-blue-500 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50"
+              >
+                批量下载
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                disabled={busy}
+                className="px-3 py-1.5 text-xs border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+              >
+                {busy ? "处理中..." : "批量删除"}
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                disabled={busy}
+                className="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+              >
+                取消选择
+              </button>
+            </div>
+          )}
         </div>
         {loading ? (
           <div className="text-center py-8 text-gray-400 dark:text-gray-500">
@@ -320,56 +452,76 @@ export default function AdminBackupsPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {backups.map((b) => (
-              <div
-                key={b.name}
-                className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <svg
-                      className="w-5 h-5 text-gray-400 dark:text-gray-500 shrink-0"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+            {backups.map((b) => {
+              const isSelected = selected.has(b.name);
+              return (
+                <div
+                  key={b.name}
+                  className={`flex items-center justify-between p-4 border hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                    isSelected
+                      ? "bg-blue-50/60 dark:bg-blue-900/20 border-blue-400 dark:border-blue-700"
+                      : "bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700"
+                  }`}
+                >
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleOne(b.name)}
+                      disabled={busy}
+                      aria-label={`选择备份 ${b.name}`}
+                      className="shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <svg
+                          className="w-5 h-5 text-gray-400 dark:text-gray-500 shrink-0"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
+                          />
+                        </svg>
+                        <span className="font-medium text-gray-800 dark:text-gray-100 truncate text-sm">
+                          {b.name}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 ml-7">
+                        {fmtSize(b.size)} · {b.modified}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 ml-4 shrink-0">
+                    <button
+                      onClick={() => handleDownload(b.name)}
+                      disabled={busy}
+                      className="px-3 py-1.5 text-xs border border-blue-500 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"
-                      />
-                    </svg>
-                    <span className="font-medium text-gray-800 dark:text-gray-100 truncate text-sm">
-                      {b.name}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 ml-7">
-                    {fmtSize(b.size)} · {b.modified}
+                      下载
+                    </button>
+                    <button
+                      onClick={() => handleRestore(b.name)}
+                      disabled={busy}
+                      className="px-3 py-1.5 text-xs border border-green-600 dark:border-green-800 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 disabled:opacity-50"
+                    >
+                      恢复
+                    </button>
+                    <button
+                      onClick={() => handleDelete(b.name)}
+                      disabled={busy}
+                      className="px-3 py-1.5 text-xs border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                    >
+                      删除
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 ml-4 shrink-0">
-                  <button
-                    onClick={() => handleDownload(b.name)}
-                    className="px-3 py-1.5 text-xs border border-blue-500 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                  >
-                    下载
-                  </button>
-                  <button
-                    onClick={() => handleRestore(b.name)}
-                    className="px-3 py-1.5 text-xs border border-green-600 dark:border-green-800 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20"
-                  >
-                    恢复
-                  </button>
-                  <button
-                    onClick={() => handleDelete(b.name)}
-                    className="px-3 py-1.5 text-xs border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                  >
-                    删除
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">
               共 {backups.length} 个备份 · 恢复操作会自动创建当前数据的
               pre_restore_ 安全快照
