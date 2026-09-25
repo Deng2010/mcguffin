@@ -295,6 +295,34 @@ https://github.com/<owner>/<repo>/releases/latest/download/<id>.zip
 
 ---
 
+## 参考实现：榜榜糖（lollipop-rank）
+
+模板之外还有一个**完整的真实插件**可以参考：榜榜糖（团队成员点糖 / 周冠军小游戏）。
+它原本以「内联插件」形式躺在主仓库（`web/src/plugins/lollipop-rank/`，基于已移除的
+前端代码注册机制），现已按插件规范重写并迁到独立仓库，本地与主仓库同级：
+
+```
+mcguffin/                              # 宿主（本仓库）
+mcguffin-plugin-lollipop-rank/         # 插件仓库（独立 git repo）
+```
+
+它比模板多演示了这些常见需求：
+
+| 需求 | 做法 |
+|------|------|
+| 插件内可调参数 | 参数存 KV（`config/params`），配一个仅管理员可见的设置面板（区间校验 + 成功率预览），管理员判定用 `pluginUserMe().effective_role` |
+| 服务端原子计数 | 每日次数用 `pluginIncr` / `pluginAdd`，替代 KV「读-改-写」，避免多 Tab 并发超额 |
+| 周期任务 | 插件没有后台任务上下文，改用「打开页面时懒结算 + KV 占位锁」实现每周一 0:00 结算 |
+| 自带样式 | 把 `?inline` 的 CSS 字符串打进 JS 并在运行时注入 `<style>`，深色模式跟随宿主 `html.dark` |
+| 数据兼容 | 插件 id 与 KV 布局保持不变，升级 zip 不丢数据 |
+| 质量保障 | 单测（纯逻辑 / 存储 / 清单 / jsdom 页面集成）+ 产物冒烟测试（真正 `import()` 入口 ESM 校验自注册结果）+ CI / Release 工作流 |
+
+仓库为本地兄弟目录 `mcguffin-plugin-lollipop-rank`；推到远端后可长期用
+`https://github.com/<owner>/mcguffin-plugin-lollipop-rank/releases/latest/download/lollipop-rank.zip`
+在后台「从 URL 安装 / 更新」。
+
+---
+
 ## 相关文档
 
 | 文档 | 内容 |
@@ -302,4 +330,5 @@ https://github.com/<owner>/<repo>/releases/latest/download/<id>.zip
 | [插件管理](../admin/plugins.md) | 安装 / 卸载 / 打包契约 / plugin.json / 权限清单 |
 | [开发环境搭建](development.md) | 主仓库前端 / 后端本地开发 |
 | `templates/plugin/` | 可直接复制的插件仓库骨架 |
+| `mcguffin-plugin-lollipop-rank`（兄弟目录） | 榜榜糖插件仓库：完整参考实现 |
 | `web/src/plugins/sdk/plugin-sdk.d.ts` | SDK 规范类型声明（插件仓库需同步此文件） |

@@ -282,6 +282,7 @@ McGuffin 支持**前端插件**，动态扩展页面与能力。插件一律以 
 - **独立插件 repo 准备**：模板骨架在 `templates/plugin/`（Vite lib 模式 + zip 打包 + Release CI），SDK 类型声明 `web/src/plugins/sdk/plugin-sdk.d.ts`（模板内 `types/mcguffin-plugin-sdk.d.ts` 为其副本，`web/src/test/plugin-sdk-types.test.ts` 防漂移），开发指南见 `docs/guide/plugin-development.md`。
 - **插件 import map（JSX 开箱可用）**：`web/index.html` 的 `<script type="importmap">` 把 `react` / `react/jsx-runtime` / `react/jsx-dev-runtime` / `react-dom` 映射到 `web/public/plugin-sdk/*.js` 静态垫片；垫片转发到 `window.__MCGUFFIN_SDK__`（同一份 React / ReactDOM），因此插件可直接 `import { useState } from "react"` 与写 JSX，不必自带 React。映射与垫片的一致性由 `web/src/test/plugin-sdk-import-map.test.ts` 守卫（含 main.tsx 成员 ↔ 规范声明）。
 - **主仓库不含任何具体插件**，只跟踪插件系统本身（`registry.ts` / `types.ts` / `PluginPage.tsx` / `index.ts` / `sdk/`）。早期基于 `definePlugin()` + `import.meta.glob("/src/plugins/*/index.ts")` 的**前端代码注册机制已移除**（`registry.discover()` 随之删除）；`source` 字段中的 `"code"` 仅作为历史数据残留值保留。
+- **已知独立插件仓库**：榜榜糖（`lollipop-rank`）原为内联插件（`web/src/plugins/lollipop-rank/`，已随 `66471b0` 移除），现按插件规范重写并独立维护在**兄弟仓库** `mcguffin-plugin-lollipop-rank`（本地与主仓库同级 checkout）。该插件的任何改动请到那个仓库进行，**不要**在本仓重建具体插件；它能作为插件作者的真实参考实现（可调参数面板、原子计数器、懒结算、自带样式、单测 + 产物冒烟 + CI），见 `docs/guide/plugin-development.md` 的「参考实现」。
 
 关键实现点：
 
