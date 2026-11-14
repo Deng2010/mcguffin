@@ -312,8 +312,9 @@ McGuffin 支持**前端插件**，动态扩展页面与能力。插件一律以 
 ## 题目验题（verifiers）
 
 - 迁移文件 `migrations/20260816000001_add_verifiers.sql` 引入「验题人」概念，支持下钻多验题人流程。
-- 相关 handler：`submit_verifier_comment` / `submit_verifier_solution` / `claim_problem` / `unclaim_problem` / `resubmit_problem` / `review_problem`（见 `handlers/problem.rs`）。
+- 相关 handler：`submit_verifier_comment` / `submit_verifier_solution` / `claim_problem` / `unclaim_problem` / `resubmit_problem` / `withdraw_problem` / `review_problem`（见 `handlers/problem.rs`）。
 - 题目状态含「退回」状态（见最新提交「题目退回状态、多验题人与资源权限死锁修复」）。
+- 出题人可撤回自己的待审核题目：`POST /api/problems/:id/withdraw`（`withdraw_problem`），`pending → returned`，无需全局权限，仅校验 `author_id`；之后走既有 `resubmit_problem` 流程。
 
 ---
 

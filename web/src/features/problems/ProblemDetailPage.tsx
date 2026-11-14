@@ -9,6 +9,7 @@ import {
   submitVerifierComment,
   submitVerifierSolution,
   updateProblem,
+  withdrawProblem,
 } from "../../services/problem.service";
 import { getMembers } from "../../services/team.service";
 import MarkdownRenderer from "../../components/MarkdownRenderer";
@@ -162,6 +163,28 @@ export default function ProblemDetailPage() {
     }
   };
 
+  const handleWithdraw = async () => {
+    if (!problem) return;
+    if (
+      !window.confirm(
+        `确定撤回题目「${problem.title}」吗？撤回后可继续修改并重新提交。`,
+      )
+    )
+      return;
+    try {
+      const res = await withdrawProblem(problem.id);
+      if (!res.success) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success("已撤回，可修改后重新提交");
+      const updated = await getProblemDetail(id!);
+      setProblem(updated);
+    } catch (err) {
+      toast.error(`撤回失败: ${errorMessage(err)}`);
+    }
+  };
+
   const handleSaveVerifierSolution = async () => {
     try {
       const res = await submitVerifierSolution(id!, verifierSolution);
@@ -245,13 +268,26 @@ export default function ProblemDetailPage() {
           ) : (
             <div />
           )}
-          {canEdit && !editing && (
-            <button
-              onClick={openEdit}
-              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              编辑
-            </button>
+          {!editing && (
+            <div className="flex items-center gap-2">
+              {problem.status === "pending" &&
+                problem.author_id === user?.id && (
+                  <button
+                    onClick={handleWithdraw}
+                    className="px-3 py-1.5 text-sm border border-yellow-500 text-yellow-700 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-300 dark:hover:bg-yellow-900/20"
+                  >
+                    撤回
+                  </button>
+                )}
+              {canEdit && (
+                <button
+                  onClick={openEdit}
+                  className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  编辑
+                </button>
+              )}
+            </div>
           )}
         </div>
 

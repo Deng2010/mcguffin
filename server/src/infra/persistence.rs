@@ -515,6 +515,45 @@ impl AppState {
         }
     }
 
+    /// 用户显示名称变更后，同步题目里冗余的作者 / 验题人显示名（双写）。
+    ///
+    /// 题目的 `author_name`、验题人及验题评论的 `user_name` 是显示名快照。
+    /// 用户改名后若不同步，题目卡片/详情仍显示旧名字，且前端基于名字的
+    /// 「我的题目」判断会与实际作者（`author_id`）脱节。`author_id == "unknown"`
+    /// 的题目不会被匹配，因此人工设置的「未知出题人」不受影响。
+    pub async fn sync_problem_user_display_name(&self, user_id: &str, new_name: &str) {
+        let changed: Vec<Problem> = {
+            let mut problems = self.problems.write().await;
+            let mut changed = Vec::new();
+            for problem in problems.values_mut() {
+                let mut touched = false;
+                if problem.author_id == user_id && problem.author_name != new_name {
+                    problem.author_name = new_name.to_string();
+                    touched = true;
+                }
+                for verifier in problem.verifiers.iter_mut() {
+                    if verifier.user_id == user_id && verifier.user_name != new_name {
+                        verifier.user_name = new_name.to_string();
+                        touched = true;
+                    }
+                    for comment in verifier.comments.iter_mut() {
+                        if comment.user_id == user_id && comment.user_name != new_name {
+                            comment.user_name = new_name.to_string();
+                            touched = true;
+                        }
+                    }
+                }
+                if touched {
+                    changed.push(problem.clone());
+                }
+            }
+            changed
+        };
+        for problem in &changed {
+            self.insert_problem(problem).await;
+        }
+    }
+
     /// 更新题目单个字段（双写）
     pub async fn update_problem_field<T: ToString + Send>(
         &self,

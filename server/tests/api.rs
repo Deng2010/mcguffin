@@ -46,6 +46,25 @@ fn auth_header(token: &str) -> (&'static str, String) {
     ("Authorization", format!("Bearer {}", token))
 }
 
+/// 构造一个已入队的普通成员（无审核权限）。
+fn member_user(id: &str) -> User {
+    User {
+        id: id.to_string(),
+        username: id.to_string(),
+        display_name: id.to_string(),
+        avatar_url: None,
+        email: None,
+        role: "member".to_string(),
+        team_status: "joined".to_string(),
+        created_at: chrono::Utc::now(),
+        bio: String::new(),
+        password_hash: None,
+        effective_role: "member".to_string(),
+        group_ids: vec![],
+        user_permissions: vec![],
+    }
+}
+
 /// 未匹配路由 → 统一 404 JSON。
 #[tokio::test]
 async fn test_api_fallback_returns_json_404() {
@@ -921,6 +940,149 @@ async fn test_resubmit_returned_problem() {
     assert!(p.remark.is_none());
 }
 
+// ============== Author withdraw (self-return) tests ==============
+
+/// 出题人可以撤回答题自己的待审核题目（pending -> returned），无需审核权限；
+/// 撤回后继续走既有的「修改 -> 再次提交」流程。
+#[tokio::test]
+async fn test_author_can_withdraw_own_pending_problem() {
+    let state = AppState::new().await;
+    state.users.write().await.insert(
+        "withdraw-author".to_string(),
+        member_user("withdraw-author"),
+    );
+    let problem_id = seed_pending_problem(&state, "withdraw-author").await;
+    let token = create_session(&state, "withdraw-author").await;
+    let app = test_router(state.clone());
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/problems/{}/withdraw", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], true, "出题人撤回应成功: {v}");
+    assert_eq!(
+        state.problems.read().await.get(&problem_id).unwrap().status,
+        "returned"
+    );
+
+    // 撤回后可再次提交，回到待审核
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/problems/{}/resubmit", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], true, "撤回后再次提交应成功: {v}");
+    assert_eq!(
+        state.problems.read().await.get(&problem_id).unwrap().status,
+        "pending"
+    );
+}
+
+/// 非出题人（包括管理员）不能调用撤回接口——管理员应使用「退回」。
+#[tokio::test]
+async fn test_withdraw_problem_requires_author() {
+    let state = AppState::new().await;
+    state
+        .users
+        .write()
+        .await
+        .insert("withdraw-other".to_string(), member_user("withdraw-other"));
+    let problem_id = seed_pending_problem(&state, "withdraw-author").await;
+    let app = test_router(state.clone());
+
+    for (actor, token) in [
+        (
+            "withdraw-other",
+            create_session(&state, "withdraw-other").await,
+        ),
+        ("admin", create_session(&state, "admin").await),
+    ] {
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/problems/{}/withdraw", problem_id))
+                    .header("Authorization", format!("Bearer {}", token))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["success"], false, "{actor} 不应能撤回答题: {v}");
+        assert_eq!(
+            state.problems.read().await.get(&problem_id).unwrap().status,
+            "pending",
+            "{actor} 撤回失败后题目状态不应改变"
+        );
+    }
+}
+
+/// 只有待审核题目可以撤回；已通过 / 已发布题目需走审核流程。
+#[tokio::test]
+async fn test_withdraw_problem_requires_pending_status() {
+    let state = AppState::new().await;
+    state.users.write().await.insert(
+        "withdraw-author".to_string(),
+        member_user("withdraw-author"),
+    );
+    let problem_id = seed_pending_problem(&state, "withdraw-author").await;
+    state
+        .update_problem_field(&problem_id, "status", "approved")
+        .await;
+    let token = create_session(&state, "withdraw-author").await;
+    let app = test_router(state.clone());
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/problems/{}/withdraw", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], false);
+    assert_eq!(
+        state.problems.read().await.get(&problem_id).unwrap().status,
+        "approved"
+    );
+}
+
 // ============== Problem review / edit payload edge cases ==============
 
 /// approve/publish/unpublish 不带 body，但前端仍会带上
@@ -970,6 +1132,7 @@ async fn test_edit_problem_null_clears_optional_fields() {
         let mut problems = state.problems.write().await;
         let p = problems.get_mut(&problem_id).unwrap();
         p.remark = Some("旧的审核备注".to_string());
+        p.contest = "旧比赛名".to_string();
         p.contest_id = Some("contest-1".to_string());
         p.link = Some("https://example.com/problem".to_string());
     }
@@ -1032,7 +1195,141 @@ async fn test_edit_problem_null_clears_optional_fields() {
     let after = problems.get(&problem_id).unwrap();
     assert!(after.remark.is_none(), "空字符串应清空 remark");
     assert!(after.contest_id.is_none(), "null 应清空 contest_id");
+    assert!(
+        after.contest.is_empty(),
+        "清空 contest_id 时冗余的比赛名也应清空"
+    );
     assert!(after.link.is_none(), "null 应清空 link");
+}
+
+/// 为题目分配比赛时，`contest_id` 与冗余的 `contest` 名称一起更新。
+#[tokio::test]
+async fn test_edit_problem_assign_contest_syncs_name() {
+    let state = AppState::new().await;
+    let problem_id = seed_pending_problem(&state, "member1").await;
+    let contest = Contest {
+        id: "contest-sync".to_string(),
+        name: "同步测试赛".to_string(),
+        start_time: "2026-01-01T00:00:00Z".to_string(),
+        end_time: "2026-01-02T00:00:00Z".to_string(),
+        description: String::new(),
+        created_by: "admin".to_string(),
+        created_at: chrono::Utc::now(),
+        status: "draft".to_string(),
+        link: None,
+        problem_order: vec![],
+        visible_to: vec![],
+        editable_by: vec![],
+    };
+    state
+        .contests
+        .write()
+        .await
+        .insert(contest.id.clone(), contest);
+
+    let token = create_session(&state, "admin").await;
+    let app = test_router(state.clone());
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/api/problems/{}", problem_id))
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"contest_id":"contest-sync"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], true, "分配比赛应成功: {v}");
+
+    let problems = state.problems.read().await;
+    let after = problems.get(&problem_id).unwrap();
+    assert_eq!(after.contest_id.as_deref(), Some("contest-sync"));
+    assert_eq!(after.contest, "同步测试赛", "冗余的比赛名应同步为比赛名称");
+}
+
+/// 修改用户显示名称后，其题目的作者 / 验题人显示名应同步更新。
+#[tokio::test]
+async fn test_update_profile_syncs_problem_display_names() {
+    let state = AppState::new().await;
+
+    let member = User {
+        id: "rename-member".to_string(),
+        username: "rename-member".to_string(),
+        display_name: "旧显示名".to_string(),
+        avatar_url: None,
+        email: None,
+        role: "member".to_string(),
+        team_status: "joined".to_string(),
+        created_at: chrono::Utc::now(),
+        bio: String::new(),
+        password_hash: None,
+        effective_role: "member".to_string(),
+        group_ids: vec![],
+        user_permissions: vec![],
+    };
+    state.users.write().await.insert(member.id.clone(), member);
+
+    let problem_id = seed_pending_problem(&state, "rename-member").await;
+    {
+        let mut problems = state.problems.write().await;
+        let p = problems.get_mut(&problem_id).unwrap();
+        p.author_name = "旧显示名".to_string();
+        p.verifiers.push(VerifierEntry {
+            user_id: "rename-member".to_string(),
+            user_name: "旧显示名".to_string(),
+            solution: None,
+            comments: vec![VerifierComment {
+                id: "rename-comment".to_string(),
+                user_id: "rename-member".to_string(),
+                user_name: "旧显示名".to_string(),
+                content: "验题评论".to_string(),
+                created_at: chrono::Utc::now(),
+            }],
+            claimed_at: chrono::Utc::now(),
+        });
+    }
+
+    let token = create_session(&state, "rename-member").await;
+    let app = test_router(state.clone());
+
+    let res = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/api/user/profile")
+                .header("Authorization", format!("Bearer {}", token))
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"display_name":"新显示名"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+        .await
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(v["success"], true, "修改显示名应成功: {v}");
+
+    let problems = state.problems.read().await;
+    let after = problems.get(&problem_id).unwrap();
+    assert_eq!(after.author_name, "新显示名", "题目作者显示名应同步");
+    assert_eq!(
+        after.verifiers[0].user_name, "新显示名",
+        "验题人显示名应同步"
+    );
+    assert_eq!(
+        after.verifiers[0].comments[0].user_name, "新显示名",
+        "验题评论显示名应同步"
+    );
 }
 
 // ============== Multi-verifier claim tests ==============

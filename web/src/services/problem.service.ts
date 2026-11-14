@@ -97,6 +97,13 @@ export async function resubmitProblem(id: string): Promise<ActionResult> {
   });
 }
 
+/** 出题人撤回自己的待审核题目（进入「已退回」，可修改后重新提交）。 */
+export async function withdrawProblem(id: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/problems/${id}/withdraw`, {
+    method: "POST",
+  });
+}
+
 export async function submitVerifierComment(
   id: string,
   content: string,

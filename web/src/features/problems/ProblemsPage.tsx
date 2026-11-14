@@ -43,7 +43,7 @@ export default function ProblemsPage() {
   const [filterAuthor, setFilterAuthor] = useState("");
 
   // ====== Derived lists ======
-  const lists = useProblemLists(problems, user?.id, user?.display_name);
+  const lists = useProblemLists(problems, user?.id);
   const filteredProblems = useProblemFilters(
     problems,
     searchText,
@@ -111,8 +111,19 @@ export default function ProblemsPage() {
   };
 
   const goDetail = (problemId: string) => navigate(`/problems/${problemId}`);
-  const isAuthorOf = (p: { author_name: string }) =>
-    user?.display_name === p.author_name;
+  // 用 author_id 判断归属：显示名称可能随时修改，不能作为身份依据。
+  const isAuthorOf = (p: { author_id: string }) => user?.id === p.author_id;
+
+  // 出题人可撤回自己待审核的题目（无需审核权限，撤回后可修改再重新提交）
+  const withdrawAction = (p: ProblemListItem) =>
+    p.status === "pending" && p.author_id === user?.id ? (
+      <button
+        onClick={() => actions.handleWithdraw(p.id, p.title)}
+        className="px-3 py-1.5 text-xs border border-yellow-500 text-yellow-700 hover:bg-yellow-50 dark:border-yellow-800 dark:text-yellow-300 dark:hover:bg-yellow-900/20"
+      >
+        撤回
+      </button>
+    ) : null;
 
   const renderCard = (p: ProblemListItem, extraActions?: React.ReactNode) => (
     <ProblemCard
@@ -190,7 +201,7 @@ export default function ProblemsPage() {
                 return false;
               return true;
             })
-            .map((p) => renderCard(p))}
+            .map((p) => renderCard(p, withdrawAction(p)))}
         </div>
       </>
     );
@@ -207,33 +218,39 @@ export default function ProblemsPage() {
       );
     return (
       <div className="space-y-4">
-        {items.map((p) =>
-          renderCard(
+        {items.map((p) => {
+          const withdraw = withdrawAction(p);
+          return renderCard(
             p,
-            canApprove ? (
+            withdraw || canApprove ? (
               <>
-                <button
-                  onClick={() => actions.handleReview(p.id, "approve")}
-                  className="px-3 py-1.5 text-xs bg-green-700 text-white hover:bg-green-600"
-                >
-                  通过
-                </button>
-                <button
-                  onClick={() => actions.openReasonDialog(p.id, "reply")}
-                  className="px-3 py-1.5 text-xs border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
-                >
-                  回复
-                </button>
-                <button
-                  onClick={() => actions.openReasonDialog(p.id, "reject")}
-                  className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
-                >
-                  退回
-                </button>
+                {withdraw}
+                {canApprove && (
+                  <>
+                    <button
+                      onClick={() => actions.handleReview(p.id, "approve")}
+                      className="px-3 py-1.5 text-xs bg-green-700 text-white hover:bg-green-600"
+                    >
+                      通过
+                    </button>
+                    <button
+                      onClick={() => actions.openReasonDialog(p.id, "reply")}
+                      className="px-3 py-1.5 text-xs border border-blue-300 text-blue-600 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/20"
+                    >
+                      回复
+                    </button>
+                    <button
+                      onClick={() => actions.openReasonDialog(p.id, "reject")}
+                      className="px-3 py-1.5 text-xs border border-red-300 text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                    >
+                      退回
+                    </button>
+                  </>
+                )}
               </>
             ) : undefined,
-          ),
-        )}
+          );
+        })}
       </div>
     );
   };

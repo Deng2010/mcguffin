@@ -12,6 +12,7 @@ vi.mock("../services/problem.service", () => ({
   reviewProblem: vi.fn(),
   deleteProblem: vi.fn(),
   resubmitProblem: vi.fn(),
+  withdrawProblem: vi.fn(),
   claimProblem: vi.fn(),
   unclaimProblem: vi.fn(),
   setProblemContest: vi.fn(),

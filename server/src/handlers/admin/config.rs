@@ -1103,10 +1103,13 @@ pub async fn init_admin(
     }
 
     // Update admin user in memory and SQLite
+    let admin_name_changed: bool;
     {
         let mut users = state.users.write().await;
         if let Some(admin_user) = users.get_mut(crate::state::ADMIN_USER_ID) {
+            let old_display_name = admin_user.display_name.clone();
             admin_user.display_name = payload.display_name.trim().to_string();
+            admin_name_changed = admin_user.display_name != old_display_name;
             if let Some(url) = &payload.avatar_url {
                 if !url.trim().is_empty() {
                     admin_user.avatar_url = Some(url.trim().to_string());
@@ -1124,6 +1127,16 @@ pub async fn init_admin(
             drop(users);
             return json_error(ErrorCode::INTERNAL_ERROR, "系统错误：找不到管理员用户");
         }
+    }
+
+    // 管理员显示名称变更后，同步题目中的作者/验题人显示名快照
+    if admin_name_changed {
+        state
+            .sync_problem_user_display_name(
+                crate::state::ADMIN_USER_ID,
+                payload.display_name.trim(),
+            )
+            .await;
     }
 
     // Update in-memory state.admin_password for immediate effect

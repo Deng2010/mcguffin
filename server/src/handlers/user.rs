@@ -179,6 +179,7 @@ pub async fn update_profile(
         Some(u) => u,
         None => return json_error(ErrorCode::USER_NOT_FOUND, "用户不存在"),
     };
+    let old_display_name = user.display_name.clone();
 
     // Apply changes
     if let Some(name) = name_change {
@@ -213,6 +214,13 @@ pub async fn update_profile(
 
     let updated_user = user.clone();
     state.update_user(&user).await;
+
+    // 显示名称变更后同步题目上的冗余显示名，避免题目仍显示旧名字。
+    if user.display_name != old_display_name {
+        state
+            .sync_problem_user_display_name(&user_id, &user.display_name)
+            .await;
+    }
 
     Json(serde_json::json!({
         "success": true,

@@ -1446,7 +1446,25 @@ pub async fn update_problem(
     }
     if is_admin_user {
         if let Some(val) = payload.contest_id {
+            // contest_id 与冗余的 contest 名称必须同步更新：
+            // 列表用 COALESCE(c.name, p.contest)、详情在 contest 记录缺失时回退到
+            // p.contest —— 只清 contest_id 会让旧比赛名继续显示，表现为「无法改为空」。
             problem.contest_id = val.filter(|s| !s.is_empty());
+            problem.contest = match &problem.contest_id {
+                Some(cid) => {
+                    let contests = state.contests.read().await;
+                    match contests.get(cid) {
+                        Some(c) => c.name.clone(),
+                        None => {
+                            return Json(ReviewResponse {
+                                success: false,
+                                message: "比赛不存在".to_string(),
+                            })
+                        }
+                    }
+                }
+                None => String::new(),
+            };
         }
     }
     if is_admin_user {
@@ -1546,6 +1564,66 @@ pub async fn resubmit_problem(
     Json(ReviewResponse {
         success: true,
         message: "已重新提交，等待审核".to_string(),
+    })
+}
+
+// ============== Withdraw Problem (Author) ==============
+
+/// POST /api/problems/:id/withdraw
+/// Author withdraws their own pending problem so it leaves the review queue and
+/// can be revised. No global permission is required: ownership is the
+/// authorization (same rule as editing/deleting one's own pending problem).
+/// Reuses the existing "returned" state, so the normal revise-and-resubmit flow
+/// (POST /:id/resubmit) applies afterwards.
+pub async fn withdraw_problem(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(problem_id): Path<String>,
+) -> Json<ReviewResponse> {
+    let (user_id, _user) = match resolve_user_custom(&state, &headers, || ReviewResponse {
+        success: false,
+        message: "未登录".to_string(),
+    })
+    .await
+    {
+        Ok(v) => v,
+        Err(r) => return Json(r),
+    };
+
+    let mut problem = {
+        let problems = state.problems.read().await;
+        match problems.get(&problem_id) {
+            Some(p) => p.clone(),
+            None => {
+                return Json(ReviewResponse {
+                    success: false,
+                    message: "题目不存在".to_string(),
+                })
+            }
+        }
+    };
+
+    // 撤回是作者对自己稿件的操作，不授予任何全局审核权限
+    if !problem.is_author(&user_id) {
+        return Json(ReviewResponse {
+            success: false,
+            message: "只能撤回自己提交的题目".to_string(),
+        });
+    }
+    if problem.status != "pending" {
+        return Json(ReviewResponse {
+            success: false,
+            message: "只能撤回待审核题目".to_string(),
+        });
+    }
+
+    // pending -> returned：复用「修改后重新提交」的既有流程
+    problem.status = "returned".to_string();
+    state.insert_problem(&problem).await;
+
+    Json(ReviewResponse {
+        success: true,
+        message: "已撤回，可修改后重新提交".to_string(),
     })
 }
 

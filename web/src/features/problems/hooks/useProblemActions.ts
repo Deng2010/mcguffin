@@ -6,6 +6,7 @@ import {
   reviewProblem,
   setProblemContest,
   unclaimProblem,
+  withdrawProblem,
 } from "../../../services/problem.service";
 import { useToast } from "../../../errors/ToastContext";
 import { errorMessage } from "../../../errors/normalize";
@@ -85,6 +86,27 @@ export function useProblemActions(loadProblems: () => void) {
     }
   };
 
+  /** 出题人撤回自己的待审核题目（进入「已退回」，可修改后重新提交）。 */
+  const handleWithdraw = async (problemId: string, title: string) => {
+    if (
+      !window.confirm(
+        `确定撤回题目「${title}」吗？撤回后可继续修改并重新提交。`,
+      )
+    )
+      return;
+    try {
+      const res = await withdrawProblem(problemId);
+      if (!res.success) {
+        toast.error(res.message);
+        return;
+      }
+      toast.success("已撤回，可修改后重新提交");
+      loadProblems();
+    } catch (err) {
+      toast.error(`撤回失败: ${errorMessage(err)}`);
+    }
+  };
+
   // Submit with reason
   const handleReviewWithReason = async () => {
     if (!reasonDialog) return;
@@ -138,6 +160,7 @@ export function useProblemActions(loadProblems: () => void) {
     handleUnclaim,
     handleReview,
     handleResubmit,
+    handleWithdraw,
     handleSetContest,
     handleDelete,
   };

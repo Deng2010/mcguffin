@@ -49,7 +49,7 @@ use crate::handlers::problem::{
     claim_problem, delete_problem, get_pending_problems_admin, get_problem_detail, get_problems,
     get_team_members_for_visibility, resubmit_problem, review_problem, set_problem_contest,
     set_problem_visibility, submit_problem, submit_verifier_comment, submit_verifier_solution,
-    unclaim_problem, update_problem,
+    unclaim_problem, update_problem, withdraw_problem,
 };
 use crate::handlers::team::{
     apply_to_join, change_member_role, get_pending_requests, get_team_members, remove_member,
@@ -114,6 +114,7 @@ pub fn build_router(state: AppState) -> Router {
             post(submit_verifier_comment),
         )
         .route("/problems/{problem_id}/resubmit", post(resubmit_problem))
+        .route("/problems/{problem_id}/withdraw", post(withdraw_problem))
         .route(
             "/problems/visibility/{problem_id}",
             post(set_problem_visibility),

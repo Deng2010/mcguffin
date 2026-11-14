@@ -22,15 +22,12 @@ export function useProblems(canApprove: boolean) {
 }
 
 // 按状态拆分的列表（基于已加载的问题列表）
-export function useProblemLists(
-  problems: ProblemListItem[],
-  userId?: string,
-  displayName?: string,
-) {
+// 归属判断一律使用 author_id：显示名称（author_name）只是快照，用户改名后
+// 不应再作为「我的题目」的依据。
+export function useProblemLists(problems: ProblemListItem[], userId?: string) {
   return useMemo(() => {
-    const myProblems = displayName
-      ? problems.filter((p) => p.author_name === displayName)
-      : [];
+    const myProblems =
+      userId != null ? problems.filter((p) => p.author_id === userId) : [];
     const pendingList = problems.filter((p) => p.status === "pending");
     const ownPendingList = pendingList.filter(
       (p) => userId != null && p.author_id === userId,
@@ -50,7 +47,7 @@ export function useProblemLists(
       returnedList,
       ownReturnedList,
     };
-  }, [problems, userId, displayName]);
+  }, [problems, userId]);
 }
 
 // Client-side filtering
