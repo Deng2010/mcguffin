@@ -187,7 +187,8 @@ pub async fn get_problems(
 
     // ── Execute SQLite query ──
     let sql_result: Result<Vec<ProblemRow>, _> = {
-        let mut query = sqlx::query_as::<_, ProblemRow>(&sql);
+        // SQL is composed from fixed fragments. All filter values are bound below.
+        let mut query = sqlx::query_as::<_, ProblemRow>(sqlx::AssertSqlSafe(sql));
         for b in &binds {
             query = query.bind(b.as_str());
         }

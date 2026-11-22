@@ -248,28 +248,17 @@ pub async fn list_errors(
     let limit = q.limit.unwrap_or(100).clamp(1, 500);
     let offset = q.offset.unwrap_or(0).max(0);
 
-    let mut where_clauses: Vec<String> = Vec::new();
-    if let Some(s) = &q.status {
-        where_clauses.push(format!("status = '{}'", s.replace('\'', "''")));
-    }
-    if let Some(c) = &q.code {
-        where_clauses.push(format!("code = '{}'", c.replace('\'', "''")));
-    }
-    if let Some(s) = &q.source {
-        where_clauses.push(format!("source = '{}'", s.replace('\'', "''")));
-    }
-    let where_sql = if where_clauses.is_empty() {
-        String::new()
-    } else {
-        format!(" WHERE {}", where_clauses.join(" AND "))
-    };
-
-    let rows: Vec<ErrorReportRow> = sqlx::query_as::<_, ErrorReportRow>(&format!(
+    let rows = sqlx::query_as::<_, ErrorReportRow>(
         "SELECT id, ts, user_id, source, code, message, hint, suggestion, stack, url, \
          route, method, http_status, ua, plugin_id, count, status, resolved_by, resolved_at, \
-         first_seen, last_seen FROM error_reports{} ORDER BY last_seen DESC LIMIT ? OFFSET ?",
-        where_sql
-    ))
+         first_seen, last_seen FROM error_reports \
+         WHERE (?1 IS NULL OR status = ?1) AND (?2 IS NULL OR code = ?2) \
+           AND (?3 IS NULL OR source = ?3) \
+         ORDER BY last_seen DESC LIMIT ?4 OFFSET ?5",
+    )
+    .bind(q.status.as_deref())
+    .bind(q.code.as_deref())
+    .bind(q.source.as_deref())
     .bind(limit)
     .bind(offset)
     .fetch_all(&state.db)
@@ -281,16 +270,22 @@ pub async fn list_errors(
         )
     })?;
 
-    let total: i64 =
-        sqlx::query_scalar(&format!("SELECT COUNT(*) FROM error_reports{}", where_sql))
-            .fetch_one(&state.db)
-            .await
-            .map_err(|_| {
-                http_error(
-                    ErrorCode::DATABASE_ERROR,
-                    ErrorCode::DATABASE_ERROR.default_message(),
-                )
-            })?;
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM error_reports \
+         WHERE (?1 IS NULL OR status = ?1) AND (?2 IS NULL OR code = ?2) \
+           AND (?3 IS NULL OR source = ?3)",
+    )
+    .bind(q.status.as_deref())
+    .bind(q.code.as_deref())
+    .bind(q.source.as_deref())
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| {
+        http_error(
+            ErrorCode::DATABASE_ERROR,
+            ErrorCode::DATABASE_ERROR.default_message(),
+        )
+    })?;
 
     Ok(Json(serde_json::json!({
         "success": true,

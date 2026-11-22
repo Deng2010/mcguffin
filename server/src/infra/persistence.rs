@@ -338,6 +338,17 @@ impl AppState {
 
     /// 更新用户特定字段（双写）
     pub async fn update_user_field(&self, user_id: &str, field: &str, value: String) {
+        let sql = match field {
+            "role" => "UPDATE users SET role = ? WHERE id = ?",
+            "team_status" => "UPDATE users SET team_status = ? WHERE id = ?",
+            "display_name" => "UPDATE users SET display_name = ? WHERE id = ?",
+            "avatar_url" => "UPDATE users SET avatar_url = ? WHERE id = ?",
+            "bio" => "UPDATE users SET bio = ? WHERE id = ?",
+            "email" => "UPDATE users SET email = ? WHERE id = ?",
+            "username" => "UPDATE users SET username = ? WHERE id = ?",
+            "password_hash" => "UPDATE users SET password_hash = ? WHERE id = ?",
+            _ => return,
+        };
         // HashMap 更新
         {
             let mut users = self.users.write().await;
@@ -355,8 +366,8 @@ impl AppState {
                 }
             }
         }
-        // SQLite 更新（使用动态 SQL，字段已校验）
-        let _ = sqlx::query(&format!("UPDATE users SET {} = ? WHERE id = ?", field))
+        // SQLite 更新
+        let _ = sqlx::query(sql)
             .bind(&value)
             .bind(user_id)
             .execute(&self.db)
@@ -561,6 +572,13 @@ impl AppState {
         field: &str,
         value: T,
     ) {
+        let sql = match field {
+            "status" => "UPDATE problems SET status = ? WHERE id = ?",
+            "claimed_by" => "UPDATE problems SET claimed_by = ? WHERE id = ?",
+            "verifier_solution" => "UPDATE problems SET verifier_solution = ? WHERE id = ?",
+            "public_at" => "UPDATE problems SET public_at = ? WHERE id = ?",
+            _ => return,
+        };
         let val_str = value.to_string();
         {
             let mut problems = self.problems.write().await;
@@ -593,7 +611,7 @@ impl AppState {
             } else {
                 Some(&val_str)
             };
-        let _ = sqlx::query(&format!("UPDATE problems SET {} = ? WHERE id = ?", field))
+        let _ = sqlx::query(sql)
             .bind(sql_value)
             .bind(problem_id)
             .execute(&self.db)
