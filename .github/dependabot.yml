@@ -35,6 +35,10 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(deps)"
+    ignore:
+      # rehype-katex@7 renders markup for the KaTeX 0.16 stylesheet.
+      - dependency-name: katex
+        versions: [">=0.17.0"]
     groups:
       web-patch:
         patterns: ["*"]
