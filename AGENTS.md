@@ -267,7 +267,7 @@ mcguffin/
 ### 技术栈速查
 
 - 后端：axum 0.8、sqlx 0.8（runtime-tokio + sqlite + migrate）、rusqlite 0.32（bundled）、tower-http 0.6（cors/fs/compression/request-id/catch-panic）、chrono、uuid v4、clap 4、reqwest 0.13、toml_edit、tracing。
-- 前端：React 18、Vite 6、TypeScript ~7.0、Tailwind 3、zustand 5、react-router-dom 6、react-markdown + remark/rehype（GFM、KaTeX、Prism）、Vitest 4 + Testing Library。
+- 前端：React 18、Vite 6、TypeScript ~7.0、Tailwind 3、zustand 5、react-router-dom 7、react-markdown + remark/rehype（GFM、KaTeX、Prism）、Vitest 4 + Testing Library。
 
 ---
 
