@@ -14,7 +14,7 @@ RUN bun run build
 # 精确到补丁版本，与 rust-toolchain.toml 的 channel 保持一致：
 # 若基础镜像低于 pin（例如 1.98 对 1.98.1），每次构建都会在容器内触发
 # rustup 下载被 pin 的工具链，既慢又依赖网络。
-FROM rust:1.98.1-alpine AS chef
+FROM rust:1.99.0-alpine AS chef
 RUN apk add --no-cache musl-dev sqlite-dev pkgconfig build-base
 RUN cargo install cargo-chef --locked
 
