@@ -8,5 +8,5 @@
 # 固定后本地与 CI 使用同一版本，升级即一次显式提交（需同时更新本文件）。
 # CI 的 dtolnay/rust-toolchain 会读取本文件，无需改动 workflow。
 [toolchain]
-channel = "1.98.1"
+channel = "1.99.0"
 components = ["rustfmt", "clippy"]
