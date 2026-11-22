@@ -169,6 +169,7 @@ async fn test_error_report_dedupe_and_list() {
     // 管理员 → 200，去重后 count=2
     let admin_token = create_session(&state, "admin").await;
     let res = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/api/v1/errors")
@@ -188,6 +189,35 @@ async fn test_error_report_dedupe_and_list() {
     assert_eq!(v["errors"][0]["code"], "TEST_DEDUPE");
     assert_eq!(v["errors"][0]["count"], 2);
     assert_eq!(v["errors"][0]["status"], "open");
+
+    for (query, total, rows) in [
+        ("status=open&source=frontend&code=TEST_DEDUPE", 1, 1),
+        (
+            "status=open&source=frontend&code=TEST_DEDUPE&offset=1",
+            1,
+            0,
+        ),
+        ("status=open&source=frontend&code=TEST_DEDUPE%27", 0, 0),
+    ] {
+        let res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/v1/errors?{query}"))
+                    .header(auth_header(&admin_token).0, auth_header(&admin_token).1)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(res.into_body(), 1_000_000)
+            .await
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["total"], total, "{query}");
+        assert_eq!(v["errors"].as_array().unwrap().len(), rows, "{query}");
+    }
 }
 
 /// 上报接口按 IP 限流（20 次/分钟）。

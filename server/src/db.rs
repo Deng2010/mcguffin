@@ -453,17 +453,17 @@ pub(crate) async fn reimport_all_data(
     pool: &SqlitePool,
     data: &SavedData,
 ) -> Result<u32, sqlx::Error> {
-    let tables = [
-        "audit_log",
-        "notifications",
-        "sessions",
-        "refresh_tokens",
-        "join_requests",
-        "posts",
-        "problems",
-        "team_members",
-        "contests",
-        "users",
+    let deletes = [
+        "DELETE FROM audit_log",
+        "DELETE FROM notifications",
+        "DELETE FROM sessions",
+        "DELETE FROM refresh_tokens",
+        "DELETE FROM join_requests",
+        "DELETE FROM posts",
+        "DELETE FROM problems",
+        "DELETE FROM team_members",
+        "DELETE FROM contests",
+        "DELETE FROM users",
     ];
 
     // 在一个事务中执行清空 + 重新导入，全程关闭 FK 约束
@@ -475,10 +475,8 @@ pub(crate) async fn reimport_all_data(
         .await?;
 
     // 按外键依赖逆序清空（先清子表，再清父表）
-    for table in &tables {
-        sqlx::query(&format!("DELETE FROM {}", table))
-            .execute(&mut *tx)
-            .await?;
+    for sql in deletes {
+        sqlx::query(sql).execute(&mut *tx).await?;
     }
 
     // 在同一个事务中重新导入（FK 已关闭，不会因数据引用顺序报错）
